@@ -1,0 +1,14 @@
+{
+  dependencies: {
+    'rig-foundation': {
+      name: 'rig-foundation',
+      source: 'git@github.com:FlashHand/rig-foundation.git',
+      version: '1.0.1'
+    },
+    'electron-xpc': {
+      name: 'electron-xpc',
+      source: 'git@github.com:FlashHand/electron-xpc.git',
+      version: '1.0.2'
+    }
+  }
+}
