@@ -5,10 +5,11 @@
       source: 'git@github.com:FlashHand/rig-foundation.git',
       version: '1.0.1'
     },
-    'electron-xpc': {
-      name: 'electron-xpc',
-      source: 'git@github.com:FlashHand/electron-xpc.git',
-      version: '1.0.2'
+    'electron-buff': {
+      dev: true,
+      name: 'electron-buff',
+      source: 'git@github.com:FlashHand/electron-buff.git',
+      version: '1.0.0'
     }
   }
 }

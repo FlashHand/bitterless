@@ -10,4 +10,8 @@ rig_dev/*
 .env.rig
 !rigs/.gitkeep
 !rig_dev/.gitkeep
+external_resources/*
+!external_resources/.gitkeep
 连尚遗迹/
+local.md
+demo/

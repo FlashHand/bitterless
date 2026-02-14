@@ -38,5 +38,11 @@ export default defineConfig(
       ]
     }
   },
+  {
+    files: ['scripts/**/*.js', '*.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off'
+    }
+  },
   eslintConfigPrettier
 )

@@ -5,6 +5,7 @@ class MainWindowHelper extends WindowHelper {
   protected preloadFile = 'home.js';
   protected rendererPath = 'home/index.html';
   protected windowOptions: Partial<BrowserWindowConstructorOptions> = {
+    title: 'BitterLess',
     width: 900,
     height: 670,
   };

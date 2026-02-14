@@ -14,7 +14,7 @@
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "yarn typecheck:node && yarn typecheck:web",
     "start": "electron-vite preview",
-    "dev": "electron-vite dev",
+    "dev": "rig --env dev && electron-vite dev",
     "build": "yarn typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps && rig postinstall",
     "build:unpack": "yarn build && electron-builder --dir",
@@ -24,11 +24,15 @@
     "preinstall": "rig preinstall"
   },
   "dependencies": {
+    "@arco-design/web-vue": "^2.57.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "better-sqlite3-multiple-ciphers": "12.6.2",
+    "better-sqlite3-multiple-ciphers": "^12.6.2",
+    "dayjs": "^1.11.19",
+    "postman-request": "^2.88.1-postman.48",
     "rig-foundation": "git+ssh://git@github.com:FlashHand/rig-foundation.git#1.0.1",
-    "electron-xpc": "git+ssh://git@github.com:FlashHand/electron-xpc.git#1.0.2"
+    "vue-router": "^5.0.2",
+    "electron-buff": "git+ssh://git@github.com:FlashHand/electron-buff.git#1.0.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
@@ -36,12 +40,14 @@
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@types/node": "^22.19.1",
     "@vitejs/plugin-vue": "^6.0.2",
-    "electron": "39.2.6",
+    "electron": "^40.4.1",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-vue": "^10.6.2",
     "json5": "2.2.1",
+    "less": "^4.5.1",
+    "postcss": "^8.5.6",
     "prettier": "^3.7.4",
     "rig-helper": "^1.0.2",
     "typescript": "^5.9.3",

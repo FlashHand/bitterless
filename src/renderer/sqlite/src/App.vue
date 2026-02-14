@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import type { XpcRendererApi } from 'electron-xpc/preload';
+import type { XpcRendererApi } from 'electron-buff/xpc/preload';
 
 const xpcRenderer = (window as any).xpcRenderer as XpcRendererApi;
 

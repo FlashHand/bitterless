@@ -1,5 +1,5 @@
 import { contextBridge } from 'electron';
-import { exposeXpcRenderer } from 'electron-xpc/preload';
+import { exposeXpcRenderer } from 'electron-buff/xpc/preload';
 
 if (process.contextIsolated) {
   try {
