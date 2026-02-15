@@ -12,6 +12,6 @@ rig_dev/*
 !rig_dev/.gitkeep
 external_resources/*
 !external_resources/.gitkeep
-连尚遗迹/
+legacy/
 local.md
 demo/
