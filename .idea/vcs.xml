@@ -2,7 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/rig_dev/electron-xpc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/rig_dev/electron-buff" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/rig_dev/rig-foundation" vcs="Git" />
   </component>
 </project>
