@@ -6,7 +6,7 @@ import {
   type RigchatLoginDetail,
   type RigchatMessageDetail,
   type RigchatErrorDetail,
-} from '../../../../preload/wechaty/wechaty.preload.type'
+} from '../../../../preload/rigchat/rigchat.preload.type'
 import type { RigchatMessageItem } from './rigchat.store.type'
 
 class RigchatStore {

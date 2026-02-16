@@ -8,6 +8,10 @@ class MainWindowHelper extends WindowHelper {
     title: 'BitterLess',
     width: 900,
     height: 670,
+    minWidth: 800,
+    minHeight: 600,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 12, y: 10 },
   };
 }
 

@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import type { XpcRendererApi } from 'electron-buff/xpc/preload';
-
-const xpcRenderer = (window as any).xpcRenderer as XpcRendererApi;
+import { xpcRenderer } from 'electron-buff/xpc/renderer';
 
 onMounted(() => {
   xpcRenderer.handle('sqlite/hello', async () => {

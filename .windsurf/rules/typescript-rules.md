@@ -16,5 +16,8 @@ globs:
 2. For dev dependencies, use `yarn add -W -D`.
 
 
+## File Naming Rules
+1. TypeScript files must use camelCase + Angular-style suffix naming, e.g. `userDetail.service.ts`, `message.store.ts`, `chatMessage.type.ts`.
+
 ## Code style
 1. Always end statements with a semicolon (`;`).

@@ -6,7 +6,7 @@ class SqliteWindowHelper extends WindowHelper {
   protected rendererPath = 'sqlite/index.html';
   protected windowOptions: Partial<BrowserWindowConstructorOptions> = {
     width: 800,
-    height: 600,
+    height: 600
   };
 }
 

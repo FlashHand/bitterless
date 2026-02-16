@@ -1,12 +1,11 @@
-import { contextBridge } from 'electron';
-import { exposeXpcRenderer } from 'electron-buff/xpc/preload';
+// Importing xpc/preload auto-exposes xpcRenderer to window
+import 'electron-buff/xpc/preload';
+import { initSqlite } from './sqliteHelper/sqlite.helper';
+import { initMessageServer } from './messageServer/messageServer';
 
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('xpcRenderer', exposeXpcRenderer());
-  } catch (error) {
-    console.error(error);
-  }
-} else {
-  (window as any).xpcRenderer = exposeXpcRenderer();
-}
+const bootstrap = async (): Promise<void> => {
+  await initSqlite();
+  initMessageServer();
+};
+
+bootstrap().catch((err) => console.error('[sqlite.preload] bootstrap failed:', err));

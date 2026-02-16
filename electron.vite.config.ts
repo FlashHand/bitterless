@@ -9,7 +9,7 @@ export default defineConfig({
   main: {
     build: {
       rollupOptions: {
-        external: [/rig_dev\/.*\/node_modules/]
+        external: [/rig_dev\/.*\/node_modules/, 'node-llama-cpp']
       }
     }
   },
@@ -19,9 +19,10 @@ export default defineConfig({
         input: {
           home: resolve('src/preload/home/home.preload.ts'),
           sqlite: resolve('src/preload/sqlite/sqlite.preload.ts'),
-          wechaty: resolve('src/preload/wechaty/wechaty.preload.ts')
+          rigchat: resolve('src/preload/rigchat/rigchat.preload.ts'),
+          llama: resolve('src/preload/llama/llama.preload.ts')
         },
-        external: [/rig_dev\/.*\/node_modules/]
+        external: [/rig_dev\/.*\/node_modules/, 'node-llama-cpp']
       }
     }
   },
@@ -31,7 +32,8 @@ export default defineConfig({
         input: {
           home: resolve('src/renderer/home/index.html'),
           sqlite: resolve('src/renderer/sqlite/index.html'),
-          wechaty: resolve('src/renderer/wechaty/index.html')
+          rigchat: resolve('src/renderer/rigchat/index.html'),
+          llama: resolve('src/renderer/llama/index.html')
         }
       }
     },

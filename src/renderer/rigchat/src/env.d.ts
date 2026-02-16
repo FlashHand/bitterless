@@ -7,5 +7,5 @@ declare module '*.vue' {
 }
 
 interface Window {
-  rigchatApi: import('../../../../preload/wechaty/wechaty.preload.type').RigchatApi;
+  rigchatApi: import('../../../../preload/rigchat/rigchat.preload.type').RigchatApi;
 }

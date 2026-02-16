@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import WechatyPanel from './components/wechatyPanel/WechatyPanel.vue';
+import RigchatPanel from './components/rigchatPanel/RigchatPanel.vue';
 </script>
 
 <template>
-  <div id="wechaty-app">
-    <WechatyPanel />
+  <div id="rigchat-app">
+    <RigchatPanel />
   </div>
 </template>
 

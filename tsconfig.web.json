@@ -5,7 +5,7 @@
     "src/renderer/**/src/**/*",
     "src/renderer/**/src/**/*.vue",
     "src/preload/*.d.ts",
-    "src/preload/**/wechaty.preload.type.ts"
+    "src/preload/**/rigchat.preload.type.ts"
   ],
   "compilerOptions": {
     "composite": true,

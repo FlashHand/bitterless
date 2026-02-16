@@ -10,7 +10,7 @@ import {
   type RigchatMessageDetail,
   type RigchatErrorDetail,
   type RigchatApi,
-} from './wechaty.preload.type'
+} from './rigchat.preload.type'
 
 const SESSION_FILE = 'session.json'
 

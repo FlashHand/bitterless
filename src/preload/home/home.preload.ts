@@ -1,15 +1,4 @@
-import { contextBridge } from 'electron';
-import { exposeXpcRenderer } from 'electron-buff/xpc/preload';
-import { exposePathHelper } from 'electron-buff/pathHelper/renderer';
-
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('xpcRenderer', exposeXpcRenderer());
-    contextBridge.exposeInMainWorld('pathHelper', exposePathHelper());
-  } catch (error) {
-    console.error(error);
-  }
-} else {
-  (window as any).xpcRenderer = exposeXpcRenderer();
-  (window as any).pathHelper = exposePathHelper();
-}
+// Importing xpc/preload auto-exposes xpcRenderer to window
+import 'electron-buff/xpc/preload';
+// Importing pathHelper/preload auto-exposes pathHelper to window
+import 'electron-buff/pathHelper/preload';
