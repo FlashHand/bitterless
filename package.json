@@ -46,7 +46,7 @@
     "vue-i18n": "^11.2.8",
     "vue-router": "^5.0.2",
     "zod": "^4.3.6",
-    "electron-buff": "git+ssh://git@github.com:FlashHand/electron-buff.git#1.0.0"
+    "electron-buff": "git+ssh://git@github.com:FlashHand/electron-buff.git#1.0.9"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "3.0.0",

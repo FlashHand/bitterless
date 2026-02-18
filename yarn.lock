@@ -2726,6 +2726,10 @@ ejs@^3.1.8:
   dependencies:
     jake "^10.8.5"
 
+"electron-buff@git+ssh://git@github.com:FlashHand/electron-buff.git#1.0.9":
+  version "1.0.9"
+  resolved "git+ssh://git@github.com:FlashHand/electron-buff.git#2069e88a4f5f0c17f3872bc2378013ddec6f6df2"
+
 electron-builder@^26.0.12:
   version "26.7.0"
   resolved "https://registry.npmmirror.com/electron-builder/-/electron-builder-26.7.0.tgz#e1f5b4434b453c19bceb0ccac859c3104e3c26d8"
