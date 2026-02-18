@@ -41,11 +41,11 @@
     "node-llama-cpp": "^3.15.1",
     "postman-request": "^2.88.1-postman.48",
     "quill": "^2.0.3",
-    "rig-foundation": "git+ssh://git@github.com:FlashHand/rig-foundation.git#1.0.1",
+    "rig-foundation": "1.0.1",
     "vue-i18n": "^11.2.8",
     "vue-router": "^5.0.2",
     "zod": "^4.3.6",
-    "electron-buff": "git+ssh://git@github.com:FlashHand/electron-buff.git#1.0.9"
+    "electron-buff": "1.0.9"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
