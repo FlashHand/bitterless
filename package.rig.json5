@@ -6,10 +6,10 @@
       version: '1.0.1'
     },
     'electron-buff': {
-      dev: true,
+//      dev: true,
       name: 'electron-buff',
       source: 'git@github.com:FlashHand/electron-buff.git',
-      version: '1.0.0'
+      version: '1.0.9'
     }
   }
 }

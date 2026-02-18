@@ -1,5 +1,5 @@
 import { BaseDao } from './base.dao';
-import { safeGet, safeRun, sanitizeValue } from '../sqliteHelper/sqlite.helper';
+import { sqliteHelper, sanitizeValue } from '../sqliteHelper/sqlite.helper';
 
 interface SettingRow {
   key: string;
@@ -9,11 +9,10 @@ interface SettingRow {
 
 class SettingDao extends BaseDao {
   /** Get a setting value by key. Returns parsed JSON or null if not found. */
-  get<T = any>(key: string): T | null {
-    const row = safeGet<SettingRow>(
-      this.db,
+  get<T = any>(params: { key: string }): T | null {
+    const row = sqliteHelper.safeGet<SettingRow>(
       'SELECT key, value FROM setting WHERE key = ?',
-      [key],
+      [params.key],
     );
     if (!row) return null;
     try {
@@ -24,15 +23,15 @@ class SettingDao extends BaseDao {
   }
 
   /** Upsert a setting. Value will be JSON-serialized. */
-  upsert(key: string, value: any): void {
-    const jsonValue = sanitizeValue(JSON.stringify(value));
-    safeRun(
-      this.db,
+  upsert(params: { key: string; value: any }): string {
+    const jsonValue = sanitizeValue(JSON.stringify(params.value));
+    sqliteHelper.safeRun(
       `INSERT INTO setting (key, value, updated_at)
        VALUES (?, ?, datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      [key, jsonValue],
+      [params.key, jsonValue],
     );
+    return 'ok';
   }
 }
 

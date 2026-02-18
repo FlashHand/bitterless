@@ -16,9 +16,9 @@ interface MessageHistoryRow {
   content: string;
 }
 
-interface MessageHandlerType {
+interface MessageDaoType {
   insert: (params: MessageInsertParams) => Promise<number>;
   getHistoryByConversationId: (params: MessageHistoryParams) => Promise<MessageHistoryRow[]>;
 }
 
-export const messageEmitter = createXpcRendererEmitter<MessageHandlerType>('MessageHandler');
+export const messageEmitter = createXpcRendererEmitter<MessageDaoType>('MessageDao');

@@ -105,7 +105,7 @@ export const initMessageServer = (): void => {
     saveMessageToQdrant({ id: userMsgId, conversationId, role: 'user', content, platform: 'bitterless' }).catch(() => {});
 
     // 2. Build message history for LangGraph
-    const rows = messageDao.getHistoryByConversationId(conversationId);
+    const rows = messageDao.getHistoryByConversationId({ conversationId });
     const messages: ChatMessageInput[] = rows.map((r) => ({
       role: r.role as ChatMessageInput['role'],
       content: r.content as string,
