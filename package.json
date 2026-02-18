@@ -17,12 +17,11 @@
     "start": "electron-vite preview",
     "dev": "rig --env debug_dev && electron-vite dev",
     "build": "yarn typecheck && electron-vite build",
-    "postinstall": "electron-builder install-app-deps && rig postinstall",
+    "postinstall": "electron-builder install-app-deps",
     "build:unpack": "yarn build && electron-builder --dir",
     "build:win": "yarn build && electron-builder --win",
     "build:mac": "yarn build && electron-builder --mac",
-    "build:linux": "yarn build && electron-builder --linux",
-    "preinstall": "rig preinstall"
+    "build:linux": "yarn build && electron-builder --linux"
   },
   "dependencies": {
     "@arco-design/web-vue": "^2.57.0",
