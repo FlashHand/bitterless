@@ -9,9 +9,17 @@ interface MessageRow {
   created_at: string;
 }
 
+export interface MessageInsertParams {
+  conversationId: string;
+  role: string;
+  content: string;
+  platform?: string;
+}
+
 class MessageDao extends BaseDao {
   /** Insert a message and return the new row ID */
-  insert(conversationId: string, role: string, content: string, platform = 'bitterless'): number {
+  insert(params: MessageInsertParams): number {
+    const { conversationId, role, content, platform = 'bitterless' } = params;
     const stmt = this.db.prepare(
       'INSERT INTO message (conversation_id, role, content, platform) VALUES (?, ?, ?, ?)',
     );

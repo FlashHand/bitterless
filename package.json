@@ -31,6 +31,7 @@
     "@langchain/core": "^1.1.24",
     "@langchain/langgraph": "^1.1.4",
     "@langchain/openai": "^1.2.7",
+    "@qdrant/js-client-rest": "^1.16.2",
     "axios": "^1.13.5",
     "better-sqlite3-multiple-ciphers": "^12.6.2",
     "commander": "^14.0.3",
@@ -42,6 +43,7 @@
     "postman-request": "^2.88.1-postman.48",
     "quill": "^2.0.3",
     "rig-foundation": "git+ssh://git@github.com:FlashHand/rig-foundation.git#1.0.1",
+    "vue-i18n": "^11.2.8",
     "vue-router": "^5.0.2",
     "zod": "^4.3.6",
     "electron-buff": "git+ssh://git@github.com:FlashHand/electron-buff.git#1.0.0"

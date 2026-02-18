@@ -16,6 +16,11 @@ export const defaultRoutes: RouteRecordRaw[] = [
         name: 'debug',
         component: () => import('@/views/debug/Debug.vue'),
       },
+      {
+        path: 'setting',
+        name: 'setting',
+        component: () => import('@/views/setting/Setting.vue'),
+      },
     ],
   },
 ];

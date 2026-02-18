@@ -56,13 +56,16 @@ const ensureQdrantCollection = async (): Promise<void> => {
   }
 };
 
-const saveMessageToQdrant = async (
-  id: number,
-  conversationId: string,
-  role: string,
-  content: string,
-  platform: string,
-): Promise<void> => {
+interface QdrantSaveParams {
+  id: number;
+  conversationId: string;
+  role: string;
+  content: string;
+  platform: string;
+}
+
+const saveMessageToQdrant = async (params: QdrantSaveParams): Promise<void> => {
+  const { id, conversationId, role, content, platform } = params;
   try {
     await ensureQdrantCollection();
     const vector = await getEmbeddingVector(content);
@@ -98,8 +101,8 @@ export const initMessageServer = (): void => {
     console.log('[messageServer] received chat/send:', conversationId);
 
     // 1. Save user message to SQLite immediately
-    const userMsgId = messageDao.insert(conversationId, 'user', content);
-    saveMessageToQdrant(userMsgId, conversationId, 'user', content, 'bitterless').catch(() => {});
+    const userMsgId = messageDao.insert({ conversationId, role: 'user', content });
+    saveMessageToQdrant({ id: userMsgId, conversationId, role: 'user', content, platform: 'bitterless' }).catch(() => {});
 
     // 2. Build message history for LangGraph
     const rows = messageDao.getHistoryByConversationId(conversationId);
@@ -115,8 +118,8 @@ export const initMessageServer = (): void => {
       });
 
       // 4. Save assistant message to SQLite + Qdrant
-      const assistantMsgId = messageDao.insert(conversationId, 'assistant', fullContent);
-      saveMessageToQdrant(assistantMsgId, conversationId, 'assistant', fullContent, 'bitterless').catch(() => {});
+      const assistantMsgId = messageDao.insert({ conversationId, role: 'assistant', content: fullContent });
+      saveMessageToQdrant({ id: assistantMsgId, conversationId, role: 'assistant', content: fullContent, platform: 'bitterless' }).catch(() => {});
 
       // 5. Notify home renderer stream is done
       xpcRenderer.send('chat/stream/done', { conversationId, content: fullContent });

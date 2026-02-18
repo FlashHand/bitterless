@@ -30,14 +30,29 @@ const testSqliteHello = async () => {
 </script>
 
 <template>
-  <div class="debug">
-    <a-descriptions :column="1" bordered>
-      <a-descriptions-item label="环境">{{ store.env }}</a-descriptions-item>
-      <a-descriptions-item label="App Path">{{ store.appPath }}</a-descriptions-item>
-      <a-descriptions-item label="User Data Path">{{ store.userDataPath }}</a-descriptions-item>
-    </a-descriptions>
-    <a-button type="primary" style="margin-top: 16px" @click="testInvalid">测试无效监听</a-button>
-    <a-button type="primary" style="margin-top: 16px; margin-left: 8px" @click="testSqliteHello">测试 SQLite 监听</a-button>
+  <div class="debug full-container">
+    <div class="debug__section">
+      <div class="debug__section__title">环境变量</div>
+      <a-descriptions :column="1" bordered size="small">
+        <a-descriptions-item label="env">{{ store.env }}</a-descriptions-item>
+      </a-descriptions>
+    </div>
+
+    <div class="debug__section">
+      <div class="debug__section__title">应用目录</div>
+      <a-descriptions :column="1" bordered size="small">
+        <a-descriptions-item label="App Path">{{ store.appPath }}</a-descriptions-item>
+        <a-descriptions-item label="User Data Path">{{ store.userDataPath }}</a-descriptions-item>
+      </a-descriptions>
+    </div>
+
+    <div class="debug__section">
+      <div class="debug__section__title">冒烟调试</div>
+      <div class="debug__section__actions">
+        <a-button type="primary" @click="testInvalid">测试无效监听</a-button>
+        <a-button type="primary" @click="testSqliteHello">测试 SQLite 监听</a-button>
+      </div>
+    </div>
   </div>
 </template>
 

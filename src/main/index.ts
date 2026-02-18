@@ -6,7 +6,6 @@ import { sqliteWindowHelper } from './windows/sqliteWindow.helper';
 import { rigchatWindowHelper } from './windows/rigchatWindow.helper';
 import { initXpc } from './xpc/xpc.helper';
 import { initDirectory } from './directoryHelper/directory.helper';
-import { initQdrant } from './qdrantHelper/qdrant.helper';
 import { llamaWindowHelper } from './windows/llamaWindow.helper';
 
 app.whenReady().then(() => {
@@ -15,7 +14,6 @@ app.whenReady().then(() => {
   packageMainHelper.init();
   initDirectory();
   initXpc();
-  initQdrant();
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);

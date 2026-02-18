@@ -32,7 +32,7 @@
       <QuillEditor
         ref="quillRef"
         :disabled="messageStore.isStreaming"
-        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+        :placeholder="placeholder"
         @submit="handleSubmit"
       />
     </div>
@@ -40,11 +40,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { i18nMessages } from '@renderer/common/i18n/i18n.helper';
 import MarkdownRender from 'markstream-vue';
 import QuillEditor from '@/components/QuillEditor/QuillEditor.vue';
 import { messageStore, initMessageListeners, sendMessage } from './store/message.store';
 
+const placeholder = computed(() => i18nMessages.chat.inputPlaceHolder);
 const messageListRef = ref<HTMLElement | null>(null);
 const quillRef = ref<InstanceType<typeof QuillEditor> | null>(null);
 

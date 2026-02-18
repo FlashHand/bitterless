@@ -1,14 +1,14 @@
-import { app } from 'electron';
+import { ipcRenderer } from 'electron';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
-import { getDbPath } from '../directoryHelper/directory.helper';
 
 let qdrantProcess: ChildProcess | null = null;
 
-export const initQdrant = (): void => {
-  const appPath = app.getAppPath();
+export const initQdrant = async (): Promise<void> => {
+  const appPath = await ipcRenderer.invoke('bitterless:get-app-path');
+  const dbPath = await ipcRenderer.invoke('bitterless:get-db-path');
   const qdrantBinary = join(appPath, process.env.VITE_QDRANT_PATH || 'external_resources/qdrant/qdrant');
-  const storagePath = join(getDbPath(), 'memory');
+  const storagePath = join(dbPath, 'memory');
 
   console.log('[qdrant] binary:', qdrantBinary);
   console.log('[qdrant] storage:', storagePath);
@@ -40,7 +40,7 @@ export const initQdrant = (): void => {
     qdrantProcess = null;
   });
 
-  app.on('will-quit', () => {
+  window.addEventListener('beforeunload', () => {
     if (qdrantProcess) {
       console.log('[qdrant] killing process');
       qdrantProcess.kill('SIGTERM');
@@ -49,4 +49,12 @@ export const initQdrant = (): void => {
   });
 
   console.log('[qdrant] process started, pid:', qdrantProcess.pid);
+};
+
+export const stopQdrant = (): void => {
+  if (qdrantProcess) {
+    console.log('[qdrant] killing process');
+    qdrantProcess.kill('SIGTERM');
+    qdrantProcess = null;
+  }
 };

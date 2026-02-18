@@ -36,6 +36,7 @@ const initRigchat = (): void => {
 };
 
 const registerIpc = (): void => {
+  ipcMain.handle('bitterless:get-app-path', () => app.getAppPath());
   ipcMain.handle('bitterless:get-userdata-path', () => bitterlessPath);
   ipcMain.handle('bitterless:get-db-path', () => bitterlessDbPath);
   ipcMain.handle('rigchat:get-path', () => rigchatPath);

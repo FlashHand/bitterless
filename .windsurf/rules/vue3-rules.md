@@ -4,6 +4,11 @@ description:
 globs:
 ---
 
+## Function Rules
+- When a function has more than 2 parameters, wrap the extra parameters into an `options` or `params` object and pass it as the second argument. For example:
+  - Bad: `const fetchData = (id: string, page: number, pageSize: number, filter: string) => { ... }`
+  - Good: `const fetchData = (id: string, options: { page: number; pageSize: number; filter: string }) => { ... }`
+
 ## Route Rules
 - All routes must be declared in `src/router/defaultRoutes.ts` under the appropriate module section.
 
@@ -26,4 +31,11 @@ globs:
 - **Do NOT use `&` nesting selectors.** Write all selectors flat. For example, use `.user-card__avatar` instead of `.user-card { &__avatar {} }`.
 
 ### Color Usage
-- Use `oklch()` for colors. Refer to Tailwind CSS color palette oklch values as a design reference when choosing colors.
+- Use `oklch()` for colors. Refer to Tailwind CSS color palette oklch values as a design reference when choosing colors.\
+
+### i18n usage
+- All user-facing text in components must use i18n translations via `vue-i18n`. Never hardcode display text directly in templates.
+- Before adding text to a component, first add the translation keys and values for **all languages** (`en.ts`, `zh.ts`) in `src/renderer/common/i18n/`.
+- Define the corresponding TypeScript interface for new keys in `src/renderer/common/i18n/i18n.type.ts`.
+- Translations are organized by **business module** (e.g. `chat`, `setting`). Place new keys under the first matching module where the text logically belongs. Common modules include `chat`, `setting`, etc.
+- In templates, use `$t('module.key')` (e.g. `$t('chat.inputPlaceHolder')`). In `<script setup>`, use `const { t } = useI18n();` then call `t('module.key')`.

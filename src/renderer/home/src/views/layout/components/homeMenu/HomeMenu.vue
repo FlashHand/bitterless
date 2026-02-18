@@ -6,8 +6,9 @@ const router = useRouter();
 const route = useRoute();
 
 const menuItems = [
-  { icon: '💬', label: 'Chat', routeName: 'chat' },
-  { icon: '🐛', label: 'Debug', routeName: 'debug' },
+  { icon: '💬', routeName: 'chat' },
+  { icon: '🐛', routeName: 'debug' },
+  { icon: '⚙️', routeName: 'setting' },
 ];
 
 const navigate = (routeName: string) => {
@@ -22,7 +23,6 @@ const navigate = (routeName: string) => {
         v-for="item in menuItems"
         :key="item.routeName"
         :icon="item.icon"
-        :label="item.label"
         :active="route.name === item.routeName"
         @click="navigate(item.routeName)"
       />
