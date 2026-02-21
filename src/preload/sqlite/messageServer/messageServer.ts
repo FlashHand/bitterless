@@ -1,111 +1,39 @@
 import { messageDao } from '../dao/message.dao';
-import { streamChat } from '../../base/langGraph/langGraph.helper';
-import type { ChatMessageInput } from '../../base/langGraph/langGraph.helper';
-import { xpcRenderer } from 'electron-buff/xpc/preload';
+import { settingDao } from '../dao/setting.dao';
+import { langGraphHelper } from '../../base/langGraph/langGraph.helper';
+import type { ChatMessageInput, ModelConfig } from '../../base/langGraph/langGraph.helper';
+import type { ProxyConfig } from '../../base/langGraph/model.adaptor';
+import { xpcRenderer } from 'electron-xpc/preload';
 
-const QDRANT_URL = 'http://localhost:12833';
-const QDRANT_API_KEY = '123456';
-const QDRANT_COLLECTION = 'messages';
-
-let vectorDim: number | null = null;
-
-const getVectorDim = async (): Promise<number> => {
-  if (vectorDim !== null) return vectorDim;
-  try {
-    const dim = await xpcRenderer.send('llama/embedding/dimension') as number;
-    vectorDim = dim;
-    return dim;
-  } catch {
-    vectorDim = 1024;
-    return 1024;
-  }
-};
-
-const getEmbeddingVector = async (text: string): Promise<number[]> => {
-  try {
-    const vector = await xpcRenderer.send('llama/embedding', { text });
-    return vector as number[];
-  } catch (err: any) {
-    console.error('[messageServer] embedding failed, using zero vector:', err.message);
-    const dim = await getVectorDim();
-    return new Array(dim).fill(0);
-  }
-};
-
-const ensureQdrantCollection = async (): Promise<void> => {
-  const dim = await getVectorDim();
-  try {
-    const res = await fetch(`${QDRANT_URL}/collections/${QDRANT_COLLECTION}`, {
-      headers: { 'api-key': QDRANT_API_KEY },
-    });
-    if (res.status === 404) {
-      await fetch(`${QDRANT_URL}/collections/${QDRANT_COLLECTION}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': QDRANT_API_KEY,
-        },
-        body: JSON.stringify({
-          vectors: { size: dim, distance: 'Cosine' },
-        }),
-      });
-      console.log('[messageServer] created qdrant collection:', QDRANT_COLLECTION);
-    }
-  } catch (err: any) {
-    console.error('[messageServer] qdrant collection check failed:', err.message);
-  }
-};
-
-interface QdrantSaveParams {
-  id: number;
-  conversationId: string;
-  role: string;
-  content: string;
-  platform: string;
+interface ProxySetting {
+  switch: boolean;
+  ip: string;
+  port: string;
 }
 
-const saveMessageToQdrant = async (params: QdrantSaveParams): Promise<void> => {
-  const { id, conversationId, role, content, platform } = params;
-  try {
-    await ensureQdrantCollection();
-    const vector = await getEmbeddingVector(content);
-    await fetch(`${QDRANT_URL}/collections/${QDRANT_COLLECTION}/points`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': QDRANT_API_KEY,
-      },
-      body: JSON.stringify({
-        points: [
-          {
-            id,
-            vector,
-            payload: { conversation_id: conversationId, role, content, platform },
-          },
-        ],
-      }),
-    });
-  } catch (err: any) {
-    console.error('[messageServer] qdrant write failed:', err.message);
+const getProxyConfig = (): ProxyConfig | undefined => {
+  const proxySetting = settingDao.get<ProxySetting>({ key: 'PROXY' });
+  if (proxySetting?.switch && proxySetting.ip && proxySetting.port) {
+    return { ip: proxySetting.ip, port: proxySetting.port };
   }
+  return undefined;
 };
 
 export const initMessageServer = (): void => {
   xpcRenderer.handle('chat/send', async (payload) => {
-    const { conversationId, content } = payload.params || {};
-    if (!conversationId || !content) {
-      console.error('[messageServer] missing conversationId or content');
+    const { sessionId, content } = payload.params || {};
+    if (!sessionId || !content) {
+      console.error('[messageServer] missing sessionId or content');
       return null;
     }
 
-    console.log('[messageServer] received chat/send:', conversationId);
+    console.log('[messageServer] received chat/send:', sessionId);
 
     // 1. Save user message to SQLite immediately
-    const userMsgId = messageDao.insert({ conversationId, role: 'user', content });
-    saveMessageToQdrant({ id: userMsgId, conversationId, role: 'user', content, platform: 'bitterless' }).catch(() => {});
+    messageDao.insert({ sessionId, role: 'user', content });
 
     // 2. Build message history for LangGraph
-    const rows = messageDao.getHistoryByConversationId({ conversationId });
+    const rows = messageDao.getHistoryBySessionId({ sessionId });
     const messages: ChatMessageInput[] = rows.map((r) => ({
       role: r.role as ChatMessageInput['role'],
       content: r.content as string,
@@ -113,19 +41,27 @@ export const initMessageServer = (): void => {
 
     // 3. Stream response back to home renderer
     try {
-      const fullContent = await streamChat(messages, (chunk) => {
-        xpcRenderer.send('chat/stream/chunk', { conversationId, chunk });
+      const llmConfig = settingDao.get<ModelConfig>({ key: 'LLM' });
+      if (!llmConfig?.provider || !llmConfig?.model || !llmConfig?.apiKey) {
+        console.error('[messageServer] LLM config not set');
+        xpcRenderer.send('chat/stream/done', { sessionId, content: '', error: 'LLM config not set' });
+        return null;
+      }
+
+      const proxy = getProxyConfig();
+      const fullContent = await langGraphHelper.streamChat(messages, {
+        onChunk: (chunk) => xpcRenderer.send('chat/stream/chunk', { sessionId, chunk }),
+        config: { ...llmConfig, ...(proxy ? { proxy } : {}) },
       });
 
-      // 4. Save assistant message to SQLite + Qdrant
-      const assistantMsgId = messageDao.insert({ conversationId, role: 'assistant', content: fullContent });
-      saveMessageToQdrant({ id: assistantMsgId, conversationId, role: 'assistant', content: fullContent, platform: 'bitterless' }).catch(() => {});
+      // 4. Save assistant message to SQLite
+      messageDao.insert({ sessionId, role: 'assistant', content: fullContent });
 
       // 5. Notify home renderer stream is done
-      xpcRenderer.send('chat/stream/done', { conversationId, content: fullContent });
+      xpcRenderer.send('chat/stream/done', { sessionId, content: fullContent });
     } catch (err: any) {
       console.error('[messageServer] streamChat error:', err.message);
-      xpcRenderer.send('chat/stream/done', { conversationId, content: '', error: err.message });
+      xpcRenderer.send('chat/stream/done', { sessionId, content: '', error: err.message });
     }
 
     return 'ok';

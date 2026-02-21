@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, onMounted } from 'vue';
-import { xpcRenderer } from 'electron-buff/xpc/renderer';
-import { pathHelper } from 'electron-buff/pathHelper/renderer';
+import { xpcRenderer } from 'electron-xpc/renderer';
+import { pathHelper } from '../../../../../../shared/pathHelper/renderer';
 
 class DebugStore {
   env = import.meta.env.VITE_ENV || '';

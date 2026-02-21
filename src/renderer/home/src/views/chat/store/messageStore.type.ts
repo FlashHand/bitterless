@@ -1,6 +1,6 @@
 export interface ChatMessage {
   id: string;
-  conversationId: string;
+  sessionId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: string;

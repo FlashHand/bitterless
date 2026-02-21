@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
-import { packageMainHelper } from 'electron-buff/packageHelper/main';
+import { packageMainHelper } from '../shared/packageHelper/main';
+import { pathMainHelper } from '../shared/pathHelper/main';
 import { mainWindowHelper } from './windows/mainWindow.helper';
 import { sqliteWindowHelper } from './windows/sqliteWindow.helper';
 import { rigchatWindowHelper } from './windows/rigchatWindow.helper';
@@ -12,6 +13,7 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron');
 
   packageMainHelper.init();
+  pathMainHelper.init();
   initDirectory();
   initXpc();
 
@@ -19,10 +21,10 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  llamaWindowHelper.create();
+  // llamaWindowHelper.create();
   mainWindowHelper.create();
   sqliteWindowHelper.create();
-  rigchatWindowHelper.create();
+  // rigchatWindowHelper.create();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

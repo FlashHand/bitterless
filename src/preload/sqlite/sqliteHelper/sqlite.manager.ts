@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { join } from 'path';
 import Database from 'better-sqlite3-multiple-ciphers';
-import { packageHelper } from 'electron-buff/packageHelper/preload';
+import { packageHelper } from '../../../shared/packageHelper/preload';
 import type { BaseTable } from '../dao/base.table';
 
 interface MigrationEntry {

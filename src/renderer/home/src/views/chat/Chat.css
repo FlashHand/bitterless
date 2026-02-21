@@ -1,5 +1,0 @@
-@reference "tailwindcss";
-
-.chat {
-  @apply flex items-center justify-center h-full;
-}

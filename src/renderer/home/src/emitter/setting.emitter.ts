@@ -1,4 +1,4 @@
-import { createXpcRendererEmitter } from 'electron-buff/xpc/renderer';
+import { createXpcRendererEmitter } from 'electron-xpc/renderer';
 
 interface SettingDaoType {
   get: (params: { key: string }) => Promise<any>;

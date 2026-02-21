@@ -1,14 +1,14 @@
-import { createXpcRendererEmitter } from 'electron-buff/xpc/renderer';
+import { createXpcRendererEmitter } from 'electron-xpc/renderer';
 
 interface MessageInsertParams {
-  conversationId: string;
+  sessionId: string;
   role: string;
   content: string;
   platform?: string;
 }
 
 interface MessageHistoryParams {
-  conversationId: string;
+  sessionId: string;
 }
 
 interface MessageHistoryRow {
@@ -18,7 +18,7 @@ interface MessageHistoryRow {
 
 interface MessageDaoType {
   insert: (params: MessageInsertParams) => Promise<number>;
-  getHistoryByConversationId: (params: MessageHistoryParams) => Promise<MessageHistoryRow[]>;
+  getHistoryBySessionId: (params: MessageHistoryParams) => Promise<MessageHistoryRow[]>;
 }
 
 export const messageEmitter = createXpcRendererEmitter<MessageDaoType>('MessageDao');

@@ -6,10 +6,13 @@
     "src/renderer/**/src/**/*.vue",
     "src/renderer/common/**/*",
     "src/preload/*.d.ts",
-    "src/preload/**/rigchat.preload.type.ts"
+    "src/preload/**/rigchat.preload.type.ts",
+    "src/shared/**/*"
   ],
   "compilerOptions": {
     "composite": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "baseUrl": ".",
     "paths": {
       "@renderer/*": [
@@ -17,6 +20,9 @@
       ],
       "@/*": [
         "src/renderer/home/src/*"
+      ],
+      "@preload/*": [
+        "src/preload/*"
       ]
     }
   }

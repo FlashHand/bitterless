@@ -1,4 +1,5 @@
 import { createI18n } from 'vue-i18n';
+import { reactive } from 'vue';
 import { en } from './en';
 import { zh } from './zh';
 
@@ -15,7 +16,9 @@ const detectLocale = (): 'en' | 'zh' => {
 
 const localeMap: Record<string, MessageSchema> = { en, zh };
 
-export const i18nMessages: MessageSchema = localeMap[detectLocale()] ?? en;
+export const i18nMessages: MessageSchema = reactive(localeMap[detectLocale()] ?? en) as MessageSchema;
+
+export const i18nHelper: MessageSchema = i18nMessages;
 
 export const i18n = createI18n<[MessageSchema], 'en' | 'zh'>({
   legacy: false,

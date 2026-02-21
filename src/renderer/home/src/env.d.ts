@@ -7,5 +7,5 @@ declare module '*.vue' {
 }
 
 interface Window {
-  pathHelper: import('electron-buff/pathHelper/renderer').PathHelperApi;
+  pathHelper: import('../../../../shared/pathHelper/renderer').PathHelperApi;
 }

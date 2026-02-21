@@ -1,4 +1,6 @@
-export interface DatabaseSetting {
-  sqlitePassword: string;
-  qdrantApiKey: string;
+export interface LLMSetting {
+  provider: string;
+  model: string;
+  apiKey: string;
+  endpoint?: string;
 }

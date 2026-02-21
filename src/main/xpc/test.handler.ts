@@ -1,5 +1,5 @@
 import { webContents } from 'electron';
-import { xpcMain } from 'electron-buff/xpc/main';
+import { xpcMain } from 'electron-xpc/main';
 
 export const initTestHandler = (): void => {
   xpcMain.handle('testInvalid', async (payload) => {

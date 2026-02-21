@@ -1,4 +1,4 @@
-import { xpcCenter } from 'electron-buff/xpc/main';
+import { xpcCenter } from 'electron-xpc/main';
 import { initTestHandler } from './test.handler';
 
 export const initXpc = (): void => {

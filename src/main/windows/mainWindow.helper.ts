@@ -12,6 +12,11 @@ class MainWindowHelper extends WindowHelper {
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 12, y: 10 },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+    }
   };
 }
 

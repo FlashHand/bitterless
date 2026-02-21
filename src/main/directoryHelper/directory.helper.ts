@@ -2,11 +2,6 @@ import { app, ipcMain } from 'electron';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
 
-const isDev = (): boolean => process.env.VITE_ENV === 'dev';
-
-const BITTERLESS_DIR = (): string => isDev() ? 'bitterless_dev' : 'bitterless';
-const BITTERLESS_DB_DIR = (): string => join(BITTERLESS_DIR(), 'db');
-
 const RIGCHAT_DIR = 'rigchat';
 const RIGCHAT_IMAGES_DIR = join(RIGCHAT_DIR, 'images');
 
@@ -17,8 +12,8 @@ let rigchatImagesPath = '';
 
 const initBitterless = (): void => {
   const userDataPath = app.getPath('userData');
-  bitterlessPath = join(userDataPath, BITTERLESS_DIR());
-  bitterlessDbPath = join(userDataPath, BITTERLESS_DB_DIR());
+  bitterlessPath = userDataPath;
+  bitterlessDbPath = join(userDataPath, 'db');
   if (!existsSync(bitterlessDbPath)) {
     mkdirSync(bitterlessDbPath, { recursive: true });
     console.log('[directory] created bitterless/db:', bitterlessDbPath);

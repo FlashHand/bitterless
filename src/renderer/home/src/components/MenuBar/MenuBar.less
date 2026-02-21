@@ -3,6 +3,7 @@
   background-color: oklch(58.5% 0.233 277.117);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding-left: 80px;
   padding-right: 12px;
   -webkit-app-region: drag;
@@ -14,4 +15,27 @@
   font-size: 13px;
   font-weight: 500;
   color: oklch(0.985 0 0);
+}
+
+.menu-bar__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background-color: oklch(1 0 0 / 0.3);
+  border-radius: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.menu-bar__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: oklch(79.2% 0.209 151.711);
+}
+
+.menu-bar__status-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: oklch(25.7% 0.09 281.288);
 }

@@ -3,7 +3,7 @@ import { sqliteHelper } from '../sqliteHelper/sqlite.helper';
 
 interface MessageRow {
   id: number;
-  conversation_id: string;
+  session_id: string;
   role: string;
   content: string;
   platform: string;
@@ -11,28 +11,27 @@ interface MessageRow {
 }
 
 export interface MessageInsertParams {
-  conversationId: string;
+  sessionId: string;
   role: string;
   content: string;
   platform?: string;
 }
 
 class MessageDao extends BaseDao {
-  /** Insert a message and return the new row ID */
+  /** Insert a new message, returns the new row id */
   insert(params: MessageInsertParams): number {
-    const { conversationId, role, content, platform = 'bitterless' } = params;
     const result = sqliteHelper.safeRun(
-      'INSERT INTO message (conversation_id, role, content, platform) VALUES (?, ?, ?, ?)',
-      [conversationId, role, content, platform],
+      'INSERT INTO message (session_id, role, content, platform) VALUES (?, ?, ?, ?)',
+      [params.sessionId, params.role, params.content, params.platform ?? 'bitterless'],
     );
-    return Number(result.lastInsertRowid);
+    return result?.lastInsertRowid as number ?? 0;
   }
 
   /** Get message history for a conversation, ordered by id ASC */
-  getHistoryByConversationId(params: { conversationId: string }): Pick<MessageRow, 'role' | 'content'>[] {
+  getHistoryBySessionId(params: { sessionId: string }): Pick<MessageRow, 'role' | 'content'>[] {
     return sqliteHelper.safeAll<Pick<MessageRow, 'role' | 'content'>>(
-      'SELECT role, content FROM message WHERE conversation_id = ? ORDER BY id ASC',
-      [params.conversationId],
+      'SELECT role, content FROM message WHERE session_id = ? ORDER BY id ASC',
+      [params.sessionId],
     );
   }
 }

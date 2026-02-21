@@ -1,5 +1,5 @@
-import 'electron-buff/xpc/preload';
-import { xpcRenderer } from 'electron-buff/xpc/preload';
+import 'electron-xpc/preload';
+import { xpcRenderer } from 'electron-xpc/preload';
 import { initEmbedding, getEmbedding, getEmbeddings, getEmbeddingDimension } from './llamaHelper/embedding.helper';
 import { initRerank, rerank } from './llamaHelper/rerank.helper';
 

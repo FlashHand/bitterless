@@ -1,19 +1,37 @@
+import 'reflect-metadata';
 import { reactive } from 'vue';
 import dayjs from 'dayjs';
-import type { ChatMessage } from './message.store.type';
-import { xpcRenderer } from 'electron-buff/xpc/renderer';
+import { injectable, inject } from 'inversify';
+import type { ChatMessage } from './messageStore.type';
+import { xpcRenderer } from 'electron-xpc/renderer';
+import { iocHelper } from '../../../../../../shared/iocHelper/ioc.helper';
+import { MessageListService } from './messageList.service';
+import { createSession, sessionStore } from './session.store';
 
 let idCounter = 0;
 const generateId = (): string => `msg_${Date.now()}_${++idCounter}`;
 
-class MessageStore {
-  messageList: ChatMessage[] = [];
+@injectable()
+export class MessageController {
+  showedMessageList: ChatMessage[] = [];
   streamingContent = '';
   isStreaming = false;
-  currentConversationId = `conv_${Date.now()}`;
+  currentTitle = '';
+
+  constructor(
+    @inject(Symbol.for(MessageListService.name))
+    public readonly messageListService: MessageListService,
+  ) {
+    this.messageListService.setState(this);
+  }
 }
 
-export const messageStore = reactive<MessageStore>(new MessageStore());
+const state = iocHelper.bind({
+  controller: MessageController,
+  services: [MessageListService],
+});
+
+export const messageStore = reactive<MessageController>(state);
 
 export const initMessageListeners = (): void => {
   xpcRenderer.handle('chat/stream/chunk', async (payload) => {
@@ -27,9 +45,9 @@ export const initMessageListeners = (): void => {
   xpcRenderer.handle('chat/stream/done', async (payload) => {
     const { content } = payload.params || {};
     if (content) {
-      messageStore.messageList.push({
+      messageStore.showedMessageList.push({
         id: generateId(),
-        conversationId: messageStore.currentConversationId,
+        sessionId: sessionStore.currentSessionId,
         role: 'assistant',
         content,
         createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -46,9 +64,14 @@ export const initMessageListeners = (): void => {
 export const sendMessage = async (content: string): Promise<void> => {
   if (!content.trim()) return;
 
-  messageStore.messageList.push({
+  // Auto-create session if showedMessageList is empty (first message)
+  if (messageStore.showedMessageList.length === 0) {
+    await createSession();
+  }
+
+  messageStore.showedMessageList.push({
     id: generateId(),
-    conversationId: messageStore.currentConversationId,
+    sessionId: sessionStore.currentSessionId,
     role: 'user',
     content: content.trim(),
     createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -58,7 +81,7 @@ export const sendMessage = async (content: string): Promise<void> => {
   messageStore.streamingContent = '';
 
   await xpcRenderer.send('chat/send', {
-    conversationId: messageStore.currentConversationId,
+    sessionId: sessionStore.currentSessionId,
     content: content.trim(),
   });
 };

@@ -22,6 +22,11 @@ class SettingDao extends BaseDao {
     }
   }
 
+  /** Upsert LLM config. Shorthand for upsert with key='LLM'. */
+  upsertLLMConfig(params: { value: any }): string {
+    return this.upsert({ key: 'LLM', value: params.value });
+  }
+
   /** Upsert a setting. Value will be JSON-serialized. */
   upsert(params: { key: string; value: any }): string {
     const jsonValue = sanitizeValue(JSON.stringify(params.value));

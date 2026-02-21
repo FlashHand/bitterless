@@ -40,9 +40,17 @@ export default defineConfig({
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer'),
+        '@preload': resolve('src/preload'),
         '@': resolve('src/renderer/home/src')
       }
     },
-    plugins: [vue()]
+    plugins: [vue()],
+    esbuild: {
+      tsconfigRaw: {
+        compilerOptions: {
+          experimentalDecorators: true
+        }
+      }
+    }
   }
 })
