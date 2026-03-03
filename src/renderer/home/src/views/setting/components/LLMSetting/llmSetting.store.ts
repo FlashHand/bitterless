@@ -6,10 +6,10 @@ const SETTING_KEY_LLM = 'LLM';
 
 class LLMSettingStore {
   llmSetting: LLMSetting = {
-    provider: '',
-    model: '',
+    provider: 'openrouter',
+    model: 'google/gemini-3-flash-preview',
     apiKey: '',
-    endpoint: '',
+    endpoint: 'https://openrouter.ai/api/v1',
   };
   loading = false;
   saveStatus: 'idle' | 'success' | 'failed' = 'idle';
@@ -23,10 +23,10 @@ export const loadLLMSetting = async (): Promise<void> => {
     const result = await settingEmitter.get({ key: SETTING_KEY_LLM });
     if (result) {
       const data = result as any;
-      llmSettingStore.llmSetting.provider = data.provider || '';
-      llmSettingStore.llmSetting.model = data.model || '';
+      llmSettingStore.llmSetting.provider = data.provider || 'openrouter';
+      llmSettingStore.llmSetting.model = data.model || 'google/gemini-flash-1.5-8b';
       llmSettingStore.llmSetting.apiKey = data.apiKey || '';
-      llmSettingStore.llmSetting.endpoint = data.baseURL || data.endpoint || '';
+      llmSettingStore.llmSetting.endpoint = data.baseURL || data.endpoint || 'https://openrouter.ai/api/v1';
     }
   } catch (err: any) {
     console.error('[llmSettingStore] loadLLMSetting failed:', err.message);

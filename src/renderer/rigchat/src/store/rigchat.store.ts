@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import dayjs from 'dayjs'
+import moment from 'moment'
 import {
   RIGCHAT_EVENT,
   type RigchatQrcodeDetail,
@@ -52,7 +52,7 @@ window.addEventListener(RIGCHAT_EVENT.MESSAGE, ((e: CustomEvent<RigchatMessageDe
     content,
     msgType,
     msgId,
-    time: dayjs().format('HH:mm:ss'),
+    time: moment().format('HH:mm:ss'),
     imagePath,
   })
   if (rigchatStore.messages.length > 200) {

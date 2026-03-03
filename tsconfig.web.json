@@ -5,7 +5,7 @@
     "src/renderer/**/src/**/*",
     "src/renderer/**/src/**/*.vue",
     "src/renderer/common/**/*",
-    "src/preload/*.d.ts",
+    "src/preload/**/*.ts",
     "src/preload/**/rigchat.preload.type.ts",
     "src/shared/**/*"
   ],
@@ -23,6 +23,9 @@
       ],
       "@preload/*": [
         "src/preload/*"
+      ],
+      "@shared/*": [
+        "src/shared/*"
       ]
     }
   }

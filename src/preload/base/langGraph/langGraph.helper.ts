@@ -44,7 +44,7 @@ class LangGraphHelper {
 
   async streamChat(
     messages: ChatMessageInput[],
-    options: { onChunk: (token: string) => void; config: ModelConfig },
+    options: { onChunk: (token: string) => void; config: ModelConfig; signal?: AbortSignal },
   ): Promise<string> {
     const effectiveConfig = this.currentConfig || options.config;
     console.log('streamChat', effectiveConfig);
@@ -67,7 +67,6 @@ class LangGraphHelper {
 
     for await (const [messageChunk] of stream) {
       const content = typeof messageChunk.content === 'string' ? messageChunk.content : '';
-      console.log('chunks', messageChunk.content);
       if (content) {
         fullContent += content;
         options.onChunk(content);

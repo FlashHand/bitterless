@@ -20,4 +20,5 @@ export type PathHelperApi = {
   getAppPath: () => Promise<string>;
   getPath: (name: PathName) => Promise<string>;
   getUserDataPath: () => Promise<string>;
+  openPath: (path: string) => Promise<string>;
 };

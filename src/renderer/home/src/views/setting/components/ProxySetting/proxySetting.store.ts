@@ -9,13 +9,13 @@ class ProxySettingStore {
   saveStatus: 'idle' | 'success' | 'failed' = 'idle';
   formSetting: ProxySetting = {
     switch: false,
-    ip: '',
-    port: '',
+    ip: '127.0.0.1',
+    port: '7890',
   };
   activeSetting: ProxySetting = {
     switch: false,
-    ip: '',
-    port: '',
+    ip: '127.0.0.1',
+    port: '7890',
   };
 }
 
@@ -29,8 +29,8 @@ export const loadProxySetting = async (): Promise<void> => {
       const data = result as ProxySetting;
       const setting = {
         switch: data.switch ?? false,
-        ip: data.ip || '',
-        port: data.port || '',
+        ip: data.ip || '127.0.0.1',
+        port: data.port || '7890',
       };
       proxySettingStore.formSetting = { ...setting };
       proxySettingStore.activeSetting = { ...setting };

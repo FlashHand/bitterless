@@ -1,22 +1,23 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import { writeFile, readFile, unlink } from 'fs/promises'
-import { existsSync } from 'fs'
-import { join } from 'path'
-import { Rigchat } from './rigchat'
-import {
-  RIGCHAT_EVENT,
-  type RigchatQrcodeDetail,
-  type RigchatLoginDetail,
-  type RigchatMessageDetail,
-  type RigchatErrorDetail,
-  type RigchatApi,
-} from './rigchat.preload.type'
+import { ipcRenderer } from 'electron';
+import { writeFile } from 'fs/promises';
+import { join } from 'path';
+import { XpcPreloadHandler, createXpcPreloadEmitter } from 'electron-xpc/preload';
+import { settingDao } from '../sqlite/dao/setting.dao';
+import { Rigchat } from './rigchat';
+import type {
+  RigchatQrcodeDetail,
+  RigchatLoginDetail,
+  RigchatMessageDetail,
+  RigchatErrorDetail,
+} from './rigchat.preload.type';
 
-const SESSION_FILE = 'session.json'
+const RIGCHAT_SETTING_KEY = 'RIGCHAT';
 
-const emit = <T>(eventName: string, detail: T): void => {
-  window.dispatchEvent(new CustomEvent(eventName, { detail }))
+interface RigchatSettingValue {
+  session: any;
 }
+
+const rigchatEmitter = createXpcPreloadEmitter<RigchatHandler>('RigchatHandler');
 
 const MIME_EXT: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -42,39 +43,30 @@ const getImagesPath = async (): Promise<string> => {
   return imagesPath
 }
 
-const getSessionFilePath = async (): Promise<string> => {
-  const dir = await getRigchatPath()
-  return join(dir, SESSION_FILE)
-}
-
 const saveSession = async (): Promise<void> => {
-  const filePath = await getSessionFilePath()
-  const data = JSON.stringify(bot.botData, null, 2)
-  await writeFile(filePath, data, 'utf-8')
-  console.log('[rigchat] session saved')
-}
+  const value: RigchatSettingValue = {
+    session: bot.botData,
+  };
+  await settingDao.upsert({ key: RIGCHAT_SETTING_KEY, value });
+  console.log('[rigchat] session saved to database');
+};
 
 const loadSession = async (): Promise<any | null> => {
-  const filePath = await getSessionFilePath()
-  if (!existsSync(filePath)) return null
   try {
-    const raw = await readFile(filePath, 'utf-8')
-    const data = JSON.parse(raw)
-    console.log('[rigchat] session loaded from disk')
-    return data
+    const data = await settingDao.get<RigchatSettingValue>({ key: RIGCHAT_SETTING_KEY });
+    if (!data || !data.session) return null;
+    console.log('[rigchat] session loaded from database');
+    return data.session;
   } catch {
-    console.warn('[rigchat] failed to load session file, starting fresh')
-    return null
+    console.warn('[rigchat] failed to load session from database, starting fresh');
+    return null;
   }
-}
+};
 
 const deleteSession = async (): Promise<void> => {
-  const filePath = await getSessionFilePath()
-  if (existsSync(filePath)) {
-    await unlink(filePath)
-    console.log('[rigchat] session deleted')
-  }
-}
+  await settingDao.upsert({ key: RIGCHAT_SETTING_KEY, value: { session: null } });
+  console.log('[rigchat] session deleted from database');
+};
 
 const saveImage = async (msgId: string, data: Buffer, contentType: string): Promise<string> => {
   const dir = await getImagesPath()
@@ -88,76 +80,126 @@ const saveImage = async (msgId: string, data: Buffer, contentType: string): Prom
 const bot = new Rigchat()
 
 bot.on('uuid', (uuid) => {
-  const qrcodeUrl = `https://login.weixin.qq.com/qrcode/${uuid}`
-  console.log('[rigchat] scan qrcode:', qrcodeUrl)
-  emit<RigchatQrcodeDetail>(RIGCHAT_EVENT.QRCODE, { qrcodeUrl })
-})
+  const qrcodeUrl = `https://login.weixin.qq.com/qrcode/${uuid}`;
+  console.log('[rigchat] scan qrcode:', qrcodeUrl);
+  rigchatEmitter.onQrcode({ qrcodeUrl }).catch((err) => console.error('[rigchat] emit qrcode failed:', err));
+});
 
 bot.on('login', () => {
-  const nickName = bot.user.NickName || ''
-  console.log('[rigchat] logged in:', nickName)
-  emit<RigchatLoginDetail>(RIGCHAT_EVENT.LOGIN, { nickName })
-  saveSession().catch((err) => console.error('[rigchat] save session failed:', err.message))
-})
+  const nickName = bot.user.NickName || '';
+  console.log('[rigchat] logged in:', nickName);
+  rigchatEmitter.onLogin({ nickName }).catch((err) => console.error('[rigchat] emit login failed:', err));
+  saveSession().catch((err) => console.error('[rigchat] save session failed:', err.message));
+});
 
 bot.on('logout', () => {
-  console.log('[rigchat] logged out')
-  emit(RIGCHAT_EVENT.LOGOUT, {})
-  deleteSession().catch((err) => console.error('[rigchat] delete session failed:', err.message))
-})
+  console.log('[rigchat] logged out');
+  rigchatEmitter.onLogout({}).catch((err) => console.error('[rigchat] emit logout failed:', err));
+  deleteSession().catch((err) => console.error('[rigchat] delete session failed:', err.message));
+});
 
 bot.on('message', (msg) => {
-  const from = bot.contacts[msg.FromUserName]
-  const talker = from?.NickName || from?.RemarkName || msg.FromUserName
-  const isImage = msg.MsgType === bot.CONF.MSGTYPE_IMAGE || msg.MsgType === bot.CONF.MSGTYPE_EMOTICON
+  const isImage = msg.MsgType === bot.CONF.MSGTYPE_IMAGE || msg.MsgType === bot.CONF.MSGTYPE_EMOTICON;
 
-  console.log(`[rigchat] message from ${talker}: ${isImage ? '[image]' : msg.Content}`)
+  console.log(`[rigchat] message from ${msg.senderDisplayName} (${msg.isGroup ? 'group' : 'private'} ${msg.chatId}): ${isImage ? '[image]' : msg.Content}`);
 
-  emit<RigchatMessageDetail>(RIGCHAT_EVENT.MESSAGE, {
-    talker,
+  const baseDetail = {
+    talker: msg.senderDisplayName,
     content: msg.Content,
     msgType: msg.MsgType,
     msgId: msg.MsgId,
-  })
+    chatId: msg.chatId,
+    isGroup: msg.isGroup,
+    senderUserName: msg.senderUserName,
+    senderDisplayName: msg.senderDisplayName,
+    mentionList: msg.mentionList,
+    isMentionSelf: msg.isMentionSelf,
+    isSendBySelf: msg.isSendBySelf,
+  };
+
+  rigchatEmitter.onMessage(baseDetail).catch((err) => console.error('[rigchat] emit message failed:', err));
 
   if (isImage) {
     bot.getMsgImg(msg.MsgId)
       .then((img) => saveImage(msg.MsgId, img.data, img.type))
       .then((filePath) => {
-        emit<RigchatMessageDetail>(RIGCHAT_EVENT.MESSAGE, {
-          talker,
+        rigchatEmitter.onMessage({
+          ...baseDetail,
           content: filePath,
-          msgType: msg.MsgType,
-          msgId: msg.MsgId,
           imagePath: filePath,
-        })
+        }).catch((err) => console.error('[rigchat] emit message with image failed:', err));
       })
-      .catch((err) => console.error('[rigchat] download image failed:', err.message))
+      .catch((err) => console.error('[rigchat] download image failed:', err.message));
   }
-})
+});
 
 bot.on('error', (err) => {
-  console.error('[rigchat] error:', err.message)
-  emit<RigchatErrorDetail>(RIGCHAT_EVENT.ERROR, { message: err.message })
-})
+  console.error('[rigchat] error:', err.message);
+  rigchatEmitter.onError({ message: err.message }).catch((e) => console.error('[rigchat] emit error failed:', e));
+});
 
-const bootstrap = async (): Promise<void> => {
-  const sessionData = await loadSession()
+let isInitialized = false;
+
+const startLogin = async (): Promise<void> => {
+  console.log('[rigchat] starting login flow');
+  await bot.start();
+};
+
+const restoreSession = async (): Promise<void> => {
+  const sessionData = await loadSession();
   if (sessionData && sessionData.PROP?.uin) {
-    bot.botData = sessionData
-    await bot.restart()
-  } else {
-    await bot.start()
+    console.log('[rigchat] restoring session');
+    bot.botData = sessionData;
+    await bot.restart();
+  }
+};
+
+class RigchatHandler extends XpcPreloadHandler {
+  async init(): Promise<void> {
+    console.log('[rigchat] init called by renderer');
+    if (!isInitialized) {
+      isInitialized = true;
+      console.log('[rigchat] initialized, waiting for login request');
+    }
+  }
+
+  async checkLogin(): Promise<{ loggedIn: boolean; nickName: string }> {
+    const sessionData = await loadSession();
+    const loggedIn = !!(sessionData && sessionData.PROP?.uin);
+    const nickName = sessionData?.User?.NickName || '';
+    console.log('[rigchat] checkLogin:', { loggedIn, nickName });
+    return { loggedIn, nickName };
+  }
+
+  async startLogin(): Promise<void> {
+    console.log('[rigchat] startLogin called');
+    const sessionData = await loadSession();
+    if (sessionData && sessionData.PROP?.uin) {
+      await restoreSession();
+    } else {
+      await startLogin();
+    }
+  }
+
+  async onQrcode(params: RigchatQrcodeDetail): Promise<void> {
+    return;
+  }
+
+  async onLogin(params: RigchatLoginDetail): Promise<void> {
+    return;
+  }
+
+  async onLogout(params: {}): Promise<void> {
+    return;
+  }
+
+  async onMessage(params: RigchatMessageDetail): Promise<void> {
+    return;
+  }
+
+  async onError(params: RigchatErrorDetail): Promise<void> {
+    return;
   }
 }
 
-const rigchatApi: RigchatApi = {
-  init: () => {
-    console.log('[rigchat] init called by renderer')
-    bootstrap()
-      .then(() => console.log('[rigchat] bot bootstrap complete'))
-      .catch((e) => console.error('[rigchat] bot bootstrap failed:', e))
-  },
-}
-
-contextBridge.exposeInMainWorld('rigchatApi', rigchatApi)
+const rigchatHandler = new RigchatHandler();

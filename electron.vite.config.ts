@@ -2,7 +2,8 @@ import { resolve } from 'path'
 import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { config as dotenvConfig } from 'dotenv'
-
+import monacoEditorPlugin from 'vite-plugin-monaco-editor-esm'
+import theme from './theme'
 dotenvConfig({ path: resolve('.env.rig') })
 
 export default defineConfig({
@@ -37,14 +38,29 @@ export default defineConfig({
         }
       }
     },
+    worker: {
+      format: 'es'
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer'),
         '@preload': resolve('src/preload'),
+        '@shared': resolve('src/shared'),
         '@': resolve('src/renderer/home/src')
       }
     },
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      monacoEditorPlugin()
+    ],
+    css: {
+      preprocessorOptions: {
+        less: {
+          modifyVars: theme,
+          javascriptEnabled: true,
+        },
+      },
+    },
     esbuild: {
       tsconfigRaw: {
         compilerOptions: {

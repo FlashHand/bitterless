@@ -4,6 +4,21 @@
   "compilerOptions": {
     "composite": true,
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
-  }
+    "emitDecoratorMetadata": true,
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": [
+        "src/renderer/*"
+      ],
+      "@/*": [
+        "src/renderer/home/src/*"
+      ],
+      "@preload/*": [
+        "src/preload/*"
+      ],
+      "@shared/*": [
+        "src/shared/*"
+      ]
+    }
+  },
 }

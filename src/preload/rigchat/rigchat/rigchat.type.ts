@@ -113,6 +113,13 @@ export interface RigchatMessage {
   SubMsgType: number
   isSendBySelf: boolean
   OriginalContent: string
+  // parsed fields
+  isGroup: boolean
+  chatId: string
+  senderUserName: string
+  senderDisplayName: string
+  mentionList: string[]
+  isMentionSelf: boolean
   [key: string]: unknown
 }
 

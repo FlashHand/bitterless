@@ -1,27 +1,34 @@
-import { reactive } from 'vue';
-import { xpcRenderer } from 'electron-xpc/renderer';
+import { reactive, computed } from 'vue';
+import { idHelper } from '@shared/idHelper/shared/id.helper';
+import { sessionEmitter } from '@/emitter/session.emitter';
 
 export interface SessionItem {
   sessionId: string;
   title: string;
   pinned: boolean;
-  pinnedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  pinnedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 class SessionStore {
   sessionList: SessionItem[] = [];
   currentSessionId = '';
+  pendingSessionId = '';
   loading = false;
+  showHistory = false;
 }
 
 export const sessionStore = reactive<SessionStore>(new SessionStore());
 
+export const currentSession = computed(() => 
+  sessionStore.sessionList.find((s) => s.sessionId === sessionStore.currentSessionId)
+);
+
 /** Load all sessions from DB */
 export const loadSessions = async (): Promise<void> => {
   sessionStore.loading = true;
-  const result = await xpcRenderer.send('SessionDao/getAll', {});
+  const result = await sessionEmitter.getAll();
   if (Array.isArray(result)) {
     sessionStore.sessionList = result.map((row: any) => ({
       sessionId: row.session_id,
@@ -35,23 +42,32 @@ export const loadSessions = async (): Promise<void> => {
   sessionStore.loading = false;
 };
 
-/** Create a new session and select it */
-export const createSession = async (): Promise<string> => {
-  const sessionId = `session_${Date.now()}`;
-  await xpcRenderer.send('SessionDao/create', { sessionId });
+/** Start a new session in the frontend only (no DB write) */
+export const startNewSession = (): void => {
+  const sessionId = idHelper.genSessionId();
+  sessionStore.pendingSessionId = sessionId;
+  sessionStore.currentSessionId = '';
+};
+
+/** Persist the pending session to DB with a title, then select it */
+export const createSession = async (title: string): Promise<string> => {
+  const sessionId = sessionStore.pendingSessionId || idHelper.genSessionId();
+  await sessionEmitter.create({ sessionId, title });
   await loadSessions();
   sessionStore.currentSessionId = sessionId;
+  sessionStore.pendingSessionId = '';
   return sessionId;
 };
 
 /** Select a session */
 export const selectSession = (sessionId: string): void => {
   sessionStore.currentSessionId = sessionId;
+  sessionStore.showHistory = false;
 };
 
 /** Delete a session */
 export const deleteSession = async (sessionId: string): Promise<void> => {
-  await xpcRenderer.send('SessionDao/delete', { sessionId });
+  await sessionEmitter.delete({ sessionId });
   if (sessionStore.currentSessionId === sessionId) {
     sessionStore.currentSessionId = '';
   }
@@ -60,23 +76,23 @@ export const deleteSession = async (sessionId: string): Promise<void> => {
 
 /** Rename a session */
 export const renameSession = async (sessionId: string, title: string): Promise<void> => {
-  await xpcRenderer.send('SessionDao/updateTitle', { sessionId, title });
+  await sessionEmitter.updateTitle({ sessionId, title });
   await loadSessions();
 };
 
 /** Pin a session */
 export const pinSession = async (sessionId: string): Promise<void> => {
-  await xpcRenderer.send('SessionDao/pin', { sessionId });
+  await sessionEmitter.pin({ sessionId });
   await loadSessions();
 };
 
 /** Unpin a session */
 export const unpinSession = async (sessionId: string): Promise<void> => {
-  await xpcRenderer.send('SessionDao/unpin', { sessionId });
+  await sessionEmitter.unpin({ sessionId });
   await loadSessions();
 };
 
 /** Touch session updated_at (e.g. after sending a message) */
 export const touchSession = async (sessionId: string): Promise<void> => {
-  await xpcRenderer.send('SessionDao/touch', { sessionId });
+  await sessionEmitter.touch({ sessionId });
 };

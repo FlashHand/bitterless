@@ -10,7 +10,7 @@ class SqliteHelper {
    * Safely execute a parameterized SELECT query, preventing SQL injection.
    * Uses prepared statements with bound parameters.
    */
-  safeGet<T = any>(sql: string, params: any[] = []): T | undefined {
+  async safeGet<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
     const stmt = this.db.prepare(sql);
     return stmt.get(...params) as T | undefined;
   }
@@ -18,7 +18,7 @@ class SqliteHelper {
   /**
    * Safely execute a parameterized SELECT ALL query, preventing SQL injection.
    */
-  safeAll<T = any>(sql: string, params: any[] = []): T[] {
+  async safeAll<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     const stmt = this.db.prepare(sql);
     return stmt.all(...params) as T[];
   }
@@ -27,7 +27,7 @@ class SqliteHelper {
    * Safely execute a parameterized INSERT/UPDATE/DELETE, preventing SQL injection.
    * Returns the RunResult.
    */
-  safeRun(sql: string, params: any[] = []): Database.RunResult {
+  async safeRun(sql: string, params: any[] = []): Promise<Database.RunResult> {
     const stmt = this.db.prepare(sql);
     return stmt.run(...params);
   }

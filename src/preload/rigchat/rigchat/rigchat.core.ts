@@ -444,18 +444,84 @@ export class Rigchat extends EventEmitter {
     }
   }
 
+  private _isGroupId(id: string): boolean {
+    return /^@@|@chatroom$/.test(id)
+  }
+
   private _handleMessages(msgList: RigchatMessage[]): void {
-    msgList.forEach((msg) => {
+    for (const msg of msgList) {
       msg.isSendBySelf =
         msg.FromUserName === this.user.UserName || msg.FromUserName === ''
+
+      // group: FromUserName starts with @@ or ends with @chatroom
+      msg.isGroup = this._isGroupId(msg.FromUserName) || this._isGroupId(msg.ToUserName)
+      msg.chatId = this._isGroupId(msg.FromUserName)
+        ? msg.FromUserName
+        : this._isGroupId(msg.ToUserName)
+          ? msg.ToUserName
+          : msg.isSendBySelf ? msg.ToUserName : msg.FromUserName
+
+      // OriginalContent preserves raw content before any decoding
       msg.OriginalContent = msg.Content
+
+      if (msg.isGroup) {
+        // use OriginalContent to extract talkerId: format is "wxid_xxx:<br/>content"
+        const separatorIdx = (msg.OriginalContent || '').indexOf(':<br/>')
+        if (separatorIdx !== -1) {
+          msg.senderUserName = msg.OriginalContent.substring(0, separatorIdx)
+        } else if (msg.isSendBySelf) {
+          // self-sent group msg: try regex on OriginalContent
+          const selfMatch = (msg.OriginalContent || '').match(/^(@[a-zA-Z0-9]+|[a-zA-Z0-9_-]+):<br\/>/)
+          msg.senderUserName = selfMatch ? selfMatch[1] : this.user.UserName
+        } else {
+          msg.senderUserName = msg.FromUserName
+        }
+
+        // extract actual content: split on ":\n"
+        const parts = (msg.Content || '').split(':\n')
+        if (parts.length > 1) {
+          msg.Content = parts.slice(1).join(':\n')
+        }
+
+        // resolve display name from group MemberList
+        const groupId = this._isGroupId(msg.FromUserName) ? msg.FromUserName : msg.ToUserName
+        const groupContact = this.contacts[groupId]
+        const member = groupContact?.MemberList?.find(
+          (m: any) => m.UserName === msg.senderUserName
+        )
+        msg.senderDisplayName = member
+          ? (member.DisplayName || member.RemarkName || member.NickName || msg.senderUserName)
+          : (this.contacts[msg.senderUserName]?.NickName || msg.senderUserName)
+      } else {
+        msg.senderUserName = msg.FromUserName
+        const contact = this.contacts[msg.FromUserName]
+        msg.senderDisplayName = contact
+          ? (contact.RemarkName || contact.NickName || msg.FromUserName)
+          : msg.FromUserName
+      }
+
       msg.Content = (msg.Content || '')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/<br\/>/g, '\n')
       msg.Content = convertEmoji(msg.Content)
+
+      // parse @mentions — separators: U+2005 (mobile), U+0020 (PC), \s (web)
+      const AT_SEP = /[\u2005\u0020\s]+/
+      const mentionList: string[] = (msg.Content || '')
+        .split(AT_SEP)
+        .filter((s) => s.startsWith('@'))
+        .map((s) => s.slice(1))
+        .filter((s) => s.length > 0)
+      msg.mentionList = mentionList
+
+      const selfNickName = this.user.NickName || ''
+      msg.isMentionSelf = selfNickName.length > 0
+        ? mentionList.some((name) => selfNickName.includes(name) || name.includes(selfNickName))
+        : false
+
       this.emit('message', msg)
-    })
+    }
   }
 
   // --- heartbeat ---

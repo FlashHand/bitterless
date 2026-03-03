@@ -1,9 +1,8 @@
-import { app, ipcMain } from 'electron';
+import { app } from 'electron';
 import { join } from 'path';
 import { readFile } from 'fs/promises';
+import { XpcMainHandler } from 'electron-xpc/main';
 import type { PackageInfo } from '../shared/packageHelper.type';
-
-const IPC_GET_PACKAGE_INFO = '__buff_pkg_getPackageInfo__';
 
 const ALLOWED_FIELDS: (keyof PackageInfo)[] = [
   'name',
@@ -27,10 +26,15 @@ const DEFAULTS: Record<keyof PackageInfo, any> = {
   homepage: '',
 };
 
-class PackageMainHelper {
-  private cached: PackageInfo | null = null;
+class PackageMainHelper extends XpcMainHandler {
+  private _cached: PackageInfo | null = null;
 
-  private pickFields(raw: Record<string, any>): PackageInfo {
+  init(): void {
+    // XpcMainHandler auto-registers methods on instantiation
+    // This init() is kept for compatibility with existing code
+  }
+
+  private _pickFields(raw: Record<string, any>): PackageInfo {
     const result: Record<string, any> = {};
     for (const key of ALLOWED_FIELDS) {
       result[key] = raw[key] ?? DEFAULTS[key];
@@ -43,23 +47,13 @@ class PackageMainHelper {
    * Returns only the allowed fields.
    */
   async getPackageInfo(): Promise<PackageInfo> {
-    if (this.cached) return this.cached;
+    if (this._cached) return this._cached;
 
     const appPath = app.getAppPath();
     const packagePath = join(appPath, 'package.json');
     const raw = JSON.parse(await readFile(packagePath, 'utf-8'));
-    this.cached = this.pickFields(raw);
-    return this.cached;
-  }
-
-  /**
-   * Register IPC listener so renderer/preload processes can request package info.
-   * Call this in the main process during initialization.
-   */
-  init(): void {
-    ipcMain.handle(IPC_GET_PACKAGE_INFO, async () => {
-      return await this.getPackageInfo();
-    });
+    this._cached = this._pickFields(raw);
+    return this._cached;
   }
 }
 

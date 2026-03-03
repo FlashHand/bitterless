@@ -8,9 +8,9 @@ class SessionTable extends BaseTable {
       platform TEXT NOT NULL DEFAULT 'bitterless',
       title TEXT NOT NULL DEFAULT 'New Session',
       pinned INTEGER NOT NULL DEFAULT 0,
-      pinned_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      pinned_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
       UNIQUE(session_id, platform)
     );
   `;

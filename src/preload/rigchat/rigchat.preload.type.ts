@@ -20,6 +20,13 @@ export interface RigchatMessageDetail {
   msgType: number;
   msgId: string;
   imagePath?: string;
+  chatId: string;
+  isGroup: boolean;
+  senderUserName: string;
+  senderDisplayName: string;
+  mentionList: string[];
+  isMentionSelf: boolean;
+  isSendBySelf: boolean;
 }
 
 export interface RigchatErrorDetail {

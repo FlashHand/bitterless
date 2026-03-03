@@ -1,8 +1,10 @@
 .quill-editor {
+  position: relative;
   width: 100%;
 }
 
 .quill-editor__container {
+  position: relative;
   min-height: 40px;
   max-height: 120px;
   overflow-y: auto;
@@ -23,13 +25,20 @@
 .quill-editor__container .ql-editor {
   padding: 6px 12px;
   min-height: 28px;
+  caret-color: #4f46e5;
+  outline: none;
 }
 
-.quill-editor__container .ql-editor.ql-blank::before {
-  color: oklch(0.551 0.027 264.364);
-  font-style: normal;
-  left: 12px;
+.quill-editor__placeholder {
+  position: absolute;
+  top: 10px;
+  left: 13px;
   right: 12px;
+  pointer-events: none;
+  color: oklch(0.551 0.027 264.364);
+  font-size: 14px;
+  line-height: 1.6;
+  user-select: none;
 }
 
 .quill-editor__container .ql-editor p {

@@ -1,0 +1,16 @@
+export default {
+  'arcoblue-1': '#e0e7ff',
+  'arcoblue-2': '#c7d2fe',
+  'arcoblue-3': '#a5b4fc',
+  'arcoblue-4': '#818cf8',
+  'arcoblue-5': '#6366f1',
+  'arcoblue-6': '#4f46e5',
+  'arcoblue-7': '#3730a3',
+  'color-neutral-1': '#f4f4f5',
+  'color-neutral-2': '#d4d4d8',
+  'color-neutral-3': '#71717a',
+  'color-neutral-4': '#3f3f46',
+  'color-neutral-6': '#27272a',
+  'color-neutral-8': '#18181b',
+  'color-neutral-10': '#09090b',
+};

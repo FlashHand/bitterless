@@ -1,6 +1,12 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue';
 import HomeMenu from './components/homeMenu/HomeMenu.vue';
 import MenuBar from '../../components/MenuBar/MenuBar.vue';
+import MessageSearch from '../chat/components/MessageSearch/MessageSearch.vue';
+import { initSearchShortcut, destroySearchShortcut } from '../chat/components/MessageSearch/messageSearch.store';
+
+onMounted(() => initSearchShortcut());
+onUnmounted(() => destroySearchShortcut());
 </script>
 
 <template>
@@ -14,6 +20,7 @@ import MenuBar from '../../components/MenuBar/MenuBar.vue';
         <RouterView />
       </a-layout-content>
     </a-layout>
+    <MessageSearch />
   </div>
 </template>
 

@@ -1,44 +1,32 @@
-import { app, ipcMain } from 'electron';
+import { app, shell } from 'electron';
+import { XpcMainHandler } from 'electron-xpc/main';
 import type { PathName } from '../shared/pathHelper.type';
 
-const IPC_GET_APP_PATH = '__buff_path_getAppPath__';
-const IPC_GET_PATH = '__buff_path_getPath__';
-const IPC_GET_USER_DATA_PATH = '__buff_path_getUserDataPath__';
-
-class PathMainHelper {
+export class PathMainHelper extends XpcMainHandler {
   init(): void {
-    this.setupListeners();
-  }
-
-  private setupListeners(): void {
-    ipcMain.handle(IPC_GET_APP_PATH, () => {
-      return app.getAppPath();
-    });
-
-    ipcMain.handle(IPC_GET_PATH, (_event, name: PathName) => {
-      return app.getPath(name);
-    });
-
-    ipcMain.handle(IPC_GET_USER_DATA_PATH, () => {
-      return this.getUserDataPath();
-    });
+    // XpcMainHandler auto-registers methods on instantiation
+    // This init() is kept for compatibility with existing code
   }
 
   /** Get the app installation path */
-  getAppPath(): string {
+  async getAppPath(): Promise<string> {
     return app.getAppPath();
   }
 
   /** Get a special directory or file path by name */
-  getPath(name: PathName): string {
-    return app.getPath(name);
+  async getPath(params: { name: PathName }): Promise<string> {
+    return app.getPath(params.name);
   }
 
   /** Get the user data path (e.g. Application Support on macOS, Roaming on Windows) */
-  getUserDataPath(): string {
+  async getUserDataPath(): Promise<string> {
     return app.getPath('userData');
   }
 
+  /** Open a path in the default file manager */
+  async openPath(params: { path: string }): Promise<string> {
+    return shell.openPath(params.path);
+  }
 }
 
 export const pathMainHelper = new PathMainHelper();

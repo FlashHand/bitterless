@@ -3,5 +3,5 @@ export interface ChatMessage {
   sessionId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  createdAt: string;
+  createdAt: string | number;
 }

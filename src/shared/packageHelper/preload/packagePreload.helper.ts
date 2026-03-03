@@ -1,12 +1,6 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge } from 'electron';
+import { xpcRenderer } from 'electron-xpc/preload';
 import type { PackageInfo, PackageHelperApi } from '../shared/packageHelper.type';
-
-const IPC_GET_PACKAGE_INFO = '__buff_pkg_getPackageInfo__';
-
-/** Get package.json info (filtered fields only) */
-const getPackageInfo = (): Promise<PackageInfo> => {
-  return ipcRenderer.invoke(IPC_GET_PACKAGE_INFO);
-};
 
 /**
  * Returns a contextBridge-safe object for exposeInMainWorld.
@@ -14,7 +8,7 @@ const getPackageInfo = (): Promise<PackageInfo> => {
 const createPackageHelperApi = (): PackageHelperApi => {
   return {
     getPackageInfo: (): Promise<PackageInfo> => {
-      return getPackageInfo();
+      return xpcRenderer.send('xpc:PackageMainHelper/getPackageInfo');
     },
   };
 };

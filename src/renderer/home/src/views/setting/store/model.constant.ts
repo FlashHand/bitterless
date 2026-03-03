@@ -10,6 +10,7 @@ export const MODEL_LIST: ModelDef[] = [
   { provider: 'google', name: 'gemini-3-flash-preview' },
   { provider: 'google', name: 'gemini-3-pro-preview' },
   { provider: 'openrouter', name: 'claude-sonnet-4.5' },
+  { provider: 'openrouter', name: 'google/gemini-3-flash-preview' },
 ];
 
 export const PROVIDER_LIST: string[] = [...new Set(MODEL_LIST.map((m) => m.provider))];

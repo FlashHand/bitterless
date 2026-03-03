@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, onMounted } from 'vue';
 import { xpcRenderer } from 'electron-xpc/renderer';
-import { pathHelper } from '../../../../../../shared/pathHelper/renderer';
+import { pathHelper } from '@shared/pathHelper/renderer/pathRenderer.helper';
 
 class DebugStore {
   env = import.meta.env.VITE_ENV || '';
@@ -27,6 +27,18 @@ const testSqliteHello = async () => {
   const result = await xpcRenderer.send('sqlite/hello');
   console.log('[testSqliteHello] result:', result);
 };
+
+const openFolder = async (path: string) => {
+  if (!path) return;
+  try {
+    const result = await pathHelper.openPath({ path });
+    if (result !== '') {
+      console.error('[openFolder] failed:', result);
+    }
+  } catch (err: any) {
+    console.error('[openFolder] error:', err.message);
+  }
+};
 </script>
 
 <template>
@@ -41,8 +53,12 @@ const testSqliteHello = async () => {
     <div class="debug__section">
       <div class="debug__section__title">应用目录</div>
       <a-descriptions :column="1" bordered size="small">
-        <a-descriptions-item label="App Path">{{ store.appPath }}</a-descriptions-item>
-        <a-descriptions-item label="User Data Path">{{ store.userDataPath }}</a-descriptions-item>
+        <a-descriptions-item label="App Path">
+          <span class="debug__path" @click="openFolder(store.appPath)">{{ store.appPath }}</span>
+        </a-descriptions-item>
+        <a-descriptions-item label="User Data Path">
+          <span class="debug__path" @click="openFolder(store.userDataPath)">{{ store.userDataPath }}</span>
+        </a-descriptions-item>
       </a-descriptions>
     </div>
 
