@@ -34,6 +34,8 @@
       </div>
     </div>
     <WechatConfig />
+    <DingtalkConfig />
+    <FeishuConfig />
   </div>
 </template>
 
@@ -43,7 +45,11 @@ import { createXpcRendererEmitter } from 'electron-xpc/renderer';
 import { connectors } from './store/connectors.constant';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
 import { wechatStore } from './wechat/wechat.store';
+import { dingtalkStore } from './dingtalk/dingtalk.store';
+import { feishuStore } from './feishu/feishu.store';
 import WechatConfig from './wechat/WechatConfig.vue';
+import DingtalkConfig from './dingtalk/DingtalkConfig.vue';
+import FeishuConfig from './feishu/FeishuConfig.vue';
 
 interface RigchatHandler {
   init(): Promise<void>;
@@ -56,11 +62,17 @@ const rigchatEmitter = createXpcRendererEmitter<RigchatHandler>('RigchatHandler'
 const handleEditConfig = (connectorName: string) => {
   if (connectorName === 'wechat') {
     wechatStore.openDrawer();
+  } else if (connectorName === 'dingtalk') {
+    dingtalkStore.openDrawer();
+  } else if (connectorName === 'feishu') {
+    feishuStore.openDrawer();
   }
 };
 
 onMounted(() => {
-  rigchatEmitter.init().catch((err) => console.error('[connector] rigchat init failed:', err));
+  wechatStore.init().catch((err) => console.error('[connector] wechat init failed:', err));
+  dingtalkStore.init().catch((err) => console.error('[connector] dingtalk init failed:', err));
+  feishuStore.init().catch((err) => console.error('[connector] feishu init failed:', err));
 });
 </script>
 

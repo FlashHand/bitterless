@@ -13,8 +13,8 @@
     />
 
     <MessageItem
-      v-if="messageStore.isStreaming && messageStore.streamingContent"
       role="assistant"
+      v-if="messageStore.isStreaming && messageStore.streamingContent"
       :content="messageStore.streamingContent"
       :is-streaming="true"
     />
@@ -141,7 +141,7 @@ watch(
   () => messageStore.showedMessageList.length,
   () => {
     if (shouldAutoScroll()) {
-      console.log('scrollToBottom');
+      console.log('scrollToBottom:showedMessageList.length');
       nextTick(() => svc.value.scrollToBottom());
     }
   }
@@ -151,6 +151,8 @@ watch(
   () => messageStore.streamingContent,
   () => {
     if (shouldAutoScroll()) {
+      console.log('scrollToBottom:streamingContent');
+
       nextTick(() => svc.value.scrollToBottom());
     }
   }
@@ -162,6 +164,7 @@ let lastToTopTime = 0;
 let lastToBottomTime = 0;
 
 const onScrollToTop = async (): Promise<void> => {
+  console.log('scrollToTop');
   const now = Date.now();
   if (now - lastToTopTime < SCROLL_GAP_TIME) return;
   lastToTopTime = now;
@@ -178,10 +181,11 @@ const onScrollToTop = async (): Promise<void> => {
 };
 
 const onScrollToBottom = async (): Promise<void> => {
+  console.log('onScrollToBottom');
   const now = Date.now();
   if (now - lastToBottomTime < SCROLL_GAP_TIME) return;
   lastToBottomTime = now;
-  console.log('scrollToBottom', lastToBottomTime);
+  console.log('onScrollToBottom', lastToBottomTime);
   if (!sessionStore.currentSessionId) return;
   const list = messageStore.showedMessageList;
   if (!list.length) return;

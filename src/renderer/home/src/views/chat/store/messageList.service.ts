@@ -37,13 +37,15 @@ export class MessageListService extends CommonService<MessageController> {
 
       const rows = await messageEmitter.getMessagesPaginated({ sessionId, limit: pageSize });
       if (Array.isArray(rows)) {
-        this._state.showedMessageList = rows.reverse().map((row) => ({
-          id: row.id,
-          sessionId,
-          role: row.role as 'user' | 'assistant',
-          content: row.content,
-          createdAt: row.created_at,
-        }));
+        this._state.showedMessageList = rows
+          .sort((a, b) => a.id - b.id)
+          .map((row) => ({
+            id: row.id,
+            sessionId,
+            role: row.role as 'user' | 'assistant',
+            content: row.content,
+            createdAt: row.created_at,
+          }));
       }
       this.isFirstPageLoaded = true;
 
@@ -57,8 +59,6 @@ export class MessageListService extends CommonService<MessageController> {
     if (direction === -1) {
       if (this.loadingBefore || !this.hasMoreBefore) return;
       if (this._state.showedMessageList.length === 0) return;
-
-      console.log('do load before');
       const anchorMsg = this._state.showedMessageList.find((m) => m.id === msgId)
         ?? this._state.showedMessageList[0];
       if (!anchorMsg) return;
@@ -78,14 +78,19 @@ export class MessageListService extends CommonService<MessageController> {
         });
 
         if (Array.isArray(rows) && rows.length > 0) {
-          const newMessages = rows.reverse().map((row) => ({
-            id: row.id,
-            sessionId,
-            role: row.role as 'user' | 'assistant',
-            content: row.content,
-            createdAt: row.created_at,
-          }));
-          this._state.showedMessageList.unshift(...newMessages);
+          const newMessages = rows
+            .sort((a, b) => a.id - b.id)
+            .map((row) => ({
+              id: row.id,
+              sessionId,
+              role: row.role as 'user' | 'assistant',
+              content: row.content,
+              createdAt: row.created_at,
+            }));
+          const existingIds = new Set(this._state.showedMessageList.map((m) => m.id));
+          const uniqueNew = newMessages.filter((m) => !existingIds.has(m.id));
+          this._state.showedMessageList.unshift(...uniqueNew);
+          this._state.showedMessageList.sort((a, b) => a.id - b.id);
           this.hasMoreBefore = rows.length >= pageSize;
 
           nextTick(() => {
@@ -104,6 +109,10 @@ export class MessageListService extends CommonService<MessageController> {
 
     // ── direction: 1 → load page after msgId ──
     if (this.loadingAfter) return;
+    if (this._state.isStreaming) {
+      console.log('[loadPage] skip loadAfter during streaming');
+      return;
+    }
     if (this.lastAction === 'init') {
       this.lastAction = 'idle';
       return;
@@ -126,14 +135,19 @@ export class MessageListService extends CommonService<MessageController> {
       });
 
       if (Array.isArray(rows) && rows.length > 0) {
-        const newMessages = rows.map((row) => ({
-          id: row.id,
-          sessionId,
-          role: row.role as 'user' | 'assistant',
-          content: row.content,
-          createdAt: row.created_at,
-        }));
-        this._state.showedMessageList.push(...newMessages);
+        const newMessages = rows
+          .sort((a, b) => a.id - b.id)
+          .map((row) => ({
+            id: row.id,
+            sessionId,
+            role: row.role as 'user' | 'assistant',
+            content: row.content,
+            createdAt: row.created_at,
+          }));
+        const existingIds = new Set(this._state.showedMessageList.map((m) => m.id));
+        const uniqueNew = newMessages.filter((m) => !existingIds.has(m.id));
+        this._state.showedMessageList.push(...uniqueNew);
+        this._state.showedMessageList.sort((a, b) => a.id - b.id);
         if (rows.length < pageSize) {
           this.isFirstPageLoaded = true;
         }
@@ -190,13 +204,15 @@ export class MessageListService extends CommonService<MessageController> {
 
     const rows = await messageEmitter.getMessagesPaginated({ sessionId, limit: pageSize });
     if (Array.isArray(rows)) {
-      this._state.showedMessageList = rows.reverse().map((row) => ({
-        id: row.id,
-        sessionId,
-        role: row.role as 'user' | 'assistant',
-        content: row.content,
-        createdAt: row.created_at,
-      }));
+      this._state.showedMessageList = rows
+        .sort((a, b) => a.id - b.id)
+        .map((row) => ({
+          id: row.id,
+          sessionId,
+          role: row.role as 'user' | 'assistant',
+          content: row.content,
+          createdAt: row.created_at,
+        }));
       this.isFirstPageLoaded = rows.length < pageSize;
       this.hasMoreBefore = true;
       this.hasMoreAfter = true;

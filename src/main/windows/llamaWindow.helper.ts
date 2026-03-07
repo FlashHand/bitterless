@@ -1,4 +1,4 @@
-import { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
+import { BrowserWindow, BrowserWindowConstructorOptions, screen } from 'electron';
 import { join } from 'path';
 import { is } from '@electron-toolkit/utils';
 
@@ -8,10 +8,20 @@ class LlamaWindowHelper {
   create(): BrowserWindow {
     const isDev = is.dev;
 
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    
+    const windowWidth = Math.floor(screenWidth / 2);
+    const windowHeight = Math.floor(screenHeight / 2);
+    const x = 0;
+    const y = screenHeight - windowHeight;
+
     const options: BrowserWindowConstructorOptions = {
       show: isDev,
-      width: isDev ? 800 : 0,
-      height: isDev ? 600 : 0,
+      width: isDev ? windowWidth : 0,
+      height: isDev ? windowHeight : 0,
+      x: isDev ? x : undefined,
+      y: isDev ? y : undefined,
       skipTaskbar: !isDev,
       title: 'Llama Worker',
       webPreferences: {

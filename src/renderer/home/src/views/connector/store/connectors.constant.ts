@@ -1,8 +1,13 @@
-import wechatIcon from '@renderer/common/assets/icons/wechat.png';
+import dingtalkIcon from '@renderer/common/assets/icons/dingding.png';
+import feishuIcon from '@renderer/common/assets/icons/feishu.png';
 
 export const connectors = [
   {
-    name: 'wechat',
-    icon: wechatIcon
+    name: 'dingtalk',
+    icon: dingtalkIcon
+  },
+  {
+    name: 'feishu',
+    icon: feishuIcon
   }
 ];

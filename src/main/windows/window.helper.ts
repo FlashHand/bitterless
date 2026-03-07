@@ -1,4 +1,4 @@
-import { BrowserWindow, BrowserWindowConstructorOptions, shell } from 'electron';
+import { BrowserWindow, BrowserWindowConstructorOptions, shell, screen } from 'electron';
 import { join } from 'path';
 import { is } from '@electron-toolkit/utils';
 import icon from '../../../resources/icon.png?asset';
@@ -11,11 +11,23 @@ export abstract class WindowHelper {
   protected abstract windowOptions: Partial<BrowserWindowConstructorOptions>;
 
   create(): BrowserWindow {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    
+    const windowWidth = Math.floor(screenWidth / 2);
+    const windowHeight = Math.floor(screenHeight / 2);
+    const x = 0;
+    const y = screenHeight - windowHeight;
+
     const options: BrowserWindowConstructorOptions = {
       show: false,
       autoHideMenuBar: true,
       ...(process.platform === 'linux' ? { icon } : {}),
       ...this.windowOptions,
+      width: windowWidth,
+      height: windowHeight,
+      x: x,
+      y: y,
       webPreferences: {
         preload: join(__dirname, `../preload/${this.preloadFile}`),
         sandbox: false,

@@ -7,13 +7,15 @@ interface SettingRow {
   updated_at: number;
 }
 
-class SettingDao extends BaseDao {
+export class SettingDao extends BaseDao {
   /** Get a setting value by key. Returns parsed JSON or null if not found. */
   async get<T = any>(params: { key: string }): Promise<T | null> {
+    console.log('getting value', params);
     const row = await sqliteHelper.safeGet<SettingRow>(
       'SELECT key, value FROM setting WHERE key = ?',
       [params.key],
     );
+    console.log('row', row);
     if (!row) return null;
     try {
       return JSON.parse(row.value) as T;
@@ -22,13 +24,9 @@ class SettingDao extends BaseDao {
     }
   }
 
-  /** Upsert LLM config. Shorthand for upsert with key='LLM'. */
-  async upsertLLMConfig(params: { value: any }): Promise<string> {
-    return this.upsert({ key: 'LLM', value: params.value });
-  }
-
   /** Upsert a setting. Value will be JSON-serialized. */
   async upsert(params: { key: string; value: any }): Promise<string> {
+    console.log('upserting value', params);
     const jsonValue = sanitizeValue(JSON.stringify(params.value));
     const now = Date.now();
     await sqliteHelper.safeRun(

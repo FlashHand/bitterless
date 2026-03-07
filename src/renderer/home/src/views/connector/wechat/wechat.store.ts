@@ -1,27 +1,20 @@
 import { reactive } from 'vue';
 import moment from 'moment';
 import { XpcRendererHandler, createXpcRendererEmitter } from 'electron-xpc/renderer';
+import type { WechatHandler } from '@preload/connector/wechat.handler';
+import { settingEmitter } from '@/emitter/setting.emitter';
 import type {
   RigchatQrcodeDetail,
   RigchatLoginDetail,
   RigchatMessageDetail,
+  RigchatContactResolvedDetail,
+  RigchatOwnerVerifiedDetail,
   RigchatErrorDetail,
-} from '@preload/rigchat/rigchat.preload.type';
-interface EnvDao {
-  get(params: { key: string }): Promise<Record<string, string> | null>;
-  upsert(params: { key: string; values: Record<string, string> }): Promise<string>;
-  delete(params: { key: string }): Promise<string>;
-}
+} from '@preload/connector/connector.preload.type';
 
-const envEmitter = createXpcRendererEmitter<EnvDao>('EnvDao');
-
-interface RigchatHandler {
-  init(): Promise<void>;
-  checkLogin(): Promise<{ loggedIn: boolean; nickName: string }>;
-  startLogin(): Promise<void>;
-}
-
-const rigchatEmitter = createXpcRendererEmitter<RigchatHandler>('RigchatHandler');
+const wechatPreloadEmitter = createXpcRendererEmitter<WechatHandler>(
+  'WechatHandler'
+) as WechatHandler;
 
 class WechatStore {
   drawerVisible = false;
@@ -30,20 +23,26 @@ class WechatStore {
   nickName = '';
   error: string | null = null;
   loggingIn = false;
-  env: Record<string, string> = {};
+  loading = false;
+  verifyCode = '';
+  ownerName = '';
+  ownerID = '';
 
   async init(): Promise<void> {
     console.log('[wechat] initializing connector...');
     try {
-      await rigchatEmitter.init();
-      const result = await rigchatEmitter.checkLogin();
-      this.loggedIn = result.loggedIn;
-      this.nickName = result.nickName;
-
-      if (result.loggedIn) {
-        console.log('[wechat] session restored:', result.nickName);
-        await rigchatEmitter.startLogin();
+      await wechatPreloadEmitter.init();
+      const result = await wechatPreloadEmitter.checkLogin();
+      if (result) {
+        this.loggedIn = result.loggedIn;
+        this.nickName = result.nickName;
+        if (result.loggedIn) {
+          console.log('[wechat] session restored:', result.nickName);
+          await wechatPreloadEmitter.startLogin();
+        }
       } else {
+        this.loggedIn = false;
+        this.nickName = '';
         console.log('[wechat] no saved session found');
       }
     } catch (err) {
@@ -51,40 +50,43 @@ class WechatStore {
     }
   }
 
+  async loadOwner(): Promise<void> {
+    try {
+      const data = await settingEmitter.get<{ owner_id: string; owner_name: string }>({ key: 'WECHAT_OWNER' });
+      if (data && data.owner_id && data.owner_name) {
+        this.ownerID = data.owner_id;
+        this.ownerName = data.owner_name;
+      } else {
+        this.ownerID = '';
+        this.ownerName = '';
+      }
+    } catch {
+      this.ownerID = '';
+      this.ownerName = '';
+    }
+  }
+
   async openDrawer(): Promise<void> {
     this.drawerVisible = true;
     try {
-      const result = await rigchatEmitter.checkLogin();
-      this.loggedIn = result.loggedIn;
-      this.nickName = result.nickName;
-      await this.loadEnv();
+      const result = await wechatPreloadEmitter.checkLogin();
+      if (result) {
+        this.loggedIn = result.loggedIn;
+        this.nickName = result.nickName;
+      } else {
+        this.loggedIn = false;
+        this.nickName = '';
+      }
     } catch (err) {
       console.error('[wechat] openDrawer checkLogin failed:', err);
     }
-  }
-
-  async loadEnv(): Promise<void> {
-    try {
-      const env = await envEmitter.get({ key: 'wechat' });
-      this.env = env || {};
-    } catch (err) {
-      console.error('[wechat] loadEnv failed:', err);
-      this.env = {};
-    }
-  }
-
-  async saveEnv(env: Record<string, string>): Promise<void> {
-    try {
-      await envEmitter.upsert({ key: 'wechat', values: env });
-      this.env = env;
-    } catch (err) {
-      console.error('[wechat] saveEnv failed:', err);
-      throw err;
-    }
+    await this.loadOwner();
+    startVerifyCodePolling();
   }
 
   closeDrawer(): void {
     this.drawerVisible = false;
+    stopVerifyCodePolling();
   }
 
   async startLoginFlow(): Promise<void> {
@@ -92,7 +94,7 @@ class WechatStore {
     this.qrcodeUrl = null;
     this.loggingIn = true;
     try {
-      await rigchatEmitter.startLogin();
+      await wechatPreloadEmitter.startLogin();
     } catch (err: any) {
       console.error('[wechat] startLoginFlow failed:', err);
       this.error = err?.message || 'Login failed';
@@ -103,7 +105,28 @@ class WechatStore {
 
 export const wechatStore = reactive<WechatStore>(new WechatStore());
 
-class RigchatHandler extends XpcRendererHandler {
+let _verifyCodeTimer: ReturnType<typeof setInterval> | null = null;
+
+const stopVerifyCodePolling = (): void => {
+  if (_verifyCodeTimer !== null) {
+    clearInterval(_verifyCodeTimer);
+    _verifyCodeTimer = null;
+  }
+};
+
+const startVerifyCodePolling = (): void => {
+  stopVerifyCodePolling();
+  const fetch = (): void => {
+    if (!wechatStore.loggedIn) return;
+    wechatPreloadEmitter.getVerifyCode()
+      .then((code) => { wechatStore.verifyCode = code; })
+      .catch(() => {});
+  };
+  fetch();
+  _verifyCodeTimer = setInterval(fetch, 20000);
+};
+
+export class WechatStoreHandler extends XpcRendererHandler {
   async onQrcode(params: RigchatQrcodeDetail): Promise<void> {
     wechatStore.qrcodeUrl = params.qrcodeUrl;
     wechatStore.loggedIn = false;
@@ -123,16 +146,24 @@ class RigchatHandler extends XpcRendererHandler {
   }
 
   async onMessage(params: RigchatMessageDetail): Promise<void> {
-    const { talker, content, msgType, msgId, imagePath } = params;
+    const { talker, content, msg_type, msg_id, imagePath } = params;
     const time = moment().format('HH:mm:ss');
-    console.log('[WeChat Message]', { time, talker, content, msgType, msgId, imagePath });
+    console.log('[WeChat Message]', { time, talker, content, msg_type, msg_id, imagePath });
+  }
+
+  async onOwnerVerified(params: RigchatOwnerVerifiedDetail): Promise<void> {
+    console.log('onOwnerVerified', params);
+    wechatStore.ownerID = params.owner_id;
+    wechatStore.ownerName = params.owner_name;
+    await wechatStore.loadOwner();
   }
 
   async onError(params: RigchatErrorDetail): Promise<void> {
     wechatStore.error = params.message;
+    wechatStore.loggedIn = false;
     wechatStore.loggingIn = false;
     wechatStore.qrcodeUrl = null;
   }
 }
 
-new RigchatHandler();
+new WechatStoreHandler();

@@ -23,15 +23,24 @@ export interface MessageInsertParams {
 }
 
 export class MessageDao extends BaseDao {
-  /** Insert a new message, returns the new row id */
-  async insert(params: MessageInsertParams): Promise<string> {
+  /** Insert a new message, returns the inserted message data */
+  async insert(params: MessageInsertParams): Promise<MessageRow> {
     const id = snowflake.generate().toString().padStart(19, '0');
     const searchText = generateSearchText(params.content);
+    const createdAt = Date.now();
     await sqliteHelper.safeRun(
       'INSERT INTO message (id, session_id, role, content, search_text, platform, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, params.sessionId, params.role, params.content, searchText, params.platform ?? 'bitterless', Date.now()],
+      [id, params.sessionId, params.role, params.content, searchText, params.platform ?? 'bitterless', createdAt],
     );
-    return id;
+    return {
+      id,
+      session_id: params.sessionId,
+      role: params.role,
+      content: params.content,
+      search_text: searchText,
+      platform: params.platform ?? 'bitterless',
+      created_at: createdAt,
+    };
   }
 
   /** Get message history for a conversation, ordered by id ASC */

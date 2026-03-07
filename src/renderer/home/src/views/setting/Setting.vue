@@ -8,6 +8,9 @@
         <a-tab-pane key="llm" :title="i18nHelper.setting.llm.tabTitle">
           <LLMSetting />
         </a-tab-pane>
+        <a-tab-pane key="systemPrompt" :title="i18nHelper.setting.systemPrompt.tabTitle">
+          <SystemPromptSetting />
+        </a-tab-pane>
         <a-tab-pane key="proxy" :title="i18nHelper.setting.proxy.tabTitle">
           <ProxySetting />
         </a-tab-pane>
@@ -18,13 +21,17 @@
 
 <script setup lang="ts">
 import LLMSetting from './components/LLMSetting/LLMSetting.vue';
+import SystemPromptSetting from './components/SystemPromptSetting/SystemPromptSetting.vue';
 import ProxySetting from './components/ProxySetting/ProxySetting.vue';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
 import { loadProxySetting } from './components/ProxySetting/proxySetting.store';
+import { loadSystemPromptSetting } from './components/SystemPromptSetting/systemPromptSetting.store';
 
 const onTabChange = (key: string): void => {
   if (key === 'proxy') {
     loadProxySetting();
+  } else if (key === 'systemPrompt') {
+    loadSystemPromptSetting();
   }
 };
 </script>

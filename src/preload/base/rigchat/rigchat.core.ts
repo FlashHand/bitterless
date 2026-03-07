@@ -45,6 +45,7 @@ export class Rigchat extends EventEmitter {
   CONF: RigchatConf
   user: RigchatUser = {} as RigchatUser
   contacts: Record<string, RigchatContact> = {}
+  rooms: Record<string, RigchatContact> = {}
   state: string
 
   private request: RigchatRequest
@@ -54,6 +55,9 @@ export class Rigchat extends EventEmitter {
   private syncErrorCount = 0
   private checkPollingId: ReturnType<typeof setTimeout> | null = null
   private retryPollingId: ReturnType<typeof setTimeout> | null = null
+
+  // in-flight batch request dedup: key = "memberId|roomId"
+  private _pendingContactFetches: Map<string, Promise<RigchatContact | null>> = new Map()
 
   constructor() {
     super()
@@ -111,7 +115,7 @@ export class Rigchat extends EventEmitter {
     console.log('[rigchat] starting...')
     try {
       await this._login()
-      await this._init()
+      await this._init(true)
     } catch (err: any) {
       console.error('[rigchat] start error:', err)
       this.emit('error', err)
@@ -122,7 +126,7 @@ export class Rigchat extends EventEmitter {
   async restart(): Promise<void> {
     console.log('[rigchat] restarting with saved session...')
     try {
-      await this._init()
+      await this._init(true)
     } catch (err: any) {
       console.error('[rigchat] restart with session failed:', err.message)
       console.log('[rigchat] falling back to fresh login...')
@@ -135,6 +139,7 @@ export class Rigchat extends EventEmitter {
     console.log('[rigchat] stopping...')
     if (this.retryPollingId) clearTimeout(this.retryPollingId)
     if (this.checkPollingId) clearTimeout(this.checkPollingId)
+    this._pendingContactFetches.clear()
     this._logout().catch(() => {})
     this.state = this.CONF.STATE.logout
     this.emit('logout')
@@ -224,7 +229,7 @@ export class Rigchat extends EventEmitter {
   private async _doLogin(): Promise<void> {
     const headers: Record<string, string> = {
       'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
       'client-version': '2.0.0',
       referer: 'https://wx.qq.com/?&lang=zh_CN&target=t',
       extspam:
@@ -268,17 +273,33 @@ export class Rigchat extends EventEmitter {
 
   // --- init & sync ---
 
-  private async _init(): Promise<void> {
+  private async _init(drainMessages = false): Promise<void> {
     const data = await this._webwxInit()
     this._updateContacts(data.ContactList)
     this._notifyMobile().catch((err) => this.emit('error', err))
     this._getContact().catch((err) => this.emit('error', err))
+
+    // consume initial offline messages silently — only on first login
+    if (drainMessages) {
+      await this._drainInitialMessages()
+    }
 
     this.state = this.CONF.STATE.login
     this.lastSyncTime = Date.now()
     this.emit('login')
     this._syncPolling()
     this._checkPolling()
+  }
+
+  private async _drainInitialMessages(): Promise<void> {
+    try {
+      const checkResult = await this._syncCheck()
+      if (+checkResult !== this.CONF.SYNCCHECK_SELECTOR_NORMAL) {
+        await this._sync()
+      }
+    } catch {
+      // ignore errors during drain — non-critical
+    }
   }
 
   private async _webwxInit(): Promise<RigchatInitData> {
@@ -344,7 +365,7 @@ export class Rigchat extends EventEmitter {
         if (+selector !== this.CONF.SYNCCHECK_SELECTOR_NORMAL) {
           return this._sync().then((data) => {
             this.syncErrorCount = 0
-            this._handleSync(data)
+            return this._handleSync(data)
           })
         }
         return
@@ -431,13 +452,13 @@ export class Rigchat extends EventEmitter {
     return data
   }
 
-  private _handleSync(data: RigchatSyncData): void {
+  private async _handleSync(data: RigchatSyncData): Promise<void> {
     if (!data) {
       this._restart()
       return
     }
     if (data.AddMsgCount) {
-      this._handleMessages(data.AddMsgList)
+      await this._handleMessages(data.AddMsgList)
     }
     if (data.ModContactCount) {
       this._updateContacts(data.ModContactList)
@@ -448,80 +469,193 @@ export class Rigchat extends EventEmitter {
     return /^@@|@chatroom$/.test(id)
   }
 
-  private _handleMessages(msgList: RigchatMessage[]): void {
-    for (const msg of msgList) {
-      msg.isSendBySelf =
-        msg.FromUserName === this.user.UserName || msg.FromUserName === ''
+  private _normalizeMsg(raw: any): RigchatMessage {
+    return {
+      msg_id:                   raw.MsgId          || '',
+      msg_type:                 raw.MsgType        || 0,
+      content:                  raw.Content        || '',
+      from_user_name:           raw.FromUserName   || '',
+      to_user_name:             raw.ToUserName     || '',
+      create_time:              raw.CreateTime     || 0,
+      status_notify_user_name:  raw.StatusNotifyUserName || '',
+      status_notify_code:       raw.StatusNotifyCode    || 0,
+      file_name:                raw.FileName       || '',
+      file_size:                raw.FileSize       || '',
+      media_id:                 raw.MediaId        || '',
+      url:                      raw.Url            || '',
+      app_msg_type:             raw.AppMsgType     || 0,
+      sub_msg_type:             raw.SubMsgType     || 0,
+      original_content:         '',
+      is_send_by_self:          false,
+      is_group:                 false,
+      chat_id:                  '',
+      from_user_id:             '',
+      to_user_id:               '',
+      sender_id:                '',
+      sender_display_name:      '',
+      to_user_display_name:     '',
+      mention_list:             [],
+      is_mention_self:          false,
+    } as RigchatMessage
+  }
 
-      // group: FromUserName starts with @@ or ends with @chatroom
-      msg.isGroup = this._isGroupId(msg.FromUserName) || this._isGroupId(msg.ToUserName)
-      msg.chatId = this._isGroupId(msg.FromUserName)
-        ? msg.FromUserName
-        : this._isGroupId(msg.ToUserName)
-          ? msg.ToUserName
-          : msg.isSendBySelf ? msg.ToUserName : msg.FromUserName
+  private async _handleMessages(msgList: any[]): Promise<void> {
+    for (const raw of msgList) {
+      const msg = this._normalizeMsg(raw)
 
-      // OriginalContent preserves raw content before any decoding
-      msg.OriginalContent = msg.Content
+      msg.is_send_by_self =
+        msg.from_user_name === this.user.UserName || msg.from_user_name === ''
 
-      if (msg.isGroup) {
-        // use OriginalContent to extract talkerId: format is "wxid_xxx:<br/>content"
-        const separatorIdx = (msg.OriginalContent || '').indexOf(':<br/>')
+      msg.from_user_id = msg.from_user_name
+      msg.to_user_id = msg.to_user_name
+
+      // group: from_user_name starts with @@ or ends with @chatroom
+      msg.is_group = this._isGroupId(msg.from_user_name) || this._isGroupId(msg.to_user_name)
+      msg.chat_id = this._isGroupId(msg.from_user_name)
+        ? msg.from_user_name
+        : this._isGroupId(msg.to_user_name)
+          ? msg.to_user_name
+          : msg.is_send_by_self ? msg.to_user_name : msg.from_user_name
+
+      // original_content preserves raw content before any decoding
+      msg.original_content = msg.content
+
+      if (msg.is_group) {
+        // extract sender_id from original_content: format is "wxid_xxx:<br/>content"
+        const separatorIdx = (msg.original_content || '').indexOf(':<br/>')
         if (separatorIdx !== -1) {
-          msg.senderUserName = msg.OriginalContent.substring(0, separatorIdx)
-        } else if (msg.isSendBySelf) {
-          // self-sent group msg: try regex on OriginalContent
-          const selfMatch = (msg.OriginalContent || '').match(/^(@[a-zA-Z0-9]+|[a-zA-Z0-9_-]+):<br\/>/)
-          msg.senderUserName = selfMatch ? selfMatch[1] : this.user.UserName
+          msg.sender_id = msg.original_content.substring(0, separatorIdx)
+        } else if (msg.is_send_by_self) {
+          const selfMatch = (msg.original_content || '').match(/^(@[a-zA-Z0-9]+|[a-zA-Z0-9_-]+):<br\/>/)
+          msg.sender_id = selfMatch ? selfMatch[1] : this.user.UserName
         } else {
-          msg.senderUserName = msg.FromUserName
+          msg.sender_id = msg.from_user_name
         }
 
-        // extract actual content: split on ":\n"
-        const parts = (msg.Content || '').split(':\n')
-        if (parts.length > 1) {
-          msg.Content = parts.slice(1).join(':\n')
+        // extract actual content: strip "sender_id:<br/>" prefix
+        const brSepIdx = (msg.content || '').indexOf(':<br/>')
+        if (brSepIdx !== -1) {
+          msg.content = msg.content.substring(brSepIdx + 6)
         }
 
-        // resolve display name from group MemberList
-        const groupId = this._isGroupId(msg.FromUserName) ? msg.FromUserName : msg.ToUserName
-        const groupContact = this.contacts[groupId]
-        const member = groupContact?.MemberList?.find(
-          (m: any) => m.UserName === msg.senderUserName
-        )
-        msg.senderDisplayName = member
-          ? (member.DisplayName || member.RemarkName || member.NickName || msg.senderUserName)
-          : (this.contacts[msg.senderUserName]?.NickName || msg.senderUserName)
+        const groupId = this._isGroupId(msg.from_user_name) ? msg.from_user_name : msg.to_user_name
+        msg.sender_display_name = await this._tryGetDisplayName(msg.sender_id, groupId)
+        msg.to_user_display_name = await this._tryGetDisplayName(msg.chat_id, '')
       } else {
-        msg.senderUserName = msg.FromUserName
-        const contact = this.contacts[msg.FromUserName]
-        msg.senderDisplayName = contact
-          ? (contact.RemarkName || contact.NickName || msg.FromUserName)
-          : msg.FromUserName
+        msg.sender_id = msg.from_user_name
+        msg.sender_display_name = await this._tryGetDisplayName(msg.from_user_name, '')
+        msg.to_user_display_name = await this._tryGetDisplayName(msg.to_user_name, '')
       }
 
-      msg.Content = (msg.Content || '')
+      msg.content = (msg.content || '')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/<br\/>/g, '\n')
-      msg.Content = convertEmoji(msg.Content)
+      msg.content = convertEmoji(msg.content)
 
       // parse @mentions — separators: U+2005 (mobile), U+0020 (PC), \s (web)
       const AT_SEP = /[\u2005\u0020\s]+/
-      const mentionList: string[] = (msg.Content || '')
+      const mention_list: string[] = (msg.content || '')
         .split(AT_SEP)
         .filter((s) => s.startsWith('@'))
         .map((s) => s.slice(1))
         .filter((s) => s.length > 0)
-      msg.mentionList = mentionList
+      msg.mention_list = mention_list
 
       const selfNickName = this.user.NickName || ''
-      msg.isMentionSelf = selfNickName.length > 0
-        ? mentionList.some((name) => selfNickName.includes(name) || name.includes(selfNickName))
+      msg.is_mention_self = selfNickName.length > 0
+        ? mention_list.some((name) => selfNickName.includes(name) || name.includes(selfNickName))
         : false
 
       this.emit('message', msg)
     }
+  }
+
+  // --- contact name resolution ---
+
+  private _getDisplayNameFromCache(id: string, roomId: string): string | null {
+    // 1. if id is a group, look up rooms dict directly
+    if (this._isGroupId(id)) {
+      const room = this.rooms[id]
+      if (room) {
+        return room.RemarkName || room.NickName || null
+      }
+      return null
+    }
+    // 2. check room MemberList for group member lookup
+    if (roomId) {
+      const room = this.rooms[roomId]
+      const member = room?.MemberList?.find((m: any) => m.UserName === id)
+      if (member) {
+        return member.DisplayName || member.RemarkName || member.NickName || null
+      }
+    }
+    // 3. check contacts dict
+    const contact = this.contacts[id]
+    if (contact) {
+      return contact.RemarkName || contact.NickName || null
+    }
+    return null
+  }
+
+  private async _fetchContactsBatch(items: Array<{ UserName: string; EncryChatRoomId: string }>): Promise<RigchatContact[]> {
+    const res = await this.request.exec({
+      method: 'POST',
+      url: this.CONF.API_webwxbatchgetcontact,
+      params: {
+        pass_ticket: this.PROP.passTicket,
+        type: 'ex',
+        r: +new Date(),
+        lang: 'zh_CN',
+      },
+      data: {
+        BaseRequest: this._getBaseRequest(),
+        Count: items.length,
+        List: items,
+      },
+    })
+    const data = res.data as { ContactList?: RigchatContact[] }
+    return data.ContactList || []
+  }
+
+  private async _tryGetDisplayName(id: string, roomId: string): Promise<string> {
+    if (!id) return id
+    // self
+    if (id === this.user.UserName) {
+      return this.user.NickName || id
+    }
+
+    // 1. try cache first
+    const cached = this._getDisplayNameFromCache(id, roomId)
+    if (cached) return cached
+
+    // 2. fetch via batchGetContact — dedup in-flight requests per id+roomId
+    const key = `${id}|${roomId}`
+    let pending = this._pendingContactFetches.get(key)
+    if (!pending) {
+      pending = this._fetchContactsBatch([{ UserName: id, EncryChatRoomId: roomId }])
+        .then((contacts) => {
+          if (contacts.length > 0) {
+            this._updateContacts(contacts)
+            return contacts[0]
+          }
+          return null
+        })
+        .catch((err: Error) => {
+          console.error('[rigchat] _tryGetDisplayName fetch error:', err.message)
+          return null
+        })
+        .finally(() => {
+          this._pendingContactFetches.delete(key)
+        })
+      this._pendingContactFetches.set(key, pending)
+    }
+
+    const contact = await pending
+    if (contact) {
+      return contact.RemarkName || contact.NickName || contact.DisplayName || id
+    }
+    return id
   }
 
   // --- heartbeat ---
@@ -545,7 +679,7 @@ export class Rigchat extends EventEmitter {
   private async _restart(): Promise<void> {
     console.log('[rigchat] restarting...')
     try {
-      await this._init()
+      await this._init(false)
     } catch (err: any) {
       console.error('[rigchat] restart failed:', err.message)
       this.emit('error', err)
@@ -574,12 +708,16 @@ export class Rigchat extends EventEmitter {
 
   private _updateContacts(contacts: RigchatContact[]): void {
     if (!contacts || contacts.length === 0) return
-    contacts.forEach((contact) => {
+    for (const contact of contacts) {
       contact.NickName = convertEmoji(contact.NickName || '')
       contact.RemarkName = convertEmoji(contact.RemarkName || '')
       contact.DisplayName = convertEmoji(contact.DisplayName || '')
-      this.contacts[contact.UserName] = contact
-    })
+      if (this._isGroupId(contact.UserName)) {
+        this.rooms[contact.UserName] = contact
+      } else {
+        this.contacts[contact.UserName] = contact
+      }
+    }
     this.emit('contacts-updated', contacts)
   }
 

@@ -1,8 +1,8 @@
 export interface RigchatMessageItem {
   talker: string
   content: string
-  msgType: number
-  msgId: string
+  msg_type: number
+  msg_id: string
   time: string
   imagePath?: string
 }

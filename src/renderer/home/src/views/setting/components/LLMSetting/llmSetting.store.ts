@@ -1,6 +1,9 @@
 import { reactive } from 'vue';
 import type { LLMSetting } from '../../store/setting.store.type';
-import { settingEmitter } from '@/emitter/setting.emitter';
+import { createXpcRendererEmitter } from 'electron-xpc/renderer';
+import type { SettingDao } from '@preload/sqlite/dao/setting.dao';
+
+export const settingEmitter = createXpcRendererEmitter<SettingDao>('SettingDao') as SettingDao;
 
 const SETTING_KEY_LLM = 'LLM';
 
@@ -21,6 +24,8 @@ export const loadLLMSetting = async (): Promise<void> => {
   llmSettingStore.loading = true;
   try {
     const result = await settingEmitter.get({ key: SETTING_KEY_LLM });
+    console.log('loadLLMSetting',result);
+
     if (result) {
       const data = result as any;
       llmSettingStore.llmSetting.provider = data.provider || 'openrouter';

@@ -20,10 +20,17 @@ export default defineConfig({
         input: {
           home: resolve('src/preload/home/home.preload.ts'),
           sqlite: resolve('src/preload/sqlite/sqlite.preload.ts'),
-          rigchat: resolve('src/preload/rigchat/rigchat.preload.ts'),
+          connector: resolve('src/preload/connector/connector.preload.ts'),
           llama: resolve('src/preload/llama/llama.preload.ts')
         },
-        external: [/rig_dev\/.*\/node_modules/, 'node-llama-cpp']
+        external: [/rig_dev\/.*\/node_modules/, 'node-llama-cpp', /tiktoken/, /js-tiktoken/, 'linkedom', '@mozilla/readability', 'playwright', 'playwright-core']
+      }
+    },
+    resolve: {
+      alias: {
+        '@renderer': resolve('src/preload/renderer'),
+        '@preload': resolve('src/preload'),
+        '@shared': resolve('src/shared'),
       }
     }
   },
@@ -33,7 +40,7 @@ export default defineConfig({
         input: {
           home: resolve('src/renderer/home/index.html'),
           sqlite: resolve('src/renderer/sqlite/index.html'),
-          rigchat: resolve('src/renderer/rigchat/index.html'),
+          connector: resolve('src/renderer/connector/index.html'),
           llama: resolve('src/renderer/llama/index.html')
         }
       }

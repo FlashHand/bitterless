@@ -4,7 +4,7 @@ class EnvTable extends BaseTable {
   readonly createSql = `
     CREATE TABLE IF NOT EXISTS env (
       key TEXT PRIMARY KEY,
-      values TEXT NOT NULL DEFAULT '{}',
+      value_data TEXT NOT NULL DEFAULT '{}',
       updated_at INTEGER NOT NULL
     );
   `;

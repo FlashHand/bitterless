@@ -7,6 +7,7 @@ const RIGCHAT_IMAGES_DIR = join(RIGCHAT_DIR, 'images');
 
 let bitterlessPath = '';
 let bitterlessDbPath = '';
+let skillsPath = '';
 let rigchatPath = '';
 let rigchatImagesPath = '';
 
@@ -17,6 +18,11 @@ const initBitterless = (): void => {
   if (!existsSync(bitterlessDbPath)) {
     mkdirSync(bitterlessDbPath, { recursive: true });
     console.log('[directory] created bitterless/db:', bitterlessDbPath);
+  }
+  skillsPath = join(userDataPath, 'skills');
+  if (!existsSync(skillsPath)) {
+    mkdirSync(skillsPath, { recursive: true });
+    console.log('[directory] created skills:', skillsPath);
   }
 };
 
@@ -34,6 +40,7 @@ const registerIpc = (): void => {
   ipcMain.handle('bitterless:get-app-path', () => app.getAppPath());
   ipcMain.handle('bitterless:get-userdata-path', () => bitterlessPath);
   ipcMain.handle('bitterless:get-db-path', () => bitterlessDbPath);
+  ipcMain.handle('bitterless:get-skills-path', () => skillsPath);
   ipcMain.handle('rigchat:get-path', () => rigchatPath);
   ipcMain.handle('rigchat:get-images-path', () => rigchatImagesPath);
 };
@@ -41,6 +48,8 @@ const registerIpc = (): void => {
 export const getUserDataPath = (): string => bitterlessPath;
 
 export const getDbPath = (): string => bitterlessDbPath;
+
+export const getSkillsPath = (): string => skillsPath;
 
 export const initDirectory = (): void => {
   initBitterless();

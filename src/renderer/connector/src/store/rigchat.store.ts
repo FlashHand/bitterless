@@ -6,7 +6,7 @@ import {
   type RigchatLoginDetail,
   type RigchatMessageDetail,
   type RigchatErrorDetail,
-} from '../../../../preload/rigchat/rigchat.preload.type'
+} from '../../../../preload/connector/connector.preload.type'
 import type { RigchatMessageItem } from './rigchat.store.type'
 
 class RigchatStore {
@@ -36,10 +36,10 @@ window.addEventListener(RIGCHAT_EVENT.LOGOUT, (() => {
 }) as EventListener)
 
 window.addEventListener(RIGCHAT_EVENT.MESSAGE, ((e: CustomEvent<RigchatMessageDetail>) => {
-  const { talker, content, msgType, msgId, imagePath } = e.detail
+  const { talker, content, msg_type, msg_id, imagePath } = e.detail
 
   if (imagePath) {
-    const existing = rigchatStore.messages.find((m) => m.msgId === msgId)
+    const existing = rigchatStore.messages.find((m) => m.msg_id === msg_id)
     if (existing) {
       existing.imagePath = imagePath
       existing.content = ''
@@ -50,8 +50,8 @@ window.addEventListener(RIGCHAT_EVENT.MESSAGE, ((e: CustomEvent<RigchatMessageDe
   rigchatStore.messages.unshift({
     talker,
     content,
-    msgType,
-    msgId,
+    msg_type,
+    msg_id,
     time: moment().format('HH:mm:ss'),
     imagePath,
   })

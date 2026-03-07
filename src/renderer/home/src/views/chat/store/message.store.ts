@@ -59,22 +59,25 @@ export class MessageController {
       await createSession(title);
     }
 
-    this.showedMessageList.push({
-      id: `temp_${Date.now()}`,
-      sessionId: sessionStore.currentSessionId,
-      role: 'user',
-      content: trimmedContent,
-      createdAt: moment().format('YYYY-MM-DD HH:mm:ss'),
-    });
-    this.messageListService.scrollToBottom();
-
     this.isStreaming = true;
     this.isResponding = true;
     this.streamingContent = '';
-    await xpcRenderer.send('chat/send', {
+
+    const insertedMessage = await xpcRenderer.send('chat/send', {
       sessionId: sessionStore.currentSessionId,
       content: trimmedContent,
     });
+
+    if (insertedMessage) {
+      this.showedMessageList.push({
+        id: insertedMessage.id,
+        sessionId: insertedMessage.session_id,
+        role: insertedMessage.role,
+        content: insertedMessage.content,
+        createdAt: moment(insertedMessage.created_at).format('YYYY-MM-DD HH:mm:ss'),
+      });
+      this.messageListService.scrollToBottom();
+    }
   }
   async stopResponse(): Promise<void> {
     await xpcRenderer.send('chat/stop', {
@@ -107,16 +110,21 @@ export const initMessageListeners = (): void => {
   });
 
   xpcRenderer.handle('chat/stream/done', async (payload) => {
-    const { sessionId } = payload.params || {};
+    const { sessionId, message } = payload.params || {};
     messageStore.streamingContent = '';
     messageStore.isStreaming = false;
     messageStore.isResponding = false;
     const targetSessionId = sessionId || sessionStore.currentSessionId;
     if (!targetSessionId) return 'ok';
+    
     if (messageStore.messageListService.isBrowsingHistory) {
       messageStore.messageListService.hasNew = true;
-    } else {
-      await messageStore.messageListService.loadPage(targetSessionId);
+    } else if (message) {
+      const existingIds = new Set(messageStore.showedMessageList.map((m) => m.id));
+      if (!existingIds.has(message.id)) {
+        messageStore.showedMessageList.push(message);
+        console.log('[messageStore] pushed assistant message to list, id:', message.id);
+      }
     }
     messageStore.focusMessageInput();
     return 'ok';

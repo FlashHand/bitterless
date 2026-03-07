@@ -23,9 +23,24 @@
         </div>
       </div>
 
-      <div v-if="!wechatStore.loggedIn && !wechatStore.loggingIn && !wechatStore.qrcodeUrl" class="wechat-config__action">
-        <a-button type="primary" @click="wechatStore.startLoginFlow()">
-          {{ i18nHelper.connector.startLogin }}
+      <div class="wechat-config__owner-info">
+        <div class="wechat-config__owner-info-row">
+          <span class="wechat-config__owner-info-label">{{ i18nHelper.connector.wechat.ownerVerified }}</span>
+          <span class="wechat-config__owner-info-value">{{ wechatStore.ownerName || '-' }}</span>
+        </div>
+        <div class="wechat-config__owner-info-row">
+          <span class="wechat-config__owner-info-label">Owner ID</span>
+          <span class="wechat-config__owner-info-value wechat-config__owner-info-value--id">{{ wechatStore.ownerID || '-' }}</span>
+        </div>
+      </div>
+
+      <div v-if="!wechatStore.loggedIn || wechatStore.error" class="wechat-config__action">
+        <a-button
+          type="primary"
+          :loading="wechatStore.loggingIn"
+          @click="wechatStore.startLoginFlow()"
+        >
+          {{ i18nHelper.connector.wechat.startLogin }}
         </a-button>
       </div>
 
@@ -38,36 +53,26 @@
         <img :src="wechatStore.qrcodeUrl" alt="QR Code" />
       </div>
 
-      <div class="wechat-config__env">
-        <h3 class="wechat-config__env-title">{{ i18nHelper.connector.envVariables }}</h3>
-        <EnvForm
-          v-model="wechatStore.env"
-          @save="handleEnvSave"
-          @cancel="handleEnvCancel"
-        />
+      <div v-if="wechatStore.loggedIn" class="wechat-config__owner">
+        <div class="wechat-config__owner-header">
+          <span class="wechat-config__owner-title">{{ i18nHelper.connector.wechat.ownerVerifyTitle }}</span>
+          <span class="wechat-config__verify-code">{{ wechatStore.verifyCode }}</span>
+        </div>
+        <div class="wechat-config__owner-hint">{{ i18nHelper.connector.wechat.ownerVerifyHint }}</div>
+        <div v-if="wechatStore.ownerName" class="wechat-config__owner-result">
+          <a-tag color="green">{{ i18nHelper.connector.wechat.ownerVerified }}: {{ wechatStore.ownerName }}</a-tag>
+        </div>
+        <div v-else class="wechat-config__owner-result">
+          <a-tag color="orange">{{ i18nHelper.connector.wechat.ownerNotSet }}</a-tag>
+        </div>
       </div>
     </div>
   </a-drawer>
 </template>
 
 <script setup lang="ts">
-import { Message } from '@arco-design/web-vue';
 import { wechatStore } from './wechat.store';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
-import EnvForm from '@renderer/common/components/EnvForm/EnvForm.vue';
-
-const handleEnvSave = async (env: Record<string, string>): Promise<void> => {
-  try {
-    await wechatStore.saveEnv(env);
-    Message.success(i18nHelper.common.envForm.saveSuccess);
-  } catch (err) {
-    Message.error(i18nHelper.common.envForm.saveFailed);
-  }
-};
-
-const handleEnvCancel = (): void => {
-  console.log('[wechat] env edit cancelled');
-};
 </script>
 
 <style scoped>

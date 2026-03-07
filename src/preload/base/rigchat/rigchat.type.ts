@@ -97,29 +97,32 @@ export interface RigchatContact {
 }
 
 export interface RigchatMessage {
-  MsgId: string
-  MsgType: number
-  Content: string
-  FromUserName: string
-  ToUserName: string
-  CreateTime: number
-  StatusNotifyUserName: string
-  StatusNotifyCode: number
-  FileName: string
-  FileSize: string
-  MediaId: string
-  Url: string
-  AppMsgType: number
-  SubMsgType: number
-  isSendBySelf: boolean
-  OriginalContent: string
+  msg_id: string
+  msg_type: number
+  content: string
+  from_user_name: string
+  to_user_name: string
+  create_time: number
+  status_notify_user_name: string
+  status_notify_code: number
+  file_name: string
+  file_size: string
+  media_id: string
+  url: string
+  app_msg_type: number
+  sub_msg_type: number
+  original_content: string
   // parsed fields
-  isGroup: boolean
-  chatId: string
-  senderUserName: string
-  senderDisplayName: string
-  mentionList: string[]
-  isMentionSelf: boolean
+  is_send_by_self: boolean
+  is_group: boolean
+  chat_id: string
+  from_user_id: string
+  to_user_id: string
+  sender_id: string
+  sender_display_name: string
+  to_user_display_name: string
+  mention_list: string[]
+  is_mention_self: boolean
   [key: string]: unknown
 }
 
@@ -133,7 +136,7 @@ export interface RigchatBaseRequest {
 export interface RigchatSyncData {
   BaseResponse: { Ret: number }
   AddMsgCount: number
-  AddMsgList: RigchatMessage[]
+  AddMsgList: any[]
   ModContactCount: number
   ModContactList: RigchatContact[]
   SKey: string
@@ -150,6 +153,11 @@ export interface RigchatInitData {
   ContactList: RigchatContact[]
 }
 
+export interface RigchatResolvedContact {
+  id: string
+  display_name: string
+}
+
 export type RigchatEventMap = {
   uuid: (uuid: string) => void
   'user-avatar': (avatar: string) => void
@@ -157,5 +165,6 @@ export type RigchatEventMap = {
   logout: () => void
   message: (msg: RigchatMessage) => void
   'contacts-updated': (contacts: RigchatContact[]) => void
+  'contact-resolved': (resolved: RigchatResolvedContact[]) => void
   error: (err: Error) => void
 }
