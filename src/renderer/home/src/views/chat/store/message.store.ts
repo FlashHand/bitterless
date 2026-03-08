@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { reactive } from 'vue';
+import { reactive, nextTick } from 'vue';
 import moment from 'moment';
 import { injectable, inject } from 'inversify';
 import type { ChatMessage } from './messageStore.type';
@@ -16,7 +16,6 @@ let _messageInputFocus: (() => void) | null = null;
 @injectable()
 export class MessageController {
   showedMessageList: ChatMessage[] = [];
-  streamingContent = '';
   isStreaming = false;
   isResponding = false;
   currentTitle = '';
@@ -37,7 +36,9 @@ export class MessageController {
   }
 
   focusMessageInput(): void {
-    _messageInputFocus?.();
+    nextTick(() => {
+      _messageInputFocus?.();
+    });
   }
 
   showPlaceholder(): void {
@@ -46,6 +47,15 @@ export class MessageController {
 
   hidePlaceholder(): void {
     this.placeholder = '';
+  }
+
+  createStreamingMsg(sessionId: string): ChatMessage {
+    return {
+      sessionId,
+      role: 'assistant',
+      content: '',
+      createdAt: Date.now(),
+    };
   }
 
   async send(content: string): Promise<void> {
@@ -61,7 +71,6 @@ export class MessageController {
 
     this.isStreaming = true;
     this.isResponding = true;
-    this.streamingContent = '';
 
     const insertedMessage = await xpcRenderer.send('chat/send', {
       sessionId: sessionStore.currentSessionId,
@@ -76,6 +85,9 @@ export class MessageController {
         content: insertedMessage.content,
         createdAt: moment(insertedMessage.created_at).format('YYYY-MM-DD HH:mm:ss'),
       });
+
+      const streamingMsg = this.createStreamingMsg(sessionStore.currentSessionId!);
+      this.showedMessageList.push(streamingMsg);
       this.messageListService.scrollToBottom();
     }
   }
@@ -103,28 +115,35 @@ export const messageStore = reactive<MessageController>(state);
 export const initMessageListeners = (): void => {
   xpcRenderer.handle('chat/stream/chunk', async (payload) => {
     const { chunk } = payload.params || {};
-    if (chunk) {
-      messageStore.streamingContent += chunk;
+    if (chunk && messageStore.showedMessageList.length > 0) {
+      const lastMsg = messageStore.showedMessageList[messageStore.showedMessageList.length - 1];
+      if (!lastMsg.id && lastMsg.role === 'assistant') {
+        lastMsg.content += chunk;
+        if (!messageStore.messageListService.isBrowsingHistory) {
+          messageStore.messageListService.scrollToBottom();
+        }
+      }
     }
     return 'ok';
   });
 
   xpcRenderer.handle('chat/stream/done', async (payload) => {
     const { sessionId, message } = payload.params || {};
-    messageStore.streamingContent = '';
     messageStore.isStreaming = false;
     messageStore.isResponding = false;
     const targetSessionId = sessionId || sessionStore.currentSessionId;
     if (!targetSessionId) return 'ok';
-    
+
     if (messageStore.messageListService.isBrowsingHistory) {
       messageStore.messageListService.hasNew = true;
-    } else if (message) {
-      const existingIds = new Set(messageStore.showedMessageList.map((m) => m.id));
-      if (!existingIds.has(message.id)) {
-        messageStore.showedMessageList.push(message);
-        console.log('[messageStore] pushed assistant message to list, id:', message.id);
+    } else if (message && messageStore.showedMessageList.length > 0) {
+      const lastMsg = messageStore.showedMessageList[messageStore.showedMessageList.length - 1];
+      if (!lastMsg.id && lastMsg.role === 'assistant') {
+        lastMsg.id = message.id;
+        lastMsg.createdAt = message.createdAt;
+        console.log('[messageStore] assigned id to streaming message:', message.id);
       }
+      messageStore.messageListService.scrollToBottom();
     }
     messageStore.focusMessageInput();
     return 'ok';

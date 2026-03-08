@@ -8,6 +8,7 @@ import { connectorWindowHelper } from './windows/connectorWindow.helper';
 import { initXpc } from './xpc/xpc.helper';
 import { initDirectory } from './directoryHelper/directory.helper';
 import { llamaWindowHelper } from './windows/llamaWindow.helper';
+import { fsWindowHelper } from './windows/fsWindow.helper';
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.electron');
@@ -28,6 +29,9 @@ app.whenReady().then(async () => {
       resolve();
     });
   });
+
+  // 启动 FS 进程
+  fsWindowHelper.create();
 
   // SQLite 进程准备就绪后，再启动主窗口和其他窗口
   // llamaWindowHelper.create();

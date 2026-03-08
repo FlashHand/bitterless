@@ -2,11 +2,7 @@
 
 [中文文档](./README_CN.md)
 
-BitterLess is a self-evolving AI agent built with **Electron**.
-
-- Perception
-- Cognition
-- Operation
+BitterLess is an out-of-the-box self-evolving agent app built with **Electron**.
 
 ## Tech Stack
 
@@ -16,6 +12,20 @@ BitterLess is a self-evolving AI agent built with **Electron**.
 | **Vector Database** | Qdrant (local version) |
 | **Relational Database** | SQLite3 (with cipher)  |
 | **Embedding Model** | BGE-M3                 |
+| **Perception** | Multi-modal input processing |
+| **Cognition** | LLM-based reasoning |
+| **Operation Loop** | LangGraph |
+
+## Roadmap
+
+- [x] Chat
+- [x] Web Search
+- [ ] File System
+- [ ] Command Execution (Turbo Mode)
+- [ ] Browser Operations
+- [ ] Scheduled Tasks
+- [ ] Android Emulator
+- [ ] ...
 
 ## License
 

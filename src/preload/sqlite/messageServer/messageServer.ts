@@ -32,7 +32,7 @@ const getSystemPrompt = async (): Promise<string> => {
   return "I'm AI assistant.";
 };
 
-let isStopped = false;
+let currentAbortController: AbortController | null = null;
 let isSqliteInitialized = false;
 
 const sendMessage = async (sessionId: string): Promise<void> => {
@@ -60,14 +60,16 @@ const sendMessage = async (sessionId: string): Promise<void> => {
     }
 
     const proxy = await getProxyConfig();
-    isStopped = false;
+    currentAbortController = new AbortController();
+    const { signal } = currentAbortController;
 
     const fullContent = await langGraphHelper.streamChat(messages, {
       onChunk: (chunk) => {
-        if (isStopped) throw new Error('AbortError');
+        if (signal.aborted) throw new Error('AbortError');
         xpcRenderer.send('chat/stream/chunk', { sessionId, chunk });
       },
       config: { ...llmConfig as ModelConfig, ...(proxy ? { proxy } : {}) },
+      signal,
     });
 
     console.log('[messageServer] streamChat done, fullContent length:', fullContent.length);
@@ -85,7 +87,7 @@ const sendMessage = async (sessionId: string): Promise<void> => {
     });
     console.log('[messageServer] sent chat/stream/done with message id:', insertedMessage.id);
   } catch (err: any) {
-    if (err.message === 'AbortError' || isStopped) {
+    if (err.message === 'AbortError' || err.name === 'AbortError' || currentAbortController?.signal.aborted) {
       xpcRenderer.send('chat/stream/done', { sessionId, content: '' });
     } else {
       console.error('[messageServer] streamChat error:', err.message, err.stack);
@@ -104,7 +106,8 @@ export const initMessageServer = async (): Promise<void> => {
     throw new Error(`SQLite initialization failed: ${err.message}`);
   }
   xpcRenderer.handle('chat/stop', async () => {
-    isStopped = true;
+    currentAbortController?.abort();
+    currentAbortController = null;
     return 'ok';
   });
 

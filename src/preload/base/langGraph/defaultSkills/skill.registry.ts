@@ -4,6 +4,8 @@ import { getSettingSkill } from './getSetting.skill';
 import { createFetchUrlSkill } from './fetchUrl.skill';
 import { createSearchWebSkill, createFetchPageSkill } from './searchWeb.skill';
 import { getDateSkill } from './getDate.skill';
+import { getDateRangeSkill } from './getDateRange.skill';
+import { executeCommandSkill } from './executeCommand.skill';
 
 export const createAllSkills = (proxy?: ProxyConfig): Record<string, StructuredToolInterface> => ({
   get_setting: getSettingSkill,
@@ -11,26 +13,15 @@ export const createAllSkills = (proxy?: ProxyConfig): Record<string, StructuredT
   search_web: createSearchWebSkill(proxy),
   fetch_page: createFetchPageSkill(proxy),
   get_date: getDateSkill,
+  get_date_range: getDateRangeSkill,
+  execute_command: executeCommandSkill,
 });
 
-export const allSkillNames = ['get_setting', 'fetch_url', 'search_web', 'fetch_page', 'get_date'] as const;
+export const allSkillNames = ['get_setting', 'fetch_url', 'search_web', 'fetch_page', 'get_date', 'get_date_range', 'execute_command'] as const;
 
-export const SKILL_SELECTOR_PROMPT = `You are a skill selector. Given the user's message history, decide which skills are needed to answer the final user message.
+export const SKILL_PROMPT = `You have access to tools. Each tool has its own description and usage rules — follow them strictly.
+Default to NOT calling any tool. Only call a tool when the answer genuinely cannot be produced from your own knowledge.
+Do not call a tool to confirm, verify, or supplement something you already know — answer directly instead.
+Each tool may only be called the number of times specified in its own description.`;
 
-Available skills:
-- get_setting: Read local application configuration (connector keys, LLM settings, proxy, etc.)
-- fetch_url: Fetch content from any HTTP/HTTPS URL
-- search_web: Search Baidu and return a list of result URLs and snippets. Does NOT fetch page content.
-- fetch_page: Fetch and extract main text content from a single URL. Use after search_web to read pages one by one.
-- get_date: Convert relative date expressions (今天/today, 明天/tomorrow, 3天前/3 days ago, etc.) into actual calendar dates. MUST be called before search_web whenever the query involves any relative time reference.
 
-Respond with ONLY a JSON array of skill names that are needed. If no skills are needed, respond with an empty array [].
-Examples:
-- "What is the DingTalk config?" → ["get_setting"]
-- "Hello, how are you?" → []
-- "上海天气怎么样?" → ["search_web", "fetch_page"]
-- "明天上海天气怎么样?" → ["get_date", "search_web", "fetch_page"]
-- "三天前是几号?" → ["get_date"]
-- "今天纽约有什么新闻?" → ["get_date", "search_web", "fetch_page"]
-- "What's the weather tomorrow in Beijing?" → ["get_date", "search_web", "fetch_page"]
-- "Search for LangGraph docs" → ["search_web", "fetch_page"]`;

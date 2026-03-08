@@ -13,8 +13,9 @@
     </div>
     <div class="message-item__body">
       <div class="message-item__content">
+        <a-spin v-if="isStreaming && !content" dot />
         <MarkdownRender
-          v-if="role === 'assistant'"
+          v-else-if="role === 'assistant'"
           :content="content"
           :is-dark="false"
           :max-live-nodes="isStreaming ? 0 : undefined"
@@ -24,7 +25,7 @@
         />
         <div v-else class="message-item__text">{{ content.trim() }}</div>
       </div>
-      <div class="message-item__options">
+      <div v-if="!isStreaming" class="message-item__options">
         <a-button
           v-if="role === 'user' && isLast"
           type="text"

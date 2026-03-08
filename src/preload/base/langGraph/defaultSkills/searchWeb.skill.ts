@@ -120,30 +120,30 @@ const fetchPageContent = async (url: string): Promise<string> => {
     const appPath = await pathHelper.getAppPath();
     const chromiumPath = path.join(appPath, 'external_resources', 'chromium', 'mac_arm', 'Chromium.app', 'Contents', 'MacOS', 'Chromium');
     console.log('[skill] fetch_page, chromium path:', chromiumPath);
-    
-    browser = await chromium.launch({ 
+
+    browser = await chromium.launch({
       headless: false,
       executablePath: chromiumPath,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
-    
+
     const context = await browser.newContext({
       userAgent: BROWSER_HEADERS['User-Agent'],
       viewport: { width: 1280, height: 720 },
     });
-    
+
     const page = await context.newPage();
-    
+
     console.log('[skill] fetch_page, navigating to:', url);
-    await page.goto(url, { 
+    await page.goto(url, {
       waitUntil: 'networkidle',
       timeout: 20000,
     });
-    
+
     console.log('[skill] fetch_page, page loaded, extracting content...');
     const html = await page.content();
     await browser.close();
-    
+
     const content = extractContentFromHtml(html);
     console.log('[skill] fetch_page, playwright extracted, length:', content.length);
     return content.slice(0, 3000);
@@ -175,13 +175,7 @@ export const createSearchWebSkill = (proxy?: ProxyConfig) => tool(
     name: 'search_web',
     description:
       'Search Baidu and return a list of result URLs and snippets. This tool does NOT fetch page content — it only returns titles, URLs, and brief snippets. ' +
-      'WORKFLOW AFTER calling search_web: You MUST call fetch_page on each result URL one by one (starting from the first). ' +
-      'If fetch_page returns status=ok with useful content, STOP immediately and answer the user — do NOT call more tools. ' +
-      'If fetch_page returns status=no_useful_content, try the next URL. Maximum 20 fetch_page attempts total. ' +
-      'If no useful content is found after all attempts, tell the user and provide your best suggestion. ' +
-      'Do NOT call search_web more than once. ' +
-      'IMPORTANT: If the query involves a relative date (tomorrow, yesterday, 明天, etc.), you MUST first call get_date to get the actual date, ' +
-      'then use the returned "date" field (YYYY-MM-DD) directly in the query string. Never guess or compute the date yourself.',
+      'After calling search_web, call fetch_page on each result URL one by one (starting from the first) to get detailed content.',
     schema: z.object({
       query: z.string().describe('The search query. For time-sensitive queries include exact date from get_date, e.g. "上海天气 2026-03-08". Never use relative terms like "明天".'),
       maxResults: z.number().optional().describe('Max number of search results to return, default 5'),

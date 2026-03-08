@@ -58,6 +58,7 @@
     "monaco-editor": "^0.52.2",
     "node-fetch": "2",
     "node-llama-cpp": "3.14.5",
+    "node-pty": "^1.1.0",
     "playwright": "^1.58.2",
     "postman-request": "^2.88.1-postman.48",
     "quill": "^2.0.3",
@@ -68,7 +69,8 @@
     "stream-monaco": "^0.0.18",
     "vue-i18n": "^11.2.8",
     "vue-router": "^5.0.2",
-    "zod": "^4.3.6",
+    "xterm": "^5.3.0",
+    "zod": "^3.25.0",
     "electron-xpc": "git+ssh://git@github.com:FlashHand/electron-xpc.git#1.0.11"
   },
   "devDependencies": {

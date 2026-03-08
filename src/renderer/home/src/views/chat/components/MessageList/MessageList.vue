@@ -2,38 +2,16 @@
   <div ref="listRef" class="message-list">
     <MessageItem
       v-for="(msg, index) in messageStore.showedMessageList"
-      :key="msg.id"
-      :id="`msg-${msg.id}`"
+      :key="msg.id || `streaming-${index}`"
+      :id="msg.id ? `msg-${msg.id}` : undefined"
       :ref="index === messageStore.showedMessageList.length - 1 ? 'lastMsgRef' : undefined"
       :role="msg.role"
       :content="msg.content.trim()"
       :is-last="index === lastUserMsgIndex && !messageStore.isStreaming"
+      :is-streaming="!msg.id && msg.role === 'assistant' && messageStore.isStreaming"
       :highlight="msg.id === messageSearchStore.highlightMessageId"
       @recall="recallMessage(index)"
     />
-
-    <MessageItem
-      role="assistant"
-      v-if="messageStore.isStreaming && messageStore.streamingContent"
-      :content="messageStore.streamingContent"
-      :is-streaming="true"
-    />
-    <div
-      v-if="messageStore.isStreaming && !messageStore.streamingContent"
-      class="message-list__loading"
-    >
-      <div class="message-list__loading__avatar">
-        <icon-robot />
-      </div>
-      <a-spin dot />
-    </div>
-
-    <div
-      v-if="!messageStore.showedMessageList.length && !messageStore.isStreaming"
-      class="message-list__empty"
-    >
-      {{ i18nHelper.chat.noMessages }}
-    </div>
 
     <div
       v-if="svc.hasNew || svc.isBrowsingHistory"
@@ -148,11 +126,13 @@ watch(
 );
 
 watch(
-  () => messageStore.streamingContent,
+  () => {
+    const lastMsg = messageStore.showedMessageList[messageStore.showedMessageList.length - 1];
+    return lastMsg?.content || '';
+  },
   () => {
     if (shouldAutoScroll()) {
-      console.log('scrollToBottom:streamingContent');
-
+      console.log('scrollToBottom:lastMsg.content');
       nextTick(() => svc.value.scrollToBottom());
     }
   }
@@ -174,6 +154,7 @@ const onScrollToTop = async (): Promise<void> => {
   const list = messageStore.showedMessageList;
   if (!list.length) return;
   const firstId = list[0].id;
+  if (!firstId) return;
   await messageStore.messageListService.loadPage(sessionStore.currentSessionId, {
     msgId: firstId,
     direction: -1
@@ -190,6 +171,7 @@ const onScrollToBottom = async (): Promise<void> => {
   const list = messageStore.showedMessageList;
   if (!list.length) return;
   const lastId = list[list.length - 1].id;
+  if (!lastId) return;
   await messageStore.messageListService.loadPage(sessionStore.currentSessionId, {
     msgId: lastId,
     direction: 1
@@ -202,9 +184,9 @@ const onScroll = async (): Promise<void> => {
   const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
   // Update isBrowsingHistory in service
-  if (distanceFromBottom < 60) {
+  if (distanceFromBottom < 30) {
     svc.value.isBrowsingHistory = false;
-  } else if (scrollTop < scrollHeight - clientHeight - 100) {
+  } else if (scrollTop < scrollHeight - clientHeight - 30) {
     svc.value.isBrowsingHistory = true;
   }
 
