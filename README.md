@@ -21,6 +21,8 @@ BitterLess is an out-of-the-box self-evolving agent app built with **Electron**.
 - [x] Chat
 - [x] Web Search
 - [ ] File System
+- [ ] Scheduled Tasks
+- [ ] connector:企业微信
 - [ ] Command Execution (Turbo Mode)
 - [ ] Browser Operations
 - [ ] Scheduled Tasks
