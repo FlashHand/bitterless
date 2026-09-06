@@ -35,7 +35,20 @@ when OnlyPreview is a Cowork tab without taking those chords from Maestro or fro
 - Chords that must never be claimed by OnlyPreview in either mount: Command+W, Command+T,
   Command+L, Command+R. In the Cowork mount, the composite's own close request is
   `mount.requestClose()` — closing the tab, not tearing down the window.
-- The alert-layer swallow rule and the DevTools gate keep their current behaviour.
+- The alert-layer swallow widens from `{find-in-file, focus-search}` to **every** native command
+  while a dialog is visible: a dialog is modal to the composite, so no chord may act behind it.
+- The claiming mechanism stays `event.preventDefault()` on `before-input-event`, which suppresses the
+  menu shortcut too. Do **not** rewrite the `fileMenu`/`viewMenu` roles, and do **not** reach for
+  `webContents.setIgnoreMenuShortcuts` — it would disarm Find and Find-in-Project on the
+  out-of-process PDF frame that made the menu accelerator necessary. Record the rejection.
+- The mount claims keyboard focus for the composite's preferred view on mount, on activation, and
+  immediately after `openDevTools({ mode: 'detach', activate: false })` — a `BaseWindow` of views can
+  have no focused child at all, and a detached DevTools window takes key status while binding both
+  Find chords itself.
+- Any remaining focus scan must ask the surface's own views, never the window's children. The one in
+  `ensureFocusedView` was already moved to `container.children` while landing task 130; this task
+  checks no other scan is left.
+- The DevTools gate keeps its current behaviour.
 
 ## Verification
 

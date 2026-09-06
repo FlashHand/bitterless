@@ -166,7 +166,7 @@ const sqliteReadyIndex = appMain.indexOf('coreSqliteBoot.ready({ targetId })')
 const mainLanguageIndex = appMain.indexOf('applicationLanguageService.initialize()')
 const homeCreateIndex = appMain.indexOf('mainWindowHelper.create(')
 const shimCreateIndex = appMain.indexOf('await mcpHandler.ensureShim()')
-const trayCreateIndex = appMain.indexOf('trayHelper.init(mainWindowHelper)')
+const trayCreateIndex = appMain.indexOf('trayHelper.init(')
 const optionalStartIndex = appMain.indexOf('optionalIntegrationsLifecycle.start(')
 const earlyQuitFallbackIndex = appMain.lastIndexOf(
   'initializeApplicationLanguageFallback();',
@@ -182,8 +182,15 @@ assert(guiStartup.indexOf('dependencies.startCoreSqlite()') < guiStartup.indexOf
 assert(guiStartup.indexOf('dependencies.initializeLanguageFallback()') < guiStartup.indexOf('dependencies.createHome()'), 'fallback must initialize before Home')
 assert(guiStartup.includes('void coreSqliteResult'), 'foreground startup must not await Core SQLite')
 assert(mainLanguageIndex >= 0, 'persisted language must hydrate after Core success')
+assert(homeCreateIndex >= 0, 'GUI startup must still create Home through mainWindowHelper')
+assert(trayCreateIndex >= 0, 'GUI startup must still initialize the tray through trayHelper')
 assert(shimCreateIndex > homeCreateIndex, 'MCP shim refresh must follow Home creation')
 assert(trayCreateIndex > homeCreateIndex, 'Tray must follow Home creation')
+// The declaration order above only mirrors intent; guiStartup is where the sequence is awaited.
+assert(
+  guiStartup.indexOf('dependencies.createHome()') < guiStartup.indexOf('dependencies.initializeTray()'),
+  'Home must be created before the tray is initialized'
+)
 assert(optionalStartIndex > homeCreateIndex, 'optional startup must begin only after Home creation')
 assert(
   earlyQuitFallbackIndex >= 0,

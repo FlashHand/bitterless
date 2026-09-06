@@ -23,11 +23,14 @@ That guard is load-bearing — everything downstream of a selection (the read br
 Office sessions, Find) assumes a regular file. So directories get a **sibling** selection path rather
 than a loosened guard, and a presentation form that carries no file authority at all.
 
-The listing itself is not new work: `OnlyPreviewGlobalSearchPreview` already has a `directory`
-variant carrying `name` and `entries: OnlyPreviewDirectoryPreviewEntry[]`
-(`src/shared/onlypreview/onlyPreviewSearch.type.ts:257-260`), produced by
-`src/preload/onlypreview/search/core/global-search-preview.mjs:218`, and the shell already renders it
-in the Global Search flyout (`DirectorySearchPreview.vue`). The preview pane reuses both.
+The listing itself is not new work — but the producer is **`browseDirectory`**, not the Global
+Search directory preview. The Global Search variant
+(`onlyPreviewSearch.type.ts:257-261`, produced by `global-search-preview.mjs:218`) needs a
+`resultToken` minted by a search result, which a tree row does not have. `browseDirectory`
+(`onlyPreviewSearchRuntime.handler.ts:141-150`) returns an `OnlyPreviewBrowseListing` for any path,
+is already fenced on workspace and generation, and is how the tree enumerates a directory today.
+
+So: data from the browse listing, presentation from `DirectorySearchPreview.vue`'s existing shape.
 
 ## Layout
 

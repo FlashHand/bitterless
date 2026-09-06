@@ -21,6 +21,16 @@ of [`trench-omni-embedding-012`](trench-omni-embedding-012.md) (fifth mini app) 
 [`submodules-omni-embedding-001`](submodules-omni-embedding-001.md) (sixth mini app), as the seventh
 bounded `OmniMiniAppId`.
 
+## Status note, 2026-09-04
+
+Still deferred, and **not** superseded: the owner asked for the Maestro (Cowork) browser, not Omni.
+What changed is that [`../../features/onlypreview-embeddable-mount.md`](../../features/onlypreview-embeddable-mount.md)
+answers open question 1 below — the embedded form **nests child views behind an `OnlyPreviewMount`**,
+it does not collapse the renderers — and amends `onlypreview.md`'s boundary to permit exactly that
+container mode while keeping every Omni-specific prohibition below intact. If this task is ever
+un-deferred, Omni becomes a third mount implementation rather than a rewrite, and the Omni-specific
+conflicts in the next section are the only ones left to resolve.
+
 ## Blocking contract conflict
 
 This request reverses a delivered decision. The current contracts forbid exactly what it asks for,

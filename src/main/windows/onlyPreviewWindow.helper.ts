@@ -28,6 +28,8 @@ import {
   type OnlyPreviewHostCapability
 } from '@main/onlypreview/onlyPreviewHost.registry';
 import { resolveOnlyPreviewSettingsBounds } from '@main/onlypreview/onlyPreviewWindowBounds.service';
+import { clampOnlyPreviewSurfaceLayout } from '@main/onlypreview/onlyPreviewSurfaceLayout';
+import { OnlyPreviewStandaloneMount } from '@main/windows/onlyPreviewStandaloneMount';
 import { onlyPreviewSearchBootstrapRegistry } from '@main/onlypreview/onlyPreviewSearchBootstrap.registry';
 import { onlyPreviewProjectIndexStateService } from '@main/onlypreview/onlyPreviewProjectIndexState.service';
 import { onlyPreviewViewLayerService } from '@main/onlypreview/views/onlyPreviewViewLayer.service';
@@ -63,11 +65,6 @@ const DEFAULT_WIDTH = 1180;
 const DEFAULT_HEIGHT = 760;
 const MIN_WIDTH = 800;
 const MIN_HEIGHT = 600;
-const MIN_SIDEBAR_WIDTH = 180;
-const RESIZE_HANDLE_WIDTH = 5;
-const MENU_BAR_HEIGHT = 32;
-const PREVIEW_TOOLBAR_HEIGHT = 43;
-const STATUS_HEIGHT = 25;
 
 type OnlyPreviewShortcutOrigin = OnlyPreviewGlobalSearchFocusOrigin | 'search';
 type OnlyPreviewNativeCommand =
@@ -191,25 +188,6 @@ const bindOnlyPreviewDevToolsShortcut = (webContents: Electron.WebContents): voi
   });
 };
 
-const clampPreviewBounds = (
-  value: OnlyPreviewBounds,
-  contentWidth: number,
-  contentHeight: number
-): Rectangle => {
-  const x = Math.min(Math.max(value.x, MIN_SIDEBAR_WIDTH + RESIZE_HANDLE_WIDTH), contentWidth);
-  const minimumY = MENU_BAR_HEIGHT + PREVIEW_TOOLBAR_HEIGHT;
-  const y = Math.min(
-    Math.max(value.y, minimumY),
-    Math.max(minimumY, contentHeight - STATUS_HEIGHT)
-  );
-  return {
-    x,
-    y,
-    width: Math.min(value.width, Math.max(0, contentWidth - x)),
-    height: Math.min(value.height, Math.max(0, contentHeight - y - STATUS_HEIGHT))
-  };
-};
-
 const settingsBoundsForParent = (
   parentBounds: Rectangle,
   width: number,
@@ -233,6 +211,13 @@ export class OnlyPreviewWindowHelper {
   // independent of whatever else a host window stacks. In this mount it simply fills the window's
   // content rect, which leaves every layer on the coordinates it had before.
   surfaceContainer: View | null = null;
+  // The host, behind the seam. The composite asks this for its extent, its window and its chrome
+  // capability, and never reads geometry off `baseWindow` again.
+  private standaloneMount: OnlyPreviewStandaloneMount | null = null;
+  // The overlay owners are started after the window is shown, so the first frames lay out the shell
+  // before anything exists to receive an overlay rect. Without this the startup path would fan a
+  // layout out to services that would refuse the host token they have not been given yet.
+  private surfaceLayoutFanout = false;
   shellView: WebContentsView | null = null;
   settingsWindow: BrowserWindow | null = null;
   agentSkillGuideWindow: BrowserWindow | null = null;
@@ -533,24 +518,41 @@ export class OnlyPreviewWindowHelper {
 
   updatePreviewBounds(hostToken: string, value: OnlyPreviewBounds): void {
     const host = this.requireStandaloneHost(hostToken);
-    const window = this.baseWindow;
-    if (!window || window.isDestroyed()) {
+    if (!this.standaloneMount?.isAlive()) {
       throw new Error(`OnlyPreview host ${host.hostId} has no active preview surface.`);
     }
-    const [contentWidth, contentHeight] = window.getContentSize();
-    const bounds = clampPreviewBounds(value, contentWidth, contentHeight);
-    onlyPreviewPreviewRegionService.updateBounds(host.hostToken, bounds);
-    onlyPreviewGlobalSearchWindowService.updateBounds(
-      host.hostToken,
-      { x: 0, y: 0, width: contentWidth, height: contentHeight },
-      bounds
+    this.applySurfaceLayout(host, value);
+  }
+
+  /**
+   * The one place a host's extent becomes the composite's layer rects.
+   *
+   * Both callers — the Shell reporting the rect it measured, and the host reporting that its extent
+   * changed — end up here, so the two can no longer drift. The extent comes from
+   * `mount.contentSize()`, never from a window: that single substitution is what lets a Cowork tab
+   * drive the same layout with no other change on this side.
+   */
+  private applySurfaceLayout(
+    host: OnlyPreviewHostCapability,
+    measured: OnlyPreviewBounds | null
+  ): void {
+    const size = this.standaloneMount?.contentSize();
+    if (!size) return;
+    const { preview, overlay } = clampOnlyPreviewSurfaceLayout(
+      measured ?? { x: 0, y: 0, width: 0, height: 0 },
+      size
     );
-    onlyPreviewAlertWindowService.updateBounds(host.hostToken, {
-      x: 0,
-      y: 0,
-      width: contentWidth,
-      height: contentHeight
-    });
+    const shellView = this.shellView;
+    if (shellView && !shellView.webContents.isDestroyed()) shellView.setBounds(overlay);
+    if (!this.surfaceLayoutFanout) return;
+    // Unconditional, unlike the preview's own bounds below: a dialog can be open before any file has
+    // been previewed, and it still has to cover the resized composite.
+    onlyPreviewAlertWindowService.updateBounds(host.hostToken, overlay);
+    // Global Search needs the preview rect as its workspace inset, so neither it nor the preview
+    // region can be positioned before the Shell has measured one.
+    if (!measured) return;
+    onlyPreviewPreviewRegionService.updateBounds(host.hostToken, preview);
+    onlyPreviewGlobalSearchWindowService.updateBounds(host.hostToken, overlay, preview);
   }
 
   async openSettings(sourceHostToken: string): Promise<void> {
@@ -722,22 +724,17 @@ export class OnlyPreviewWindowHelper {
     onlyPreviewAlertWindowService.destroy();
     onlyPreviewGlobalSearchWindowService.destroy();
     onlyPreviewPreviewRegionService.destroy();
-    const surfaceContainer = this.surfaceContainer;
+    const mount = this.standaloneMount;
+    this.surfaceLayoutFanout = false;
     this.baseWindow = null;
     this.surfaceContainer = null;
+    this.standaloneMount = null;
     this.shellView = null;
     this.baseWindowState = null;
     fileSearchWindowService.stop();
     onlyPreviewViewLayerService.stop();
-    if (window && !window.isDestroyed()) {
-      try {
-        // One detach for the whole composite: the layers are children of the container, so removing
-        // the container takes them with it.
-        if (surfaceContainer) window.contentView.removeChildView(surfaceContainer);
-      } catch {
-        // The view may already have been detached by Electron during teardown.
-      }
-    }
+    mount?.detach();
+    mount?.dispose();
     closeView(shellView);
     if (window && !window.isDestroyed()) window.destroy();
     if (this.searchBootstrapToken) {
@@ -829,15 +826,19 @@ export class OnlyPreviewWindowHelper {
     // `keyOwner` separates the two reasons a chord never arrives: another application took over
     // (nothing this window can do), or a window of this application did — a detached DevTools
     // window, which binds Command+F and Shift+Command+F itself.
-    window.on('focus', () =>
+    window.on('focus', () => {
       console.info(
         `[onlypreview] event=window-focus state=focus focus=${electronWebContents.getFocusedWebContents() ? 'view' : 'none'}`
-      )
-    );
+      );
+      // One pair of listeners, not two: the mount is created later in this method, so activation is
+      // reported through the field rather than a captured reference.
+      if (this.baseWindow === window) this.standaloneMount?.reportActivation(true);
+    });
     window.on('blur', () => {
       const keyWindow = BaseWindow.getFocusedWindow();
       const keyOwner = !keyWindow ? 'other-app' : keyWindow === window ? 'self' : 'own-window';
       console.info(`[onlypreview] event=window-focus state=blur keyOwner=${keyOwner}`);
+      if (this.baseWindow === window) this.standaloneMount?.reportActivation(false);
     });
     this.baseWindowState = windowStateService.register('onlypreview', window);
     const searchBootstrap = onlyPreviewSearchBootstrapRegistry.issue(host.hostToken);
@@ -904,8 +905,13 @@ export class OnlyPreviewWindowHelper {
     this.shellStartupLease = { hostToken: host.hostToken, window, view: shellView };
     const surfaceContainer = new View();
     this.surfaceContainer = surfaceContainer;
-    window.contentView.addChildView(surfaceContainer);
-    this.syncSurfaceBounds();
+    const mount = new OnlyPreviewStandaloneMount(window);
+    this.standaloneMount = mount;
+    mount.attach(surfaceContainer);
+    mount.onResize(() => {
+      if (this.baseWindow !== window) return;
+      this.applySurfaceLayout(host, onlyPreviewPreviewRegionService.getBounds() ?? null);
+    });
     // A `BaseWindow` has no web contents of its own, so the shell — the project rail, toolbar,
     // status bar and find bar — fills the composite as a `WebContentsView` and belongs in the stack
     // as its lowest layer rather than outside it.
@@ -917,22 +923,9 @@ export class OnlyPreviewWindowHelper {
     // constructor-time layout for the whole session.
     window.on('resize' as any, () => {
       if (this.baseWindow !== window) return;
-      const [width, height] = window.getContentSize();
-      this.syncSurfaceBounds();
-      shellView.setBounds({ x: 0, y: 0, width, height });
-      // Unconditional, unlike the preview's own bounds below: a dialog can be open before any file
-      // has been previewed, and it still has to cover the resized window.
-      onlyPreviewAlertWindowService.updateBounds(host.hostToken, { x: 0, y: 0, width, height });
-      const currentBounds = onlyPreviewPreviewRegionService.getBounds();
-      if (currentBounds) {
-        const bounds = clampPreviewBounds(currentBounds, width, height);
-        onlyPreviewPreviewRegionService.updateBounds(host.hostToken, bounds);
-        onlyPreviewGlobalSearchWindowService.updateBounds(
-          host.hostToken,
-          { x: 0, y: 0, width, height },
-          bounds
-        );
-      }
+      // The window tells its mount; the mount re-sizes the container and tells the composite. The
+      // composite never listens to a window.
+      mount.reportResize();
     });
     this.applyInitialBounds();
     this.show();
@@ -956,22 +949,13 @@ export class OnlyPreviewWindowHelper {
       backgroundThrottling: shellView.webContents.getBackgroundThrottling()
     });
     onlyPreviewAlertWindowService.start({
-      window,
+      isHostLive: () => mount.isAlive(),
       host,
       createView: () => this.createView(host, 'alert'),
       loadView: async (view) => await this.loadView(view, 'alert')
     });
-    // Seeded now, not on the first preview: a dialog can open before any file has been selected, and
-    // the alert view is not attached at all while it has no bounds.
-    const [alertWidth, alertHeight] = window.getContentSize();
-    onlyPreviewAlertWindowService.updateBounds(host.hostToken, {
-      x: 0,
-      y: 0,
-      width: alertWidth,
-      height: alertHeight
-    });
     onlyPreviewGlobalSearchWindowService.start({
-      window,
+      isHostLive: () => mount.isAlive(),
       host,
       shellView,
       isCurrent: () => this.shellView === shellView && this.baseWindow === window,
@@ -979,7 +963,8 @@ export class OnlyPreviewWindowHelper {
       loadView: async (view) => await this.loadView(view, 'globalSearch')
     });
     onlyPreviewPreviewRegionService.start({
-      window,
+      isHostLive: () => mount.isAlive(),
+      container: surfaceContainer,
       host,
       createVuePreviewView: (
         previewRuntimeToken,
@@ -1001,6 +986,12 @@ export class OnlyPreviewWindowHelper {
         bindOnlyPreviewDevToolsShortcut(webContents);
       }
     });
+    // Every overlay owner is now listening, so layouts may fan out to them. Seeded immediately
+    // rather than on the first preview: a dialog can open before any file has been selected, and the
+    // alert view is not attached at all while it has no bounds. It goes through the same choke point
+    // as every later layout, so the seed cannot disagree with it.
+    this.surfaceLayoutFanout = true;
+    this.applySurfaceLayout(host, null);
 
     // A dead view closes the whole standalone window, which otherwise looks like the window simply
     // vanished. Name the view and the exit reason so the cause is recoverable from the log.
@@ -1151,26 +1142,11 @@ export class OnlyPreviewWindowHelper {
       : view.webContents.loadFile(target.filePath));
   }
 
+  // `maximize()` and `setFullScreen(true)` settle asynchronously on macOS: the caller uses this for
+  // the first frame and the window's `resize` listener covers the settle. Both go through the mount,
+  // so the container and the layers can never be sized from two different notions of the extent.
   private applyInitialBounds(): void {
-    const size = this.syncSurfaceBounds();
-    if (!size || !this.shellView) return;
-    this.shellView.setBounds({ x: 0, y: 0, ...size });
-  }
-
-  /**
-   * Keep the composite's container over the window's content rect.
-   *
-   * The one place the standalone mount translates a window into a surface size. Layer rects stay
-   * relative to the container, so this is also the only place that has to change when a host other
-   * than a window supplies that rect.
-   */
-  private syncSurfaceBounds(): { width: number; height: number } | null {
-    const window = this.baseWindow;
-    const container = this.surfaceContainer;
-    if (!window || window.isDestroyed()) return null;
-    const [width, height] = window.getContentSize();
-    container?.setBounds({ x: 0, y: 0, width, height });
-    return { width, height };
+    this.standaloneMount?.reportResize();
   }
 
   private finishShellOpenTrace(

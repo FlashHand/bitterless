@@ -137,14 +137,22 @@ export const waitForRawPreview = async (
         const window = BaseWindow.getAllWindows().find(
           (candidate) => candidate.getTitle() === 'OnlyPreview'
         );
-        const view = window?.contentView.children.find((candidate) =>
+        // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+        // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+        // not itself a web view; a flat window still returns the same list.
+        const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+          (target?.contentView.children ?? []).flatMap((child) =>
+            (child as { webContents?: unknown }).webContents ? [child] : child.children
+          ) as Electron.WebContentsView[];
+        const views = surfaceViews(window);
+        const view = views.find((candidate) =>
           new RegExp(`^bitterless-preview://${expectedAuthority}/`).test(
             candidate.webContents.getURL()
           )
         );
         return {
           url: view?.webContents.getURL() ?? '',
-          childCount: window?.contentView.children.length ?? 0,
+          childCount: views.length,
           preferences: view?.webContents.getLastWebPreferences() ?? {}
         };
       }, authority);

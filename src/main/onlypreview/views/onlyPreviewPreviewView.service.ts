@@ -1,10 +1,9 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   WebContentsView,
-  webFrameMain,
-  type BaseWindow,
   type Rectangle,
-  type Session
+  type Session,
+  type View
 } from 'electron';
 import { OnlyPreviewContractError } from '@shared/onlypreview/onlyPreview.contract';
 import { onlyPreviewViewLayerService } from './onlyPreviewViewLayer.service';
@@ -17,7 +16,20 @@ import type { OnlyPreviewHostCapability } from '@main/onlypreview/onlyPreviewHos
 import { installOnlyPreviewSessionProtocol } from '@main/onlypreview/onlyPreviewProtocol.service';
 
 export interface OnlyPreviewPreviewRegionRuntime {
-  window: BaseWindow;
+  /**
+   * Whether the host carrying this composite is still there.
+   *
+   * This was `window: BaseWindow`, used for nothing but `isDestroyed()`. A composite hosted in a
+   * Cowork tab has no window of its own, and a plain container `View` exposes no `isDestroyed()`,
+   * so liveness is asked of the mount instead. No geometry ever came from that window — it arrives
+   * through `updateBounds` — which is why this is a one-field substitution rather than a rewrite.
+   */
+  isHostLive: () => boolean;
+  // The composite's own parent. Focus questions are asked of this, never of the window: the window
+  // holds one child — the container — and a plain `View` has no `webContents`, so a scan of the
+  // window's children finds nothing focused and would make the preview steal focus on every
+  // selection. The container's children are exactly this surface's four layers.
+  container: View;
   host: OnlyPreviewHostCapability;
   createVuePreviewView: (
     previewRuntimeToken: string,
@@ -494,7 +506,7 @@ export class OnlyPreviewPreviewViewService {
   private ensureFocusedView(runtime: OnlyPreviewPreviewRegionRuntime, view: WebContentsView): void {
     if (view.webContents.isDestroyed()) return;
     try {
-      const focused = runtime.window.contentView.children.some((child) => {
+      const focused = runtime.container.children.some((child) => {
         const webContents = (child as { webContents?: Electron.WebContents }).webContents;
         return !!webContents && !webContents.isDestroyed() && webContents.isFocused();
       });
@@ -801,10 +813,13 @@ export class OnlyPreviewPreviewViewService {
       onlyPreviewViewLayerService.hide('main', 'preview');
       this.attachedView = null;
     }
-    const window = this.runtime?.window;
-    if (!window || window.isDestroyed()) return;
+    // The container, not the window: this view is a child of the composite's container, and
+    // `removeChildView` on a view that is not the parent is documented as a no-op — so detaching
+    // from the window would silently leave the outgoing preview attached.
+    const runtime = this.runtime;
+    if (!runtime || !runtime.isHostLive()) return;
     try {
-      window.contentView.removeChildView(view);
+      runtime.container.removeChildView(view);
     } catch {
       // Electron may already have detached child views while the parent is closing.
     }

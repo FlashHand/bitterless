@@ -46,6 +46,7 @@
     "test:motto": "node --test tests/motto/*.test.mjs",
     "test:omni-layout": "node --test tests/omni/omniLayoutLifecycle.test.mjs",
     "test:indexing": "node --test tests/indexing/indexingPipeline.test.mjs",
+    "test:onlypreview": "node --test tests/onlypreview/*.test.mjs",
     "indexing": "node tests/indexing/cli.mjs",
     "bench:indexing:matrix": "node tests/indexing/bench/planMatrix.bench.mjs",
     "bench:indexing": "node tests/indexing/indexingPipeline.bench.mjs",

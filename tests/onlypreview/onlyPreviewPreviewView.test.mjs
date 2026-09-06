@@ -426,8 +426,14 @@ test('raw Chrome sibling and window helper keep the hardened topology contract',
   assert.doesNotMatch(region, /new WebContentsView|setProxy\(|installOnlyPreviewSessionProtocol/);
   assert.match(region, /private readonly findService = new OnlyPreviewFindService\(\)/);
   assert.match(region, /private selectionRevision = 0/);
-  assert.match(helper, /PREVIEW_TOOLBAR_HEIGHT = 43/);
-  assert.match(helper, /MENU_BAR_HEIGHT \+ PREVIEW_TOOLBAR_HEIGHT/);
+  // The preview inset is the composite's own chrome, so it is pinned where that chrome now lives —
+  // one module both a window and a Cowork tab feed with an extent.
+  const surfaceLayout = source('src/main/onlypreview/onlyPreviewSurfaceLayout.ts');
+  assert.match(surfaceLayout, /ONLY_PREVIEW_PREVIEW_TOOLBAR_HEIGHT = 43/);
+  assert.match(
+    surfaceLayout,
+    /ONLY_PREVIEW_MENU_BAR_HEIGHT \+ ONLY_PREVIEW_PREVIEW_TOOLBAR_HEIGHT/
+  );
   assert.match(helper, /onlyPreviewPreviewRegionService\.updateBounds/);
   assert.match(helper, /onlyPreviewPreviewRegionService\.destroy/);
 });

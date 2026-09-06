@@ -244,7 +244,7 @@ const descriptorFor = (relativePath, kind, assetUrl) => {
 };
 
 const createState = () => ({
-  window: null,
+  container: null,
   layerShows: [],
   layerHides: [],
   broadcasts: [],
@@ -455,9 +455,9 @@ const viewModule = loadTypeScriptModule(
       onlyPreviewViewLayerService: {
         show: (layer, owner, view) => {
           state.layerShows.push({ layer, owner, name: view?.name ?? null });
-          // The window is the real one in this harness, so the sort's own attach is reproduced here
-          // to keep the child-order assertions meaningful.
-          state.window?.contentView.addChildView(view);
+          // The composite's container is the real one in this harness, so the sort's own attach is
+          // reproduced here to keep the child-order assertions meaningful.
+          state.container?.addChildView(view);
           return true;
         },
         hide: (layer, owner) => {
@@ -478,9 +478,30 @@ const viewModule = loadTypeScriptModule(
   }
 );
 
+const cloneOnlyPreviewDescriptor = (descriptor, options = {}) => ({
+  workspaceId: descriptor.workspaceId,
+  relativePath: descriptor.relativePath,
+  name: descriptor.relativePath.split('/').at(-1) || descriptor.name,
+  extension: descriptor.extension,
+  kind: descriptor.kind,
+  mimeType: descriptor.mimeType,
+  language: descriptor.language,
+  size: descriptor.size,
+  modifiedAt: descriptor.modifiedAt,
+  ...(options.includeAsset !== false && descriptor.assetUrl
+    ? { assetUrl: descriptor.assetUrl }
+    : {}),
+  ...(descriptor.unsupportedCategory
+    ? { unsupportedCategory: descriptor.unsupportedCategory }
+    : {}),
+  ...(descriptor.previewError ? { previewError: { ...descriptor.previewError } } : {})
+});
+
 const previewAdapterModule = loadTypeScriptModule(
   'src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts',
-  {}
+  {
+    '@shared/onlypreview/onlyPreview.contract': { cloneOnlyPreviewDescriptor }
+  }
 );
 
 class FakePreviewReadBrokerService {
@@ -573,8 +594,8 @@ const selectedFileIdentityModule = loadTypeScriptModule(
     '@shared/onlypreview/onlyPreview.types': {}
   }
 );
-const regionModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
+const previewOpenTraceModule = loadTypeScriptModule(
+  'src/main/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts',
   {
     '@main/onlypreview/onlyPreviewOpenDiagnostics.runtime': {
       onlyPreviewOpenDiagnostics: {
@@ -588,7 +609,23 @@ const regionModule = loadTypeScriptModule(
           };
         }
       }
-    },
+    }
+  }
+);
+
+const previewRegionGuardsModule = loadTypeScriptModule(
+  'src/main/onlypreview/views/onlyPreviewPreviewRegionGuards.service.ts',
+  {
+    '@shared/onlypreview/onlyPreview.contract': { OnlyPreviewContractError: ContractError },
+    '@main/onlypreview/onlyPreviewHost.registry': { onlyPreviewHostRegistry: hostRegistry }
+  }
+);
+
+const regionModule = loadTypeScriptModule(
+  'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
+  {
+    './onlyPreviewPreviewOpenTrace.service': previewOpenTraceModule,
+    './onlyPreviewPreviewRegionGuards.service': previewRegionGuardsModule,
     electron: { BaseWindow: class {}, WebContentsView: FakeChromeView },
     'electron-xpc/main': {
       xpcMain: {
@@ -596,24 +633,7 @@ const regionModule = loadTypeScriptModule(
       }
     },
     '@shared/onlypreview/onlyPreview.contract': {
-      cloneOnlyPreviewDescriptor: (descriptor, options = {}) => ({
-        workspaceId: descriptor.workspaceId,
-        relativePath: descriptor.relativePath,
-        name: descriptor.relativePath.split('/').at(-1) || descriptor.name,
-        extension: descriptor.extension,
-        kind: descriptor.kind,
-        mimeType: descriptor.mimeType,
-        language: descriptor.language,
-        size: descriptor.size,
-        modifiedAt: descriptor.modifiedAt,
-        ...(options.includeAsset !== false && descriptor.assetUrl
-          ? { assetUrl: descriptor.assetUrl }
-          : {}),
-        ...(descriptor.unsupportedCategory
-          ? { unsupportedCategory: descriptor.unsupportedCategory }
-          : {}),
-        ...(descriptor.previewError ? { previewError: { ...descriptor.previewError } } : {})
-      }),
+      cloneOnlyPreviewDescriptor,
       OnlyPreviewContractError: ContractError,
       parseOnlyPreviewFileRef: (value) => value,
       toOnlyPreviewErrorPayload: (error) => ({
@@ -784,23 +804,24 @@ const createHarness = () => {
   const children = new Set();
   const additions = [];
   const removals = [];
-  const window = {
-    isDestroyed: () => false,
-    contentView: {
-      addChildView: (view) => {
-        children.add(view);
-        additions.push(view);
-      },
-      removeChildView: (view) => {
-        children.delete(view);
-        removals.push(view);
-      }
+  // The composite's own parent. A plain `View`, not a window: the layers are its children, their
+  // bounds are relative to it, and a detach goes through it — so a harness that handed the service a
+  // window would no longer be reproducing what the service actually talks to.
+  const container = {
+    addChildView: (view) => {
+      children.add(view);
+      additions.push(view);
+    },
+    removeChildView: (view) => {
+      children.delete(view);
+      removals.push(view);
     }
   };
-  // The layer service stub attaches through this window, so its sort is observable in `children`.
-  state.window = window;
+  // The layer service stub attaches through this container, so its sort is observable in `children`.
+  state.container = container;
   const runtime = {
-    window,
+    isHostLive: () => true,
+    container,
     host,
     createVuePreviewView: (previewRuntimeToken, officeBrokerCapability) => {
       const view = new FakeView('vue');

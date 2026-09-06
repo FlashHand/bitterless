@@ -27,6 +27,13 @@ test('owns two secure views, exact native geometry, shortcuts, and a composite 8
       (window) => window.getTitle() === 'OnlyPreview'
     );
     const window = windows[0];
+    // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+    // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+    // not itself a web view; a flat window still returns the same list.
+    const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+      (target?.contentView.children ?? []).flatMap((child) =>
+        (child as { webContents?: unknown }).webContents ? [child] : child.children
+      ) as Electron.WebContentsView[];
     return {
       count: windows.length,
       platform: process.platform,
@@ -45,7 +52,7 @@ test('owns two secure views, exact native geometry, shortcuts, and a composite 8
           }
         : null,
       children:
-        window?.contentView.children.map((view) => ({
+        surfaceViews(window).map((view) => ({
           url: view.webContents.getURL(),
           bounds: view.getBounds(),
           webContentsId: view.webContents.id,
@@ -434,10 +441,17 @@ test('owns two secure views, exact native geometry, shortcuts, and a composite 8
       (candidate) => candidate.getTitle() === 'OnlyPreview'
     );
     if (!window) throw new Error('OnlyPreview BaseWindow unavailable');
+    // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+    // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+    // not itself a web view; a flat window still returns the same list.
+    const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+      (target?.contentView.children ?? []).flatMap((child) =>
+        (child as { webContents?: unknown }).webContents ? [child] : child.children
+      ) as Electron.WebContentsView[];
     return {
       bounds: window.getBounds(),
       contentSize: window.getContentSize(),
-      children: window.contentView.children.map((view) => ({
+      children: surfaceViews(window).map((view) => ({
         url: view.webContents.getURL(),
         bounds: view.getBounds()
       }))
@@ -646,9 +660,16 @@ test('toggles detached Shell and Preview DevTools independently without changing
         (candidate) => candidate.getTitle() === 'OnlyPreview'
       );
       if (!window) throw new Error('OnlyPreview BaseWindow unavailable');
+      // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+      // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+      // not itself a web view; a flat window still returns the same list.
+      const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+        (target?.contentView.children ?? []).flatMap((child) =>
+          (child as { webContents?: unknown }).webContents ? [child] : child.children
+        ) as Electron.WebContentsView[];
       const state = Object.fromEntries(
         (['shell', 'preview'] as const).map((mode) => {
-          const view = window.contentView.children.find((candidate) =>
+          const view = surfaceViews(window).find((candidate) =>
             new RegExp(`/onlypreview/${mode}/index\\.html(?:$|[?#])`).test(
               candidate.webContents.getURL()
             )

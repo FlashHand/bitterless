@@ -272,3 +272,10 @@ Non-blocking review findings are recorded here after task verification.
   on every environment row. The redundant watching itself is untouched — collapsing Desktop
   discovery to one shared watcher, with only the `projects/**` transcript watch staying
   per-environment, is a `claudeObservation.service.ts` change and was an explicit task 093 non-goal.
+
+- The Preview view harness in `tests/onlypreview/onlyPreviewPreviewRegionTest.helper.mjs` still
+  stubs `electron.webFrameMain` and maintains a `state.framesById` map that nothing reads. Both were
+  already dead at `94dfa75` — the source stopped calling `webFrameMain` before the unused import was
+  removed in `docs/issues/onlypreview-verification-checks-red-at-head.md`. Left in place rather than
+  cleaned up as unrelated work; drop them once the surface-container work confirms it will not need
+  frame lookups again.

@@ -12,7 +12,7 @@ test('Shell removes the Project filter and leaves Global Search to its native re
   assert.doesNotMatch(app, /GlobalSearchWorkspace|onlyPreviewGlobalSearchStore/);
   assert.match(app, /<section name="onlypreview__previewRegion"/);
   assert.doesNotMatch(shell, /onlyPreviewGlobalSearchStore/);
-  assert.match(globalSearchApp, /<GlobalSearchWorkspace \/>/);
+  assert.match(globalSearchApp, /<GlobalSearchWorkspace\b[^>]*\/>/);
   assert.ok(shell.split(/\r?\n/).length < 800);
 });
 
@@ -30,9 +30,20 @@ test('Shell always reports live bounds and Main shares them with Preview and Glo
   );
   assert.match(app, /watch\([\s\S]*previewHostRef[\s\S]*resizeObserver\.observe\(host\)/);
   assert.doesNotMatch(windowHelper, /isHiddenPreviewBounds/);
+  // Global Search owns the whole composite rect and floats its workspace inside the preview rect, so
+  // it takes both: the composite's own extent, plus the same clamped rect handed to Preview. Both
+  // now come from one clamp fed by `mount.contentSize()`, so a host that is not a window drives the
+  // identical distribution.
   assert.match(
     windowHelper,
-    /const bounds = clampPreviewBounds\(value, contentWidth, contentHeight\);[\s\S]*onlyPreviewPreviewRegionService\.updateBounds\(host\.hostToken, bounds\);[\s\S]*onlyPreviewGlobalSearchWindowService\.updateBounds\(host\.hostToken, bounds\)/
+    /const \{ preview, overlay \} = clampOnlyPreviewSurfaceLayout\([\s\S]*onlyPreviewPreviewRegionService\.updateBounds\(host\.hostToken, preview\);\s*onlyPreviewGlobalSearchWindowService\.updateBounds\(host\.hostToken, overlay, preview\)/
+  );
+  // And the extent is asked of the mount, never read off a window.
+  assert.match(windowHelper, /const size = this\.standaloneMount\?\.contentSize\(\);/);
+  assert.doesNotMatch(
+    windowHelper,
+    /getContentSize\(\)/,
+    'the composite must not translate a window into a size itself'
   );
 });
 

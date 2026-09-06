@@ -82,12 +82,12 @@ design document.
   Monaco stays out of startup; [task 117 review 1](plan/reviews/desktop-first-visible-performance-117-1.md)
   passed.
 - [OnlyPreview sub-application](features/onlypreview.md) - capability-scoped local indexing,
-  standalone-only multi-view preview, EyesOnAgents-style MenuBar, settings, and OS file-open routing.
+  multi-view preview behind a mount, EyesOnAgents-style MenuBar, settings, and OS file-open routing.
 - [OnlyPreview embeddable mount](features/onlypreview-embeddable-mount.md) - proposed: the
   four-layer composite gains its own container `View` and asks a mount for geometry, window services
   and shortcut arbitration, so one OnlyPreview surface can live either in its own window as today or
-  as a Mini App tab inside the Maestro (Cowork) browser window. Supersedes the "standalone-only"
-  wording in the entry above once delivered.
+  as a Mini App tab inside the Maestro (Cowork) browser window. Amends that document's former
+  "Standalone-only boundary" — Omni stays excluded, the container mode does not.
 - [OnlyPreview delete never tells the tree](issues/onlypreview-delete-never-tells-the-tree.md) -
   fixed; owner verification pending: New Folder and Rename each broadcast their result to the shell
   but Delete announced nothing, so removed rows stayed on screen and every later right-click, copy or
@@ -492,6 +492,11 @@ earlier review rounds were remediated; Ral's runtime/visual verification remains
 
 ## Issues
 
+- [OnlyPreview verification checks red at HEAD](issues/onlypreview-verification-checks-red-at-head.md) -
+  fixed: repinned the stale tray-ordering, Global Search layout, and shell-view assertions, brought
+  the three files that had crept past the 800-line TS-1 limit back under budget by extraction, gave
+  the pending-initialize test a workspace root the Office binding accepts, and removed a dead
+  `webFrameMain` import.
 - [E2E target-display routing](issues/e2e-target-display-routing.md) - fixed: isolated Playwright
   Electron windows route to an exact configured physical-display label before first show, without
   changing production placement or claiming a macOS Mission Control Space.

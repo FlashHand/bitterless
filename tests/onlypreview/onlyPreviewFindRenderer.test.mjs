@@ -479,7 +479,7 @@ test('find UI source keeps one shell input, IME safety, narrow-pane layout, and 
   assert.match(toolbarStyles, /@container \(max-width:\s*440px\)/);
 
   assert.doesNotMatch(app, /onlyPreviewGlobalSearchStore|GlobalSearchWorkspace/);
-  assert.match(globalSearchApp, /<GlobalSearchWorkspace \/>/);
+  assert.match(globalSearchApp, /<GlobalSearchWorkspace\b[^>]*\/>/);
   assert.match(globalSearchWorkspace, /ref="inputRef"/);
   assert.match(previewStore, /ONLY_PREVIEW_FIND_STATE_EVENT/);
   assert.match(previewStore, /nativeFindSuppressesSelection/);
@@ -502,7 +502,7 @@ test('find UI source keeps one shell input, IME safety, narrow-pane layout, and 
   );
   assert.match(windowHelper, /if \(isGlobalSearchShortcut\(input\)\) return 'focus-search'/);
   assert.match(windowHelper, /if \(isCurrentFileFindShortcut\(input\)\) return 'find-in-file'/);
-  assert.match(windowHelper, /createView\(host, 'shell'\)/);
+  assert.match(windowHelper, /createView\(host, 'shell'[,)]/);
   assert.match(
     windowHelper,
     /createView\([\s\S]*host,[\s\S]*'preview',[\s\S]*previewRuntimeToken,[\s\S]*officeBrokerCapability,[\s\S]*previewReadBrokerCapability/

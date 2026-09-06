@@ -123,13 +123,22 @@ Main capability/XPC supervisor ── private typed XPC ── hidden fileSearch
   Setting and Guide restore only their saved size, then center and clamp against the current parent
   display on every open.
 
-### Standalone-only boundary
+### Host boundary
 
-OnlyPreview is not an Omni mini app. Its usable surface owns a native `BaseWindow` graph containing
-one Shell and one mutually exclusive Preview Region content view plus its app-specific Setting
-window. Omni must not
-list `onlypreview`, accept it in persisted cell state, map it to a runtime target, or load an
-OnlyPreview preload. There is no embedded DOM Preview adapter or container mode.
+Amended 2026-09-04 by [OnlyPreview embeddable mount](onlypreview-embeddable-mount.md) at the owner's
+request. The section previously read "Standalone-only boundary" and denied any container mode; the
+parts that still stand and the parts that do not are itemised in that document.
+
+OnlyPreview's usable surface owns a native **view** graph — one container `View` holding one Shell
+and one mutually exclusive Preview Region content view, plus the Global Search and alert layers —
+together with its app-specific Setting window. That graph is carried by an `OnlyPreviewMount`: its
+own `BaseWindow`, or a tab in the Maestro (Cowork) browser window. At most one content surface is
+live at a time and the standalone window has priority.
+
+**OnlyPreview is still not an Omni mini app.** Omni must not list `onlypreview`, accept it in
+persisted cell state, map it to a runtime target, or load an OnlyPreview preload;
+`parseOmniMiniAppId('onlypreview')` continues to throw. There is still no embedded **DOM** Preview
+adapter — the layers stay native views and nothing is folded into another renderer's document.
 
 ## Renderer Entries
 

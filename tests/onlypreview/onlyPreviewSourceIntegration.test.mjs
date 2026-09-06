@@ -20,10 +20,15 @@ test('window sources delegate dual Preview isolation and preserve generic Omni r
   assert.match(rendererTarget, /url === expectedUrl/);
   assert.match(rendererTarget, /setWindowOpenHandler[\s\S]*action:\s*'deny'/);
   assert.match(rendererTarget, /webContents\.on\('will-redirect',\s*fenceNavigation\)/);
-  assert.match(standalone, /MIN_SIDEBAR_WIDTH\s*=\s*180/);
-  assert.match(standalone, /RESIZE_HANDLE_WIDTH\s*=\s*5/);
-  assert.match(standalone, /MENU_BAR_HEIGHT\s*=\s*32/);
-  assert.match(standalone, /STATUS_HEIGHT\s*=\s*25/);
+  // The composite's own chrome moved out of the window helper with the clamp that uses it: both
+  // hosts need the same arithmetic from a different source of extent. Pinned at its new home, and
+  // pinned as absent here so it cannot quietly come back window-side.
+  const surfaceLayout = source('src/main/onlypreview/onlyPreviewSurfaceLayout.ts');
+  assert.match(surfaceLayout, /ONLY_PREVIEW_MIN_SIDEBAR_WIDTH\s*=\s*180/);
+  assert.match(surfaceLayout, /ONLY_PREVIEW_RESIZE_HANDLE_WIDTH\s*=\s*5/);
+  assert.match(surfaceLayout, /ONLY_PREVIEW_MENU_BAR_HEIGHT\s*=\s*32/);
+  assert.match(surfaceLayout, /ONLY_PREVIEW_STATUS_HEIGHT\s*=\s*25/);
+  assert.doesNotMatch(standalone, /MIN_SIDEBAR_WIDTH\s*=\s*180/);
   assert.doesNotMatch(standalone, /PREVIEW_HEADER_HEIGHT/);
   assert.match(
     standalone,
@@ -31,10 +36,13 @@ test('window sources delegate dual Preview isolation and preserve generic Omni r
   );
   assert.doesNotMatch(standalone, /addChildView\(previewView\)/);
   assert.doesNotMatch(standalone, /previewHeaderView/);
+  // One choke point, fed by the mount rather than by the window: the Shell reporting its measured
+  // rect and the host reporting a new extent both land in `applySurfaceLayout`, so they cannot drift.
   assert.match(
     standalone,
-    /onlyPreviewPreviewRegionService\.updateBounds\([\s\S]*clampPreviewBounds\(currentBounds, width, height\)/
+    /clampOnlyPreviewSurfaceLayout\([\s\S]*onlyPreviewPreviewRegionService\.updateBounds\(host\.hostToken, preview\)/
   );
+  assert.match(standalone, /this\.applySurfaceLayout\(host, onlyPreviewPreviewRegionService\.getBounds\(\) \?\? null\)/);
   assert.doesNotMatch(standalone, /sandbox:\s*mode !== 'preview'/);
   assert.match(standalone, /mode === 'preview'[\s\S]*onlypreviewContent\.js[\s\S]*onlypreview\.js/);
   assert.match(
@@ -124,7 +132,7 @@ test('window sources delegate dual Preview isolation and preserve generic Omni r
   );
   const bindDevToolsShortcut = standalone.slice(
     standalone.indexOf('const bindOnlyPreviewDevToolsShortcut'),
-    standalone.indexOf('const clampPreviewBounds')
+    standalone.indexOf('const settingsBoundsForParent')
   );
   assert.match(
     bindDevToolsShortcut,
@@ -475,7 +483,7 @@ test('renderers keep empty state distinct from index failure and PDF/Monaco runt
   assert.match(shellStore, /if \(entry\.nodeKind !== 'file'\) return/);
   assert.doesNotMatch(shellApp, /name="onlypreview__search"|ProjectSearchResults/);
   assert.doesNotMatch(shellApp, /GlobalSearchWorkspace|onlyPreviewGlobalSearchStore/);
-  assert.match(globalSearchApp, /<GlobalSearchWorkspace \/>/);
+  assert.match(globalSearchApp, /<GlobalSearchWorkspace\b[^>]*\/>/);
   assert.match(shellApp, /role="status"[\s\S]*aria-live="polite"/);
 
   const settingsApp = source('src/renderer/onlypreview/settings/src/App.vue');

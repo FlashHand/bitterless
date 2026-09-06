@@ -39,7 +39,14 @@ test('renders immutable text, selectable PDF, image pixels, and seekable audio/v
       const window = BaseWindow.getAllWindows().find(
         (candidate) => candidate.getTitle() === 'OnlyPreview'
       );
-      const view = window?.contentView.children.find((candidate) =>
+      // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+      // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+      // not itself a web view; a flat window still returns the same list.
+      const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+        (target?.contentView.children ?? []).flatMap((child) =>
+          (child as { webContents?: unknown }).webContents ? [child] : child.children
+        ) as Electron.WebContentsView[];
+      const view = surfaceViews(window).find((candidate) =>
         /\/preview\//.test(candidate.webContents.getURL())
       );
       if (!window || !view) throw new Error('OnlyPreview preview view unavailable');
@@ -108,7 +115,14 @@ test('renders immutable text, selectable PDF, image pixels, and seekable audio/v
       const window = BaseWindow.getAllWindows().find(
         (candidate) => candidate.getTitle() === 'OnlyPreview'
       );
-      const view = window?.contentView.children.find((candidate) =>
+      // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+      // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+      // not itself a web view; a flat window still returns the same list.
+      const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+        (target?.contentView.children ?? []).flatMap((child) =>
+          (child as { webContents?: unknown }).webContents ? [child] : child.children
+        ) as Electron.WebContentsView[];
+      const view = surfaceViews(window).find((candidate) =>
         /\/preview\//.test(candidate.webContents.getURL())
       );
       if (!view) throw new Error('OnlyPreview preview view unavailable');
@@ -126,7 +140,14 @@ test('renders immutable text, selectable PDF, image pixels, and seekable audio/v
     const window = BaseWindow.getAllWindows().find(
       (candidate) => candidate.getTitle() === 'OnlyPreview'
     );
-    const view = window?.contentView.children.find((candidate) =>
+    // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+    // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+    // not itself a web view; a flat window still returns the same list.
+    const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+      (target?.contentView.children ?? []).flatMap((child) =>
+        (child as { webContents?: unknown }).webContents ? [child] : child.children
+      ) as Electron.WebContentsView[];
+    const view = surfaceViews(window).find((candidate) =>
       /\/preview\//.test(candidate.webContents.getURL())
     );
     if (!view) throw new Error('OnlyPreview preview view unavailable');

@@ -1,4 +1,4 @@
-import type { BaseWindow, Rectangle, WebContents, WebContentsView } from 'electron';
+import type { Rectangle, WebContents, WebContentsView } from 'electron';
 import { xpcMain } from 'electron-xpc/main';
 import type { OnlyPreviewGlobalSearchFocusOrigin } from '@shared/onlypreview/onlyPreview.types';
 import type { OnlyPreviewHostCapability } from '@main/onlypreview/onlyPreviewHost.registry';
@@ -8,7 +8,12 @@ import { onlyPreviewGlobalSearchViewService } from './onlyPreviewGlobalSearchVie
 import { onlyPreviewViewLayerService } from './onlyPreviewViewLayer.service';
 
 interface GlobalSearchWindowRuntime {
-  window: BaseWindow;
+  /**
+   * Whether the host carrying this composite is still there — see the same field on the view
+   * service's runtime. The seam forwards it instead of a window so that neither side needs to know
+   * whether this composite has a window at all.
+   */
+  isHostLive: () => boolean;
   host: OnlyPreviewHostCapability;
   shellView: WebContentsView;
   isCurrent: () => boolean;
@@ -19,7 +24,7 @@ interface GlobalSearchWindowRuntime {
 export class OnlyPreviewGlobalSearchWindowService {
   start(runtime: GlobalSearchWindowRuntime): void {
     onlyPreviewGlobalSearchViewService.start({
-      window: runtime.window,
+      isHostLive: runtime.isHostLive,
       host: runtime.host,
       createView: runtime.createView,
       loadView: runtime.loadView,

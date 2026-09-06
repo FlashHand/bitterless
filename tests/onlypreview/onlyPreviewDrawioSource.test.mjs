@@ -142,18 +142,27 @@ test('Draw.io preflight is streaming, bounded to 32 MiB, and rejects image-beari
 });
 
 test('Draw.io remediation keeps every authored implementation and focused test below 800 lines', () => {
-  for (const path of [
+  // Every module split out of one of these files joins the list, or the budget is escapable by
+  // extraction. Reported together: a bare `assert.ok` per file hides every violation after the
+  // first, which is how three of these drifted over the limit unnoticed.
+  const oversized = [
     'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
     'src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts',
+    'src/main/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts',
+    'src/main/onlypreview/views/onlyPreviewPreviewRegionGuards.service.ts',
     'src/renderer/onlypreview/preview/src/onlyPreviewPreview.store.ts',
+    'src/renderer/onlypreview/preview/src/onlyPreviewPreviewViewModel.service.ts',
     'src/renderer/onlypreview/preview/src/onlyPreviewDrawioPreflight.service.ts',
     'src/renderer/onlypreview/preview/src/onlyPreviewDrawioSelection.store.ts',
     'src/renderer/onlypreview/preview/src/components/DrawioPreview/DrawioPreview.store.ts',
     'src/renderer/onlypreview/preview/src/components/DrawioPreview/DrawioPreview.vue',
     'tests/onlypreview/onlyPreviewPreviewRegion.test.mjs',
+    'tests/onlypreview/onlyPreviewPreviewRegionPresentationContract.test.mjs',
     'tests/onlypreview/onlyPreviewDrawioPreviewRegion.test.mjs',
     'tests/onlypreview/onlyPreviewDrawioViewer.test.mjs'
-  ]) {
-    assert.ok(source(path).trimEnd().split('\n').length <= 800, `${path} exceeds 800 lines`);
-  }
+  ]
+    .map((path) => ({ path, lines: source(path).trimEnd().split('\n').length }))
+    .filter(({ lines }) => lines > 800);
+
+  assert.deepEqual(oversized, [], `over the 800-line limit: ${JSON.stringify(oversized)}`);
 });

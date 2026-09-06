@@ -323,7 +323,17 @@ test('Global Search alone renders as one inset transparent floating surface', ()
   assert.match(app, /class="onlypreview-global-search-canvas"/);
   assert.match(app, /@click="dismissFromTransparentCanvas"/);
   assert.match(viewService, /view\.setBounds\(\{ \.\.\.bounds \}\)/);
-  assert.match(helper, /\{ x: 0, y: 0, width: contentWidth, height: contentHeight \}/);
+  // Global Search covers the whole composite rect — its canvas is transparent with a gutter, so the
+  // project rail and the preview stay visible around it. That rect is now the layout module's
+  // `overlay`, which is the composite's extent whatever host supplied it.
+  assert.match(
+    helper,
+    /onlyPreviewGlobalSearchWindowService\.updateBounds\(host\.hostToken, overlay, preview\)/
+  );
+  assert.match(
+    source('src/main/onlypreview/onlyPreviewSurfaceLayout.ts'),
+    /overlay: \{ x: 0, y: 0, width, height \}/
+  );
 });
 
 test('Global Search context snapshot carries exact versioned visibility state', () => {

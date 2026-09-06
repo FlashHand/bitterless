@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { BaseWindow, Rectangle, WebContents, WebContentsView } from 'electron';
+import type { Rectangle, WebContents, WebContentsView } from 'electron';
 import { OnlyPreviewContractError } from '@shared/onlypreview/onlyPreview.contract';
 import { ONLY_PREVIEW_ALERT_STATE_EVENT } from '@shared/onlypreview/onlyPreview.types';
 import {
@@ -22,7 +22,15 @@ import {
 import type { OnlyPreviewHostCapability } from '@main/onlypreview/onlyPreviewHost.registry';
 
 export interface OnlyPreviewAlertViewRuntime {
-  window: BaseWindow;
+  /**
+   * Whether the host carrying this composite is still there.
+   *
+   * This was `window: BaseWindow`, used for nothing but `isDestroyed()`. A composite hosted in a
+   * Cowork tab has no window of its own, and a plain container `View` exposes no `isDestroyed()`,
+   * so liveness is asked of the mount instead. No geometry ever came from that window — it arrives
+   * through `updateBounds` — which is why this is a one-field substitution rather than a rewrite.
+   */
+  isHostLive: () => boolean;
   host: OnlyPreviewHostCapability;
   createView: () => WebContentsView;
   loadView: (view: WebContentsView) => Promise<void>;
@@ -464,7 +472,7 @@ export class OnlyPreviewAlertViewService {
       ? 'closed'
       : !this.ready
         ? 'unloaded'
-        : !runtime || runtime.window.isDestroyed()
+        : !runtime || !runtime.isHostLive()
           ? 'window'
           : !view || view.webContents.isDestroyed()
             ? 'view'
@@ -482,7 +490,7 @@ export class OnlyPreviewAlertViewService {
 
   private detach(): void {
     const runtime = this.runtime;
-    if (!runtime || runtime.window.isDestroyed() || !this.view) return;
+    if (!runtime || !runtime.isHostLive() || !this.view) return;
     // Dropped from the sort and hidden, not torn down: the renderer survives a close so the next
     // dialog is instant.
     runtime.hideAlertLayer();

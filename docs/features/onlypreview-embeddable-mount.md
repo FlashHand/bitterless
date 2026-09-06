@@ -1,6 +1,8 @@
 # OnlyPreview Embeddable Mount
 
-Status: proposed
+Status: in progress — tasks `onlypreview-surface-container-130` and `onlypreview-mount-seam-131`
+implemented (owner verification pending), tasks 132–137 pending. Electron E2E updated but not run by
+an agent.
 
 Owner request, 2026-09-04: 「重大功能优化 bitterless 中的 only preview 需要改造成可以在子窗口
 （webcontentsview 打开）这样可以实现 only preview 做成 miniapp 在 bitterless /cowork 浏览器中打开
@@ -220,12 +222,64 @@ One rule that is easy to get wrong and cheap to state: a hidden container's view
 so an OnlyPreview surface in a background tab receives no chords through any carrier. No
 "is my tab active" check is needed in the per-view path.
 
+**The mechanism for claiming a chord is `event.preventDefault()` on `before-input-event`**, which
+Electron documents as suppressing the menu shortcut as well as the page. So OnlyPreview needs no
+change to the application-menu template, and in particular must not rewrite `{ role: 'fileMenu' }`
+or `{ role: 'viewMenu' }` into hand-written item lists — that would re-scope Command+W and
+Command+R for every Bitterless window (Home, Omni, EyesOnAgents, Submodules, Todo) for a two-host
+benefit. `webContents.setIgnoreMenuShortcuts` is likewise **rejected**: it exists, is unused
+anywhere in `src/`, and applying it to the composite's views would disarm Find and Find-in-Project
+on exactly the out-of-process PDF frame that made the menu accelerator necessary in the first place.
+
+**Command+W has a hole, and it is not OnlyPreview's.** Maestro installs its tab chords in
+`src/main/maestro/common/shortcutsHelper/shortcuts.helper.ts`, and the gate is
+`if (contents.session !== session.fromPartition(MAESTRO_PARTITION) || shortcutContents.has(contents))
+return`. OnlyPreview's views are created with **no `partition`**
+(`onlyPreviewWindow.helper.ts` `createView`), so they run in the default session and Maestro's
+handler skips them. With focus inside an embedded OnlyPreview view, Command+W therefore reaches
+neither Maestro's `closeActiveTab` nor any OnlyPreview binding, and falls through to the inherited
+`fileMenu` `close` role — **closing the whole Cowork window instead of the tab.**
+
+The fix belongs on the Maestro side and is one file: a module `WeakSet` plus an
+`enrollMaestroShortcutContents(contents)` entry point, and widening that gate to admit enrolled
+contents. The Cowork mount enrolls each of the composite's views as it creates them. Keeping the
+partition test as the default is deliberate — it is what stops arbitrary web content in a tab from
+claiming Bitterless chords.
+
+**Nothing in this design moves OnlyPreview into `MAESTRO_PARTITION`.** The composite keeps the
+default session, its own `bitterless-preview://` protocol registration and its sandboxed content
+preload, so an embedded OnlyPreview shares no cookies, storage or service workers with the remote
+pages in sibling tabs. Enrollment grants a keystroke, not a session.
+
+**A `BaseWindow` of views can have no focused child at all**, which is the case the existing
+diagnostics were added to distinguish, and a detached DevTools window takes key status while binding
+both Find chords itself. Both are handled by having the mount claim keyboard focus for the
+composite's own preferred view — on mount, on activation, and immediately after
+`openDevTools({ mode: 'detach', activate: false })`.
+
+### Focus
+
+Focus questions are asked of the **surface's own views**, never of the window's children. This is
+not a preference: with a container in place a window holds exactly one child, and a plain `View` has
+no `webContents`, so a window-level "is anything of mine focused?" scan finds nothing and always
+answers no. `OnlyPreviewPreviewViewService.ensureFocusedView` was exactly that scan — it only claims
+focus "when nothing else has it, so navigating the Project tree by keyboard or by click keeps its
+focus" — and against a container it would have claimed focus on **every** selection and broken the
+tree. It now scans `container.children`, which is precisely this surface's four layers, and is
+correct in both mounts.
+
+The same rule applies to the E2E harness: `tests/onlypreview` reached for
+`window.contentView.children` in eleven places and read `.webContents` off each child, which throws
+on a container. All eleven now descend through any child that is not itself a web view, so a flat
+window and a nested one return the same list.
+
 ### Overlays
 
 Both overlays are already child views in layers, not windows — the `*Window.service.ts` files are
 binding seams, not window owners. So neither becomes a child window, and modality keeps working the
 way it does today: `executeNativeCommand` already swallows Find and Global Search while the alert
-layer is open. In embedded mode "modal" means modal to the composite, not to the Cowork window —
+layer is open — and that swallow widens to **every** native command while a dialog is visible, since
+a dialog is modal to the composite and no chord should act behind it. In embedded mode "modal" means modal to the composite, not to the Cowork window —
 the owner can still switch tabs with a confirm dialog open, and the dialog is still there when they
 come back, because hiding the container preserves per-layer visibility.
 
@@ -242,20 +296,56 @@ honour. The Shell learns this the same way it learns everything else about its h
 (`src/preload/onlypreview/onlyPreviewEnv.preload.ts`), which is already how `hostToken`, `hostId`,
 `mode` and `platform` arrive. No new IPC.
 
-### Lifecycle and identity
+### Lifecycle, ownership and identity
 
 `hostToken` stays the identity of a surface, and the host registry stays the authority. The window
 helper's single-surface fields (`baseWindow`, `shellView`, `standaloneHost`) become a
-`Map<hostToken, OnlyPreviewSurface>` from the start, even though policy admits one live content
-surface — so raising that limit later is a policy change in one place plus per-service
-multiplexing, not a re-architecture.
+`Map<hostToken, OnlyPreviewSurface>`, because two *surfaces* now exist even though only one of them
+is ever a live composite.
 
-The policy: **one live content surface, in whichever mount the owner last asked for.** Opening
-OnlyPreview from inside Cowork while a standalone window is open *relocates* the surface into a tab
-— the container re-parents, the workspace, index state, selection and scroll position all survive,
-because the render processes are never torn down (probe-verified). Opening from the Bitterless Home
-grid relocates it back into a window. This is strictly less work than N instances and reads as
-dock/undock rather than as a restriction.
+Owner decision, 2026-09-04: 「独立窗口的 OnlyPreview 和 Cowork 里的 OnlyPreview tab，不能同时开，如果
+独立窗口 tab 里的 onlypreview 就显示 view in window 点击聚焦 独立窗口的 onlypreview。独立窗口的
+only preview 关闭后捕捉到该事件就 tab 中如果打开了 onlypreview 就 reload tab 中的 onlypreivew，例如
+独立窗口打开的目录和正在看的文件，在独立窗口关闭 tab 中打开，能继续看之前看的文件，所以是 tab 要
+重新 load 下」
+
+**Exactly one live OnlyPreview content surface, and the standalone window has priority.** A Cowork
+OnlyPreview tab is therefore in one of two states:
+
+| state      | what the tab holds                                                        |
+| ---------- | ------------------------------------------------------------------------- |
+| `live`     | the composite — container, four layers, a bound workspace                 |
+| `deferred` | one placeholder view: the OnlyPreview identity and a **View in window** action that shows and focuses the standalone window |
+
+| event                                                                              | tab is `live`                                            | tab is `deferred`                        |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------- |
+| the standalone window opens (Home Mini Apps, OS file-open queue, agent/MCP preview) | the tab disposes its composite and becomes `deferred`    | unchanged                                |
+| the standalone window closes                                                        | —                                                        | the tab builds a fresh composite → `live` |
+| OnlyPreview is opened from Cowork's Mini Apps grid, standalone window open          | —                                                        | the tab is activated, still `deferred`   |
+| OnlyPreview is opened from Cowork's Mini Apps grid, no standalone window            | the tab is activated                                     | (no such tab yet) a `live` tab is created |
+| the tab or the Cowork window closes                                                 | the composite is disposed                                | the placeholder is disposed              |
+
+The takeover on standalone close is a **fresh build, not a hand-off**, and that is what makes the
+owner's requirement work rather than a special case for it. OnlyPreview already persists the Project
+directory and the file being previewed continuously — `onlypreview_workspace / last_directory` and
+`last_file`, written by `rememberSelectedFile` *after* the preview has presented
+(`docs/features/onlypreview-restore-last-previewed-file.md`) — and `restoreFromStorage` runs on a
+true first restore, which a newly built surface is by definition. So a tab that takes over reopens
+the directory and the file the window was last showing through the shipped restore path, with no
+new hand-off channel, no state serialisation at close, and no risk of a half-transferred workspace.
+
+Two consequences to hold on to. Because the tab is disposed rather than hidden while the window
+owns the surface, there is never a second bound workspace, a second index watcher, or a second find
+session — which is why the content services can keep their single runtime. And because the
+placeholder is a real occupant of the composite's `base` layer, the same container and the same
+layer service carry both states: `hide('base', 'deferred')` then `show('base', 'shell', shellView)`
+is the whole takeover, with `OnlyPreviewViewLayerOwner` gaining `'deferred'`.
+
+Rejected here: re-parenting the live container from the window into the tab. It is technically
+available — a container survives a move between windows with its render processes intact — but it
+hands the owner a surface whose window controls, chrome and geometry all changed under it, and it
+makes the tab's state depend on how it was reached. A fresh build plus the existing restore path
+gives the same continuity with none of that.
 
 ## What does not change
 
@@ -265,6 +355,64 @@ HTML), Global Search, alert dialogs and delete progress, browse history, find-in
 `bitterless-preview://` protocol and its session, the invisible `fileSearch` renderer and its
 capability model, and every XPC contract. Standalone mode keeps its window state, bounds
 persistence, minimum size and traffic lights.
+
+## The contract this amends
+
+This request reverses a delivered decision, and the reversal has to be written down rather than
+assumed. `docs/features/onlypreview.md` carries a **Standalone-only boundary** section:
+
+> OnlyPreview is not an Omni mini app. Its usable surface owns a native `BaseWindow` graph
+> containing one Shell and one mutually exclusive Preview Region content view plus its app-specific
+> Setting window. Omni must not list `onlypreview`, accept it in persisted cell state, map it to a
+> runtime target, or load an OnlyPreview preload. There is no embedded DOM Preview adapter or
+> container mode.
+
+`onlypreview-standalone-only-002` (done) removed OnlyPreview from Omni on purpose after the MVP had
+embedded it, and `tests/onlypreview` plus focused Omni tests assert that
+`parseOmniMiniAppId('onlypreview')` throws. There is also an owner-deferred task recording this same
+intent for a different host: `docs/plan/tasks/onlypreview-omni-embedding-026.md`, "deferred by owner
+2026-08-21 — do not implement yet", which names the identical hard parts and this identical conflict.
+
+What this feature does and does not disturb:
+
+| the boundary says | this feature |
+| --- | --- |
+| Omni must not list `onlypreview`, accept it in cell state, map it to a runtime target, or load its preload | **unchanged.** The host here is Maestro/Cowork, not Omni. `OmniMiniAppId` gains nothing, and `parseOmniMiniAppId('onlypreview')` keeps throwing. |
+| "There is no … container mode" | **amended.** There is one: a container `View` the composite owns, mounted either in its own window or in a Cowork tab. |
+| "There is no embedded DOM Preview adapter" | **unchanged, and deliberately so.** Nothing is collapsed into a DOM surface; the four native layers stay four native layers. |
+| the surface "owns a native `BaseWindow` graph" | **amended.** It owns a native *view* graph; a window is one of two things that can carry it. |
+
+`onlypreview-omni-embedding-026` stays deferred and is **not** superseded: the owner asked for
+Cowork, not Omni. What changes for it is that its first open question — "does the embedded form
+collapse the renderers, nest child views in the cell, or embed a preview-only surface?" — is now
+answered by this design (nest, behind a mount), so if the owner ever un-defers it, Omni becomes a
+third `OnlyPreviewMount` implementation rather than a rewrite.
+
+## How this is verified without Electron E2E
+
+Agent-initiated Electron E2E is prohibited in this project, so the non-E2E proofs have to be the
+load-bearing ones:
+
+- `yarn test:onlypreview` — the ~100-file node suite. It had **no aggregate script** before this
+  feature; a task could pass its own focused `verify` line while breaking the rest of the domain.
+- `yarn typecheck` (`typecheck:node` + `typecheck:web`), `yarn lint`, `yarn check:renderer-i18n`,
+  `yarn check:maestro`.
+- `yarn build` — the strongest available structural proof. `electron.vite.config.ts`'s `closeBundle`
+  re-reads every `out/renderer/onlypreview/<mode>/index.html` and enforces CSP and charset ordering,
+  the `wasm-unsafe-eval` present/absent split per entry, and the Monaco bootstrap hash. Renderer-entry
+  drift is invisible to node tests and caught here.
+- An **import-direction guard**: no file under `src/main/onlypreview/` may import `@maestro*`. The
+  dependency rule is stated in this document and is otherwise unenforced.
+- A **containment property test** over (composite extent × reported preview rect) asserting every
+  layer rect lies inside `{0, 0, width, height}` — the invariant that stands in for the ancestor
+  clipping this design refuses to rely on.
+- The E2E specs are updated with the code but **not run by an agent**. They are handed to the owner.
+
+Two facts worth recording because they were checked rather than assumed:
+`src/renderer/onlypreview/globalSearch/index.html` carries `script-src 'self' 'wasm-unsafe-eval'`
+while `alert/index.html` carries `script-src 'self'; connect-src 'none'`, which is an independent
+reason not to fold either into the Shell; and `scripts/renderer-i18n/check-renderer-i18n.mjs` never
+listed the `alert` or `globalSearch` entries, so its inventory needs no edit for this work.
 
 ## Rejected alternatives
 
@@ -287,5 +435,6 @@ second composite mini-app can generalise it with evidence.
 
 | id   | question | why it is parked | default if unanswered |
 | ---- | -------- | ---------------- | --------------------- |
-| PQ-1 | Should a standalone OnlyPreview window and a Cowork OnlyPreview tab be able to be open **at the same time**? | Needs the owner's expectation, not evidence. Multiplexing every content service is a materially larger change than relocation. | One live surface, relocated between mounts. Registry is already a Map so the limit can be raised. |
+| PQ-1 | ~~Can a standalone window and a Cowork tab show OnlyPreview at the same time?~~ | **Answered by the owner, 2026-09-04: no.** The standalone window has priority, the tab shows a **View in window** placeholder, and on standalone close the tab rebuilds and resumes from the persisted directory and file. See *Lifecycle, ownership and identity*. | — |
 | PQ-2 | Does the Cowork OnlyPreview tab appear as an ordinary closable tab, or as a second pinned tab next to local Home? | Product placement. | Ordinary closable tab, opened from the Mini Apps grid. |
+| PQ-3 | While a Cowork tab holds the live surface, should an agent/MCP `preview_open` or an OS file-open land in that tab, or open the standalone window and demote the tab? | Both are defensible; the second keeps one rule ("explicit external opens go to the window") at the cost of moving the owner's eyes to another window. | Open the standalone window and demote the tab, so priority has exactly one direction. |

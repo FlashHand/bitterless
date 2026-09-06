@@ -100,15 +100,12 @@ const createHarness = (loadView = async () => undefined) => {
   opener.focus = () => {
     opener.focusCount += 1;
   };
-  const window = {
-    destroyed: false,
-    isDestroyed() {
-      return this.destroyed;
-    }
-  };
+  // The service used a `window` for nothing but `isDestroyed()`. A composite in a Cowork tab has no
+  // window, so liveness is a question for the host — the harness carries the same one bit.
+  const host_ = { alive: true };
   const service = new OnlyPreviewAlertViewService();
   service.start({
-    window,
+    isHostLive: () => host_.alive,
     host,
     createView: () => {
       const view = createView(`alert-${views.length + 1}`);
@@ -122,7 +119,7 @@ const createHarness = (loadView = async () => undefined) => {
     focusedContents: () => opener
   });
   service.updateBounds(host.hostToken, bounds);
-  return { service, views, broadcasts, shows, hides, window, opener };
+  return { service, views, broadcasts, shows, hides, host: host_, opener };
 };
 
 const dialogId = (harness) => harness.service.snapshot(host.hostToken).dialog.dialogId;
@@ -385,12 +382,12 @@ test('another host cannot read or answer this host dialog', async () => {
   await pending;
 });
 
-test('destroying the window cancels every open dialog', async () => {
+test('losing the host cancels every open dialog', async () => {
   const harness = createHarness();
   const confirmed = harness.service.requestConfirm(host.hostToken, CONFIRM);
   await tick();
   harness.service.destroy();
-  assert.equal(await confirmed, false, 'a dialog with no window has no answer');
+  assert.equal(await confirmed, false, 'a dialog with no host has no answer');
   assert.equal(harness.views[0].webContents.destroyed, true);
 });
 

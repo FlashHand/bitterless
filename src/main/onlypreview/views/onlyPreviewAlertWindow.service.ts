@@ -1,4 +1,4 @@
-import type { BaseWindow, Rectangle, WebContentsView } from 'electron';
+import type { Rectangle, WebContentsView } from 'electron';
 import { webContents as electronWebContents } from 'electron';
 import { xpcMain } from 'electron-xpc/main';
 import type { OnlyPreviewHostCapability } from '@main/onlypreview/onlyPreviewHost.registry';
@@ -15,7 +15,12 @@ import {
 import { onlyPreviewViewLayerService } from './onlyPreviewViewLayer.service';
 
 interface AlertWindowRuntime {
-  window: BaseWindow;
+  /**
+   * Whether the host carrying this composite is still there — see the same field on the view
+   * service's runtime. The seam forwards it instead of a window so that neither side needs to know
+   * whether this composite has a window at all.
+   */
+  isHostLive: () => boolean;
   host: OnlyPreviewHostCapability;
   createView: () => WebContentsView;
   loadView: (view: WebContentsView) => Promise<void>;
@@ -27,7 +32,7 @@ interface AlertWindowRuntime {
 export class OnlyPreviewAlertWindowService {
   start(runtime: AlertWindowRuntime): void {
     onlyPreviewAlertViewService.start({
-      window: runtime.window,
+      isHostLive: runtime.isHostLive,
       host: runtime.host,
       createView: runtime.createView,
       loadView: runtime.loadView,

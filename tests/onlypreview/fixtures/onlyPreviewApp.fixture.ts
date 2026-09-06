@@ -228,7 +228,14 @@ export const test = base.extend<OnlyPreviewFixtures>({
                 const standalone = BaseWindow.getAllWindows().filter(
                   (window) => window.getTitle() === 'OnlyPreview'
                 );
-                const rendererModes = standalone[0]?.contentView.children
+                // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+                // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+                // not itself a web view; a flat window still returns the same list.
+                const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+                  (target?.contentView.children ?? []).flatMap((child) =>
+                    (child as { webContents?: unknown }).webContents ? [child] : child.children
+                  ) as Electron.WebContentsView[];
+                const rendererModes = surfaceViews(standalone[0])
                   .map((view) => {
                     const url = view.webContents.getURL();
                     return (
@@ -263,7 +270,14 @@ export const test = base.extend<OnlyPreviewFixtures>({
             const window = BaseWindow.getAllWindows().find(
               (candidate) => candidate.getTitle() === 'OnlyPreview'
             );
-            const view = window?.contentView.children.find((candidate) => {
+            // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+            // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+            // not itself a web view; a flat window still returns the same list.
+            const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+              (target?.contentView.children ?? []).flatMap((child) =>
+                (child as { webContents?: unknown }).webContents ? [child] : child.children
+              ) as Electron.WebContentsView[];
+            const view = surfaceViews(window).find((candidate) => {
               const url = candidate.webContents.getURL();
               return args.mode === 'shell'
                 ? /\/onlypreview\/shell\/index\.html(?:$|[?#])/.test(url)
@@ -285,7 +299,14 @@ export const test = base.extend<OnlyPreviewFixtures>({
             const window = BaseWindow.getAllWindows().find(
               (candidate) => candidate.getTitle() === 'OnlyPreview'
             );
-            const view = window?.contentView.children.find((candidate) => {
+            // The OnlyPreview layers are children of the composite's container `View`, not of the window, so a
+            // window-level scan finds one child with no `webContents` at all. Descend through any child that is
+            // not itself a web view; a flat window still returns the same list.
+            const surfaceViews = (target?: Electron.BaseWindow): Electron.WebContentsView[] =>
+              (target?.contentView.children ?? []).flatMap((child) =>
+                (child as { webContents?: unknown }).webContents ? [child] : child.children
+              ) as Electron.WebContentsView[];
+            const view = surfaceViews(window).find((candidate) => {
               const url = candidate.webContents.getURL();
               return args.mode === 'shell'
                 ? /\/onlypreview\/shell\/index\.html(?:$|[?#])/.test(url)

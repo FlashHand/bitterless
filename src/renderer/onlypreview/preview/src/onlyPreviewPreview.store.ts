@@ -40,27 +40,11 @@ import {
 import { OnlyPreviewMediaSession } from './onlyPreviewMedia.service';
 import { onlyPreviewFindAdapterBridge } from './onlyPreviewFindAdapter.service';
 import { OnlyPreviewOfficeSession } from './onlyPreviewOfficeSession.service';
-
-const toRendererError = (error: unknown): { code: OnlyPreviewErrorCode; message: string } => {
-  const contractError = error instanceof OnlyPreviewContractError ? error : null;
-  const code = contractError?.code || 'OPERATION_FAILED';
-  return {
-    code,
-    message: contractError
-      ? getOnlyPreviewErrorMessage(contractError.code)
-      : onlyPreviewI18n.errors.OPERATION_FAILED
-  };
-};
-
-export interface OnlyPreviewMetadataViewModel {
-  variant: 'unsupported' | 'error';
-  title: string;
-  reason: string;
-  name: string;
-  type: string;
-  size: number;
-  modifiedAt: number;
-}
+import {
+  buildOnlyPreviewMetadataViewModel,
+  toOnlyPreviewRendererError,
+  type OnlyPreviewMetadataViewModel
+} from './onlyPreviewPreviewViewModel.service';
 
 class OnlyPreviewPreviewStore {
   currentRef: OnlyPreviewFileRef | null = null;
@@ -107,36 +91,15 @@ class OnlyPreviewPreviewStore {
   }
 
   get previewMetadata(): OnlyPreviewMetadataViewModel | null {
-    const descriptor = this.descriptor;
-    if (!descriptor || this.presentation?.surface !== 'vue') return null;
-    const hasAnyError =
-      this.errorCode !== null || this.errorMessage !== '' || this.presentationError !== '';
-    const hasError = this.descriptorErrorActive && hasAnyError;
-    if (hasAnyError && !hasError) return null;
-    if (!hasError && this.presentation.adapterId !== 'unsupported') return null;
-    const variant = hasError ? 'error' : 'unsupported';
-    let reason = this.errorMessage || this.presentationError;
-    if (!reason) {
-      if (descriptor.unsupportedCategory === 'image-format') {
-        reason = onlyPreviewI18n.preview.unsupportedImageBody;
-      } else if (descriptor.unsupportedCategory === 'video-container') {
-        reason = onlyPreviewI18n.preview.unsupportedVideoBody;
-      } else {
-        reason = onlyPreviewI18n.preview.unsupportedBody;
-      }
-    }
-    return {
-      variant,
-      title:
-        variant === 'error'
-          ? onlyPreviewI18n.preview.failedTitle
-          : onlyPreviewI18n.preview.unsupportedTitle,
-      reason,
-      name: descriptor.name,
-      type: this.descriptorType,
-      size: descriptor.size,
-      modifiedAt: descriptor.modifiedAt
-    };
+    return buildOnlyPreviewMetadataViewModel({
+      descriptor: this.descriptor,
+      presentation: this.presentation,
+      descriptorErrorActive: this.descriptorErrorActive,
+      errorCode: this.errorCode,
+      errorMessage: this.errorMessage,
+      presentationError: this.presentationError,
+      descriptorType: this.descriptorType
+    });
   }
 
   get showsUnsupportedMetadata(): boolean {
@@ -253,7 +216,7 @@ class OnlyPreviewPreviewStore {
       );
     } catch (error) {
       if (!this.isCurrentOpenExternallyAction(generation, fileRef)) return;
-      const failure = toRendererError(error);
+      const failure = toOnlyPreviewRendererError(error);
       this.openExternallyError =
         failure.code === 'OPERATION_FAILED'
           ? onlyPreviewI18n.preview.openExternallyFailed
@@ -370,7 +333,7 @@ class OnlyPreviewPreviewStore {
       await this.applyPresentation(presentation, generation);
     } catch (error) {
       if (generation !== this.presentationFetchGeneration) return;
-      const failure = toRendererError(error);
+      const failure = toOnlyPreviewRendererError(error);
       this.errorCode = failure.code;
       this.errorMessage = failure.message;
       this.descriptorErrorActive = false;
@@ -669,7 +632,7 @@ class OnlyPreviewPreviewStore {
     } catch (error) {
       if (!this.isCurrent(generation, revision)) return;
       this.disposeContentSessions();
-      const failure = toRendererError(error);
+      const failure = toOnlyPreviewRendererError(error);
       this.loading = false;
       this.errorCode = failure.code;
       this.errorMessage = failure.message;

@@ -1,3 +1,4 @@
+import { cloneOnlyPreviewDescriptor } from '@shared/onlypreview/onlyPreview.contract';
 import type {
   OnlyPreviewDescriptor,
   OnlyPreviewErrorCode,
@@ -45,6 +46,7 @@ export const createEmptyOnlyPreviewPresentation = (
   status: 'empty',
   fileRef: null,
   descriptor: null,
+  directory: null,
   error: null,
   selectedTextAvailable: false,
   // Placeholder only. `snapshotInternal` overrides it on the way out, so a cleared presentation
@@ -111,4 +113,38 @@ export const getOnlyPreviewDescriptorErrorPayload = (
   const errorCode = getOnlyPreviewDescriptorErrorCode(descriptor);
   if (!descriptor.previewError || !errorCode) return null;
   return { code: errorCode, message: descriptor.previewError.message };
+};
+
+/**
+ * A presentation copy safe to hand outside Main: every nested object is cloned, and the descriptor
+ * asset rides along only for a Vue surface that actually renders it — PDF and HTML reach their
+ * renderer through a navigation URL instead, so shipping their bytes would be dead weight.
+ */
+export const projectOnlyPreviewPresentation = (
+  presentation: OnlyPreviewPreviewPresentation,
+  includeVueAsset: boolean
+): OnlyPreviewPreviewPresentation => {
+  const sourceDescriptor = presentation.descriptor;
+  const includeDescriptorAsset =
+    includeVueAsset &&
+    presentation.surface === 'vue' &&
+    sourceDescriptor?.kind !== 'pdf' &&
+    sourceDescriptor?.extension !== '.html' &&
+    sourceDescriptor?.extension !== '.htm';
+  return {
+    ...presentation,
+    fileRef: presentation.fileRef ? { ...presentation.fileRef } : null,
+    descriptor: sourceDescriptor
+      ? cloneOnlyPreviewDescriptor(sourceDescriptor, { includeAsset: includeDescriptorAsset })
+      : null,
+    // Copied for the same reason as everything else here: a projection must not hand out the live
+    // object, and `entries` is the one nested array a consumer could mutate.
+    directory: presentation.directory
+      ? {
+          ...presentation.directory,
+          entries: presentation.directory.entries.map((entry) => ({ ...entry }))
+        }
+      : null,
+    error: presentation.error ? { ...presentation.error } : null
+  };
 };

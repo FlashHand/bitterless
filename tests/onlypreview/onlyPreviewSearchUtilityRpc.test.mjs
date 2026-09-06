@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -354,7 +354,12 @@ test('root projection and a streamed search batch render while initialize termin
     .finally(() => {
       initializeSettled = true;
     });
-  await new Promise((resolveValue) => setImmediate(resolveValue));
+  // The Office workspace binding in front of the engine's initialize does real filesystem I/O, so
+  // the root listing lands a few turns in rather than on the first one. Waiting for the projection
+  // instead of a fixed turn count keeps the point of the test: initialize is still pending below.
+  for (let turn = 0; turn < 200 && !projection.ready; turn += 1) {
+    await new Promise((resolveValue) => setImmediate(resolveValue));
+  }
   assert.equal(projection.ready, true);
   assert.equal(initializeSettled, false);
   assert.equal(searchStarted, true);
@@ -501,9 +506,14 @@ const runtimeInitializeRequest = (generationValue = generation) => ({
   generation: generationValue
 });
 
+// A real directory: the coordinator binds an Office workspace on initialize, and that binding
+// lstat/realpath/stat's the root, so a synthetic path fails the whole initialize before the engine
+// runs.
+const workspaceRootPath = join(buildRoot, 'workspace');
+mkdirSync(workspaceRootPath, { recursive: true });
 const runtimeBootstrap = {
   workspaceId,
-  rootPath: '/private/workspace',
+  rootPath: workspaceRootPath,
   databasePath: '/private/cache/search.sqlite'
 };
 

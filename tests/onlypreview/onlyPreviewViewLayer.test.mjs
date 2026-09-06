@@ -188,13 +188,20 @@ test('OnlyPreview child-view stacking lives in exactly one file', () => {
   ]) {
     assert.doesNotMatch(source(path), /contentView\.addChildView\(/, `${path} must not raise views`);
   }
-  // The window helper attaches the composite's container to its host — one call, and never a layer.
-  // Attaching the whole surface is not raising a view inside it, which is what this file forbids.
-  const helper = source('src/main/windows/onlyPreviewWindow.helper.ts');
+  // Attaching the whole composite to a host is not raising a view inside it, which is what this
+  // file forbids — and that attach now lives behind the mount seam, so the window helper reaches for
+  // a window view tree nowhere at all.
+  assert.doesNotMatch(
+    source('src/main/windows/onlyPreviewWindow.helper.ts'),
+    /contentView\.addChildView\(/,
+    'the window helper must attach through its mount, never directly'
+  );
   assert.deepEqual(
-    helper.match(/contentView\.addChildView\([^)]*\)/g),
-    ['contentView.addChildView(surfaceContainer)'],
-    'the helper may attach only the surface container'
+    source('src/main/windows/onlyPreviewStandaloneMount.ts').match(
+      /contentView\.addChildView\([^)]*\)/g
+    ),
+    ['contentView.addChildView(container)'],
+    'the standalone mount may attach only the composite container'
   );
   // And nothing may reach back into the overlay to re-raise it after a preview attach.
   for (const path of [

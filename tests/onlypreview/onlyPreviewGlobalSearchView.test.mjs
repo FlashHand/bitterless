@@ -95,29 +95,26 @@ const createHarness = (loadView = async () => undefined) => {
   const layerHides = [];
   let openerRestores = 0;
   let openerClears = 0;
-  const window = {
-    destroyed: false,
-    isDestroyed() {
-      return this.destroyed;
+  // Two things the service used one `window` for, now separate: liveness is a question for the host,
+  // and the overlay is sorted into the composite's own container `View`.
+  const hostState = { alive: true };
+  const container = {
+    children,
+    addChildView(view) {
+      const current = children.indexOf(view);
+      if (current >= 0) children.splice(current, 1);
+      children.push(view);
+      operations.push({ kind: 'add', name: view.name, bounds: view.bounds });
     },
-    contentView: {
-      children,
-      addChildView(view) {
-        const current = children.indexOf(view);
-        if (current >= 0) children.splice(current, 1);
-        children.push(view);
-        operations.push({ kind: 'add', name: view.name, bounds: view.bounds });
-      },
-      removeChildView(view) {
-        const current = children.indexOf(view);
-        if (current >= 0) children.splice(current, 1);
-        operations.push({ kind: 'remove', name: view.name });
-      }
+    removeChildView(view) {
+      const current = children.indexOf(view);
+      if (current >= 0) children.splice(current, 1);
+      operations.push({ kind: 'remove', name: view.name });
     }
   };
   const service = new OnlyPreviewGlobalSearchViewService();
   service.start({
-    window,
+    isHostLive: () => hostState.alive,
     host,
     createView: () => {
       const view = createView(`search-${views.length + 1}`, operations);
@@ -143,17 +140,18 @@ const createHarness = (loadView = async () => undefined) => {
     },
     showInGlobalLayer: (view) => {
       layerShows.push(view.name);
-      window.contentView.addChildView(view);
+      container.addChildView(view);
     },
     hideGlobalLayer: () => {
       layerHides.push(true);
       const current = views.at(-1);
-      if (current) window.contentView.removeChildView(current);
+      if (current) container.removeChildView(current);
     }
   });
   return {
     service,
-    window,
+    host: hostState,
+    container,
     operations,
     children,
     views,
@@ -201,7 +199,7 @@ test('Search spans the BaseWindow, publishes exact Preview geometry, and stays t
   ]);
 
   const preview = createView('pdf-preview', harness.operations);
-  harness.window.contentView.addChildView(preview);
+  harness.container.addChildView(preview);
   assert.deepEqual(
     harness.children.map(({ name }) => name),
     ['search-1', 'pdf-preview']
@@ -323,7 +321,7 @@ test('file/project close targets explicit surfaces and overlay failure stays iso
   assert.equal(first.webContents.destroyed, true);
   assert.equal(harness.service.getView(), null);
   assert.equal(harness.counts().projectFocuses, 2);
-  assert.equal(harness.window.destroyed, false);
+  assert.equal(harness.host.alive, true, 'an overlay failure must not take the host down');
   assert.equal(visibilityStates(harness.broadcasts).at(-1), false);
 
   const replacement = harness.service.show(host.hostToken, 'shell');
@@ -332,7 +330,7 @@ test('file/project close targets explicit surfaces and overlay failure stays iso
   replacement.webContents.emit('render-process-gone');
   assert.equal(harness.service.getView(), null);
   assert.equal(harness.counts().projectFocuses, 3);
-  assert.equal(harness.window.destroyed, false);
+  assert.equal(harness.host.alive, true, 'an overlay failure must not take the host down');
   assert.equal(visibilityStates(harness.broadcasts).at(-1), false);
 });
 

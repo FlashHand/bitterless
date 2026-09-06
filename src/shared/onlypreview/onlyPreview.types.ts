@@ -33,6 +33,9 @@ export type OnlyPreviewPreviewAdapterId =
   | 'image'
   | 'audio'
   | 'video'
+  // A directory target. It carries no file authority at all — no read-broker grant, no asset URL,
+  // no Find coverage — so it never reaches any adapter that assumes a regular file.
+  | 'directory'
   | 'unsupported';
 export type OnlyPreviewPreviewPresentationStatus = 'empty' | 'loading' | 'ready' | 'unavailable';
 export type OnlyPreviewFindMode = 'webcontents-find' | 'content-adapter' | 'none';
@@ -391,6 +394,30 @@ export interface OnlyPreviewHostEvent {
   hostId: string;
 }
 
+/**
+ * A directory shown in the preview pane.
+ *
+ * Built from an `OnlyPreviewBrowseListing` — the same enumeration the tree uses — rather than from
+ * the Global Search directory preview, which needs a `resultToken` a tree row cannot produce.
+ *
+ * `entries` is bounded like every other listing. `total` is the real child count, so a truncated
+ * listing still reports how much it stands for instead of quietly under-reporting.
+ */
+export interface OnlyPreviewDirectoryTarget {
+  workspaceId: string;
+  relativePath: string;
+  name: string;
+  entries: OnlyPreviewDirectoryTargetEntry[];
+  total: number;
+  truncated: boolean;
+}
+
+export interface OnlyPreviewDirectoryTargetEntry {
+  relativePath: string;
+  name: string;
+  nodeKind: OnlyPreviewNodeKind;
+}
+
 export interface OnlyPreviewPreviewPresentation extends OnlyPreviewHostEvent {
   workspaceId: string | null;
   selectionRevision: number;
@@ -399,6 +426,10 @@ export interface OnlyPreviewPreviewPresentation extends OnlyPreviewHostEvent {
   status: OnlyPreviewPreviewPresentationStatus;
   fileRef: OnlyPreviewFileRef | null;
   descriptor: OnlyPreviewDescriptor | null;
+  // Set only for `adapterId: 'directory'`, and then `fileRef` and `descriptor` are both null: a
+  // directory is a browse target, never a file selection, so nothing downstream of a file selection
+  // may key off it.
+  directory: OnlyPreviewDirectoryTarget | null;
   error: OnlyPreviewErrorPayload | null;
   selectedTextAvailable: boolean;
   // Derived by Main at snapshot time, never stored on the presentation: the Project's index state
