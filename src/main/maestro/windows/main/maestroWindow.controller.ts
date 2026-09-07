@@ -1650,6 +1650,10 @@ class MaestroWindowController
     await this.browserView.openTab(params)
   }
 
+  async openOnlyPreviewTab(): Promise<void> {
+    await this.browserView.openOnlyPreviewTab()
+  }
+
   async activateTab(params: { id: string }): Promise<void> {
     await this.browserView.activateTab(params)
   }

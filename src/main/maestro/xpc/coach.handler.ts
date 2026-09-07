@@ -436,6 +436,10 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     maestroWindowHelper.setViewBounds(params)
   }
 
+  async openOnlyPreviewTab(): Promise<void> {
+    await maestroWindowHelper.openOnlyPreviewTab()
+  }
+
   async activateTab(params: { id: string }): Promise<void> {
     await maestroWindowHelper.activateTab(params)
   }

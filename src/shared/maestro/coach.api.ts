@@ -153,6 +153,13 @@ export interface CoachXpcContract {
   // its OWN view (not the active view), so it can't desync the current tab. Used by Demo / "open in
   // new tab". Empty url → same as newTab().
   openTab(params: { url: string }): Promise<void>
+  /**
+   * Open OnlyPreview as a tab in this window, or bring the existing one forward.
+   *
+   * A composite mini-app tab: its content is OnlyPreview's own container view rather than one web
+   * page, so it carries no URL and is never cooled by the warm cap.
+   */
+  openOnlyPreviewTab(): Promise<void>
   activateTab(params: { id: string }): Promise<void>
   // Reorder the visible tab strip by current tab ids. Main validates against the live tab set and
   // keeps pinned tabs fixed; home persists the rebroadcast order.
@@ -245,7 +252,7 @@ export interface BrowserRequestReplayResult {
   auth?: { header: string; source: string; key?: string; applied: boolean }[]
 }
 
-export type TabKind = 'home' | 'ai-crms' | 'browser'
+export type TabKind = 'home' | 'ai-crms' | 'browser' | 'onlypreview'
 export type WorkbenchPane =
   | 'recording'
   | 'skills'

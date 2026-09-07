@@ -1,5 +1,5 @@
 import { Menu, WebContentsView, clipboard } from 'electron'
-import type { BrowserWindow, ContextMenuParams, MenuItemConstructorOptions, WebContents } from 'electron'
+import type { BrowserWindow, ContextMenuParams, MenuItemConstructorOptions, View, WebContents } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { createXpcMainEmitter, xpcMain } from 'electron-xpc/main'
 import { randomUUID } from 'crypto'
@@ -36,6 +36,8 @@ import type { InjectBtnApi, InjectBtnEntry, InjectBtnInput } from '@maestro-shar
 import type { SavedTab } from '@maestro-shared/tabs.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
 import { createBoundsApplier } from './viewBounds'
+import { OnlyPreviewCoworkMount } from './onlyPreviewCoworkMount'
+import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper'
 
 export const shouldOpenOperationDevTools = (): boolean => {
   if (import.meta.env.VITE_MODE !== 'debug') return false
@@ -53,6 +55,8 @@ const AI_CRMS_TITLE = 'AI-CRMS'
 const AI_CRMS_FAVICON = ''
 const LOCAL_HOME_TITLE = 'Home'
 const LOCAL_HOME_FAVICON = ''
+const ONLY_PREVIEW_TAB_TITLE = 'OnlyPreview'
+const ONLY_PREVIEW_TAB_FAVICON = ''
 const ATTACH_BEFORE_NAVIGATE_TIMEOUT_MS = 3000
 // Chromium may keep a page "loading" for a stalled subresource or never emit a stop event when
 // its renderer dies. The tab spinner is only a status hint, so always settle it after this cap.
@@ -133,6 +137,16 @@ export interface OperationTab {
   id: string
   kind: TabKind
   view: WebContentsView | null
+  /**
+   * A composite mini-app's own container `View`, for a tab whose content is not one web page.
+   *
+   * `view` stays `null` for such a tab, which is what keeps it out of `enforceWarmCap` — its `warm`
+   * filter only counts tabs with a live `view`. That matters: cooling an OnlyPreview tab would
+   * detach the container while leaving its four renderers, its hidden search runtime, its bound
+   * workspace and its host capability alive and unreachable.
+   */
+  surface?: View | null
+  surfaceDispose?: (() => void) | null
   capture: DebuggerCapture | null
   /** Internal debugger owner for the trusted AI-CRMS auth bridge; never exposed to agent tools. */
   bridgeCapture?: DebuggerCapture | null
@@ -189,6 +203,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   private prewarming = false
   private creatingTab = false
   private injectedButtonNonces = new Map<string, string>()
+  private readonly onlyPreviewMounts = new Map<string, OnlyPreviewCoworkMount>()
   private authBridgeOwner: WebContents | null = null
   private authBridgeCleanup: Promise<void> = Promise.resolve()
   private aiCrmsPreparation: Promise<void> = Promise.resolve()
@@ -421,6 +436,79 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     return { view, capture, replay }
   }
 
+  /**
+   * Open OnlyPreview as a tab, or bring the existing one forward.
+   *
+   * The tab carries the composite's container instead of a web view, so `view` stays `null` and
+   * every path that reaches for `tab.view` skips it — including the warm cap, which must never cool
+   * a whole sub-application. Only one such tab can exist, because only one OnlyPreview content
+   * surface is live at a time.
+   */
+  async openOnlyPreviewTab(): Promise<OperationTab | null> {
+    const existing = this.tabs.find((tab) => tab.kind === 'onlypreview')
+    if (existing) {
+      await this.activateTab({ id: existing.id })
+      return existing
+    }
+    const tab: OperationTab = {
+      id: `tab-${++this.tabSeq}`,
+      kind: 'onlypreview',
+      view: null,
+      surface: null,
+      surfaceDispose: null,
+      capture: null,
+      replay: null,
+      url: '',
+      title: ONLY_PREVIEW_TAB_TITLE,
+      favicon: ONLY_PREVIEW_TAB_FAVICON,
+      debuggerEnabled: false,
+      pinned: false,
+      lastActive: Date.now(),
+      loading: false,
+      loadWatchdog: null
+    }
+    this.tabs.push(tab)
+    const mount = new OnlyPreviewCoworkMount({
+      window: () => this._state.browserWindow,
+      contentRect: () => this._state.opBounds,
+      attach: (container) => {
+        tab.surface = container
+        // Index 0 is the tab-view position, so the whole composite sits below Maestro's chrome and
+        // control sidebar by construction — no re-assertion rule needed.
+        this._state.browserWindow?.contentView.addChildView(container, 0)
+      },
+      detach: (container) => {
+        if (tab.surface === container) tab.surface = null
+        try {
+          this._state.browserWindow?.contentView.removeChildView(container)
+        } catch {
+          // The parent window may already have released the child view.
+        }
+      },
+      activate: () => void this.activateTab({ id: tab.id }),
+      closeTab: () => void this.closeTab({ id: tab.id }),
+      setTitle: (title) => {
+        tab.title = title || ONLY_PREVIEW_TAB_TITLE
+        this.broadcastTabs()
+      },
+      isOpen: () => this.tabs.includes(tab)
+    })
+    tab.surfaceDispose = () => mount.reportHostGone()
+    this.onlyPreviewMounts.set(tab.id, mount)
+    try {
+      await onlyPreviewWindowHelper.openOnMount(mount)
+    } catch (err) {
+      this._state.emitTrace({ kind: 'error', msg: 'onlypreview tab: ' + (err as Error).message, ts: Date.now() })
+      this.onlyPreviewMounts.delete(tab.id)
+      const index = this.tabs.indexOf(tab)
+      if (index >= 0) this.tabs.splice(index, 1)
+      this.broadcastTabs()
+      throw err
+    }
+    await this.activateTab({ id: tab.id })
+    return tab
+  }
+
   private buildPinnedHomeView(): WebContentsView {
     const view = new WebContentsView({
       webPreferences: {
@@ -436,6 +524,15 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     view.setVisible(false)
     this.attachViewListeners(view)
     return view
+  }
+
+  /** Hide a tab's content, whichever kind of content it has. */
+  private hideTabContent(tab: OperationTab): void {
+    if (tab.kind === 'onlypreview') {
+      this.onlyPreviewMounts.get(tab.id)?.reportActivation(false)
+      return
+    }
+    if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.setVisible(false)
   }
 
   private ownerOf(view: WebContentsView): OperationTab | undefined {
@@ -1116,6 +1213,28 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   async activateTab(params: { id: string }): Promise<void> {
     const tab = this.tabs.find((item) => item.id === params.id)
     if (!tab) return
+    // A composite mini-app tab has no web view to warm, load, capture or replay. Hiding the outgoing
+    // tab and telling this one's mount it is foreground is the whole switch: hiding a container
+    // hides its children, and each layer keeps its own visibility flag, so the composite's layer
+    // state survives the round trip.
+    if (tab.kind === 'onlypreview') {
+      const previous = this.tabs.find((item) => item.id === this.activeTabId)
+      if (previous && previous.id !== tab.id) this.hideTabContent(previous)
+      this.activeTabId = tab.id
+      tab.lastActive = Date.now()
+      this._state.operationView = null
+      this._state.capture = null
+      this._state.replayEngine = null
+      this.onlyPreviewMounts.get(tab.id)?.reportActivation(true)
+      this.broadcastTabs()
+      return
+    }
+    // Leaving a composite tab: it is not the `previous` branch below, because that one only knows
+    // how to hide a `WebContentsView`.
+    const leaving = this.tabs.find((item) => item.id === this.activeTabId)
+    if (leaving && leaving.id !== tab.id && leaving.kind === 'onlypreview') {
+      this.onlyPreviewMounts.get(leaving.id)?.reportActivation(false)
+    }
     if (this.activeTabId === tab.id && tab.view && !tab.view.webContents.isDestroyed()) {
       if (this.isPinnedHomeTab(tab)) this.openPinnedHomeDevTools(tab, tab.view)
       if (tab.kind === 'ai-crms') {
@@ -1217,6 +1336,26 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   }
 
   private async performCloseTab(tab: OperationTab): Promise<void> {
+    // A composite tab owns a whole sub-application, so closing it must reach that sub-application's
+    // own teardown — cooling a web view it does not have would silently orphan four renderers, a
+    // hidden search runtime and a bound workspace.
+    if (tab.kind === 'onlypreview') {
+      const index = this.tabs.indexOf(tab)
+      if (index >= 0) this.tabs.splice(index, 1)
+      const dispose = tab.surfaceDispose
+      tab.surfaceDispose = null
+      this.onlyPreviewMounts.delete(tab.id)
+      dispose?.()
+      const wasActive = this.activeTabId === tab.id
+      if (wasActive) {
+        const next = this.tabs[index] || this.tabs[this.tabs.length - 1]
+        this.activeTabId = null
+        if (next) await this.activateTab({ id: next.id })
+      } else {
+        this.broadcastTabs()
+      }
+      return
+    }
     // Closing can wait on capture teardown; never leave a watchdog armed during that interval.
     this.setTabLoading(tab, false)
     if (this._state.capturing && this._state.captureTargetTabId === tab.id) {

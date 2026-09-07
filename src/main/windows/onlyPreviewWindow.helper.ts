@@ -430,6 +430,49 @@ export class OnlyPreviewWindowHelper {
     }
   }
 
+  /**
+   * Build the composite onto a host that is not a window of ours — today, a Cowork tab.
+   *
+   * The standalone route still owns window creation; this one is handed a mount that is already
+   * attached to something. Both then run the identical `attachSurface`, which is the point of the
+   * seam. Only one content surface is live at a time, so a second request brings the existing one
+   * forward instead of building a rival.
+   */
+  async openOnMount(
+    mount: OnlyPreviewMount,
+    route: 'api' | 'explicit' = 'api'
+  ): Promise<OnlyPreviewHostCapability> {
+    const current = this.getStandaloneHost();
+    if (current && this.standaloneMount?.isAlive()) {
+      this.show();
+      return current;
+    }
+    this.destroyStandalone();
+    const openTrace = this.windowOpenTraces.begin(route, 'cold');
+    const host = onlyPreviewHostRegistry.issue('standalone', 'content');
+    this.standaloneHost = host;
+    const diagnostic = { tag: this.diagnostics.nextTag('v'), startedAt: this.diagnostics.now() };
+    this.diagnostics.emit('visible-window', { tag: diagnostic.tag, phase: 'start', elapsedMs: 0 });
+    try {
+      await this.attachSurface(host, mount, diagnostic, openTrace);
+      this.diagnostics.emit('visible-window-terminal', {
+        tag: diagnostic.tag,
+        outcome: 'success',
+        elapsedMs: this.diagnostics.elapsed(diagnostic.startedAt)
+      });
+      return host;
+    } catch (error) {
+      this.diagnostics.emit('visible-window-terminal', {
+        tag: diagnostic.tag,
+        outcome: 'failure',
+        elapsedMs: this.diagnostics.elapsed(diagnostic.startedAt)
+      });
+      this.finishShellOpenTrace(openTrace.tag, 'failure', 'fail');
+      this.destroyStandalone();
+      throw error;
+    }
+  }
+
   show(): void {
     // Showing is the host's business: a window shows and focuses itself, a Cowork tab activates.
     this.standaloneMount?.showSurface();
