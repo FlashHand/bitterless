@@ -1,7 +1,7 @@
 ---
 id: eyes-on-agents-drop-setup-command-096
 scope: Remove the Copy setup command action and replace it with a correct, complete wrapper recipe in the guidance note
-status: ready
+status: done
 depends-on: [eyes-on-agents-claude-title-provenance-095]
 verify: focused EyesOnAgents contract/service/render unit tests, Core strict typecheck, UI strict typecheck; no Electron
 ---
@@ -86,3 +86,79 @@ Remove the action. Put the **correct and complete** recipe in the guidance note,
 - Do **not** run Electron, packaged builds, Playwright, or any `test:e2e:*` suite.
 - Two pre-existing failures are not this task's: the deterministic `ui-source.test.mjs` bundle-id
   assertion, and the ~6/10 flaky `thread-card-open-capability.test.mjs` right-click test.
+
+## Implementation evidence
+
+Implemented by the orchestrator; the assigned subagent died on a session limit before it edited
+anything.
+
+### Removed
+
+- `ClaudeEnvironmentCard.vue` — the per-row button, `setupCommandCopiedId`, `canCopySetupCommand`,
+  `setupCommandCopyLabel`, `handleCopySetupCommand` (37 lines).
+- `eyesOnAgents.store.ts` — `copyClaudeEnvironmentSetupCommand`.
+- `eyesOnAgents.type.ts` — the `EyesOnAgentsApi` member and its comment block.
+- `eyesOnAgents.handler.ts` — the XPC method.
+- `eyesOnAgents.service.ts` — the service method and its
+  `buildEyesOnAgentsClaudeEnvironmentSetupCommand` import.
+- `eyesOnAgents.contract.ts` — `buildEyesOnAgentsClaudeEnvironmentSetupCommand`,
+  `deriveEyesOnAgentsClaudeEnvironmentFunctionName`, and the six now-dead module constants
+  (`…FUNCTION_NAME_FALLBACK/UNSAFE_PATTERN/UNDERSCORE_RUN_PATTERN/LEADING_DIGIT_PATTERN`,
+  `…SINGLE_QUOTE_PATTERN/ESCAPE`, the reserved-word Set, and the `no-control-regex`-suppressed
+  comment-blank pattern — so that eslint suppression is gone with the code that needed it).
+- i18n `copySetupCommand` from both catalogs.
+
+### Kept, deliberately
+
+- `claudeBridge.copied` — still used by `ClaudeObservationCard.vue`'s `/reload-plugins` copy. Checked
+  before deleting.
+- `deriveEyesOnAgentsClaudeEnvironmentLabel`, `parseEyesOnAgentsAddClaudeEnvironmentParams`,
+  `parseEyesOnAgentsSetClaudeEnvironmentDirectoryParams` — tasks 091/092's add and change-directory
+  flows. They shared this feature's test file, which is the trap the contract warned about.
+
+### Test file renamed
+
+`claude-environment-setup-command.test.mjs` → `claude-environment-params.test.mjs` (its 13
+setup-command tests removed, its 3 add/change-directory parser tests kept, and its dead service
+harness / wrapper constants / unused imports dropped rather than left behind). `package.json`'s
+`test:eyes-on-agents:claude` wiring updated. `claude-environment-render.test.mjs` lost its 3
+setup-command render tests and the `copySetup` store double.
+
+### Two over-deletions, caught and reverted
+
+Regex-based removal ate live code twice — first the Add-environment button and the entire add form
+(125 template lines), then a core render test ("one row renders per configured environment") — both
+because a lazy `(?:[^\n]*\n)*?` prefix let the match start at an earlier `<a-button` / `await test(`.
+Both were reverted via `git checkout --` and redone with exact-string and line-boundary edits. The
+lesson is recorded here because the same shape will recur: for block deletion in these files, anchor
+on the full literal or on computed line numbers, never on a regex that can slide backwards.
+
+### New guidance copy
+
+en: "Each environment needs its own hook install: point Bitterless at its CLAUDE_CONFIG_DIR, then
+Install. The command you use to start that environment must set CLAUDE_CONFIG_DIR before invoking
+claude, and clear ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN — otherwise it
+inherits your shell credential and signs in as the wrong account."
+
+zh: 「每个环境都要单独装一次 hook:先把 Bitterless 指向它的 CLAUDE_CONFIG_DIR,再点安装。启动该环境用的
+命令必须在调用 claude 之前设置 CLAUDE_CONFIG_DIR,并清掉 ANTHROPIC_API_KEY、ANTHROPIC_AUTH_TOKEN、
+CLAUDE_CODE_OAUTH_TOKEN —— 否则它会继承 shell 里的凭据,用另一个账号登录。」
+
+The credential clause is the substance: it is the step the removed snippet omitted, and the reason
+the snippet was worse than nothing.
+
+### Verification
+
+- `yarn typecheck:eyes-on-agents:core` / `:ui` — 0 errors.
+- `yarn test:eyes-on-agents:claude` — passes; the renamed params file 3/3.
+- `yarn test:eyes-on-agents:ui` — 102 tests, 101 pass, 1 fail (the logged deterministic bundle-id
+  assertion). Measured the HEAD baseline first — 105 tests — and this task removes exactly 3, so
+  102 is arithmetic, not a lost test.
+- i18n key order verified identical between `en.ts`/`zh.ts` (22 keys each) and `copySetupCommand`
+  confirmed absent from both.
+- `grep setupCommand|SetupCommand|FunctionName` over `src/` and `scripts/`: no hits outside the
+  vendored drawio bundle's unrelated `getFunctionName`.
+- `ui-source.test.mjs` needed no change — it had no setup-command assertions, and the
+  `configDirectory` exclusivity file list is unaffected (the card still handles directories for the
+  add and change-directory flows). The negative exclusivity form is untouched.
+- Electron, packaged builds, Playwright and `test:e2e:*` — not run.

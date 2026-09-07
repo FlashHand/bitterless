@@ -8,6 +8,28 @@ verify: focused EyesOnAgents UI-source/store and contract unit tests, Core stric
 
 # EyesOnAgents Claude Environment Copy Setup Command
 
+## Removed
+
+This feature was **removed** by
+[task 096](eyes-on-agents-drop-setup-command-096.md) on the owner's explicit judgement, given twice:
+「setup cmd 是这样的有意义么我感觉没意义」. It was not merely unused — it was misleading:
+
+- The emitted snippet set `CLAUDE_CONFIG_DIR` but did **not** clear `ANTHROPIC_API_KEY` /
+  `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN`, so a user with a shell-level credential got a
+  `claude2` that silently authenticated as the **first** account — defeating the one reason
+  multi-environment exists.
+- It emitted a shell *function* for a profile: a hard syntax error in fish/nushell, invisible to
+  non-interactive spawns, and not the shape the owner actually uses (a `PATH` script).
+- Pasted into a chat it was ambiguous enough that another agent could not tell what to do with it.
+
+The requirement it tried to automate now lives in the environment card's guidance note as text,
+including the credential-clearing step the snippet omitted. Everything below is history; the
+`buildEyesOnAgentsClaudeEnvironmentSetupCommand` /
+`deriveEyesOnAgentsClaudeEnvironmentFunctionName` contract helpers, the XPC/service/store methods
+and the per-row button no longer exist. Task 091's `deriveEyesOnAgentsClaudeEnvironmentLabel` and
+the add/change-directory param parsers, which shared this task's test file, survive — that file is
+now `scripts/eyes-on-agents/claude-environment-params.test.mjs`.
+
 ## Objective
 
 The Connections drawer tells the user their `claude2` wrapper must set `CLAUDE_CONFIG_DIR` before

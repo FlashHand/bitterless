@@ -330,14 +330,12 @@ immediately applies that environment's directory. An enable/disable Switch and *
 row; **Remove** is disabled (with an explanatory hint) for the last remaining environment — at least
 one environment always exists.
 
-**Copy setup command** sits beside **Change directory**, and only on a row that has a real
-environment id, `custom` mode, and a chosen directory: it puts a ready-to-paste shell wrapper for
-that environment on the clipboard (`# Bitterless: Claude environment "claude2"` plus a
-`claude2() { CLAUDE_CONFIG_DIR='…' command claude "$@"; }` function whose name is derived from the
-label), then swaps its own text to **Copied** in place with an `aria-live="polite"` announcement.
-The automatic environment never shows it — it needs no wrapper and has no configured directory —
-and neither does the synthetic invalid-hydration row. Installing the snippet into a shell profile
-stays the user's step; Bitterless only copies it, and never logs the snippet or the path.
+There is deliberately no per-row **Copy setup command**. Task 096 removed it: the snippet it copied
+set `CLAUDE_CONFIG_DIR` but did not clear `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`/
+`CLAUDE_CODE_OAUTH_TOKEN`, so a user with a shell-level credential ended up with a wrapper that
+silently ran as the wrong account, and its shell-function shape is a syntax error in fish/nushell
+and invisible to non-interactive callers. The requirement is stated in the guidance note instead —
+including the credential-clearing step — and installing a wrapper stays the user's own step.
 
 Each row also carries the last-successful-scan metadata the earlier single block showed, plus a
 next-retry note once one is scheduled, and a manual **Retry** button in
@@ -397,7 +395,6 @@ by per-row presence instead.
 │ │                                                                      │
 │ │ claude2                                      Custom · Retrying  [on] │
 │ │ [ /Users/ral/.claude2_________ ]         [Change directory]  [Retry] │
-│ │                                                 [Copy setup command] │
 │ │ Next retry 10:44                                                     │
 │ │ Plugin not installed                                [Install plugin] │
 │ │                                                   [Rename]  [Remove] │
@@ -422,7 +419,6 @@ depends on scroll position or a specific row's state.
 |---|---|
 | automatic + watching | resolved config root, Automatic label, last successful scan |
 | custom + watching | canonical selected root plus **Use automatic** (default row only) |
-| custom + configured directory | **Copy setup command** is offered and copies that row's own `CLAUDE_CONFIG_DIR` wrapper; the automatic row and a custom row with no chosen directory never show it |
 | waiting | directory is valid but `projects` has not appeared; show next retry and **Retry**, not an error |
 | degraded | another source remains watched while the configured transcript source is unavailable; **Retry** available |
 | retrying | retain path and persisted tasks; show bounded error, next retry, and **Retry** |

@@ -432,12 +432,6 @@ class EyesOnAgentsState {
   // Routed through the per-id gate (not runCommandAction's global busyAction) so the row's own
   // Copy setup command button owns its loading state and copying one environment never disables
   // another row's controls — the same reason the CRUD actions above use this gate.
-  async copyClaudeEnvironmentSetupCommand(id: string): Promise<void> {
-    await this.runClaudeEnvironmentAction(id, () =>
-      eyesOnAgentsEmitter.copyClaudeEnvironmentSetupCommand({ id }),
-    );
-  }
-
   async refreshClaudeEnvironmentPluginPresence(id: string): Promise<void> {
     await this.runClaudeEnvironmentAction(id, () =>
       eyesOnAgentsEmitter.refreshClaudeEnvironmentPluginPresence({ id }),

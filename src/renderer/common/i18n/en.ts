@@ -801,9 +801,11 @@ export const en = {
     claudeEnvironment: {
       title: 'Claude environments',
       guidance:
-        'Each environment needs its own hook install. Point Bitterless at your environment\'s '
-        + 'CLAUDE_CONFIG_DIR, then Install — and make sure the shell command you use for that '
-        + 'environment (e.g. a claude2 wrapper) sets CLAUDE_CONFIG_DIR before invoking claude.',
+        'Each environment needs its own hook install: point Bitterless at its CLAUDE_CONFIG_DIR, '
+        + 'then Install. The command you use to start that environment must set CLAUDE_CONFIG_DIR '
+        + 'before invoking claude, and clear ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and '
+        + 'CLAUDE_CODE_OAUTH_TOKEN — otherwise it inherits your shell credential and signs in as '
+        + 'the wrong account.',
       addEnvironment: 'Add environment',
       addDirectoryPlaceholder: 'Absolute CLAUDE_CONFIG_DIR (e.g. /Users/you/.claude2)',
       add: 'Add',
@@ -813,7 +815,6 @@ export const en = {
       save: 'Save',
       cancel: 'Cancel',
       changeDirectory: 'Change directory',
-      copySetupCommand: 'Copy setup command',
       useAutomatic: 'Use automatic',
       enable: 'Enable',
       disable: 'Disable',

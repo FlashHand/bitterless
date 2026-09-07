@@ -566,12 +566,6 @@ export class EyesOnAgentsHandler extends XpcMainHandler implements EyesOnAgentsA
   // Task 089: validates the row id here (the XPC-registered boundary) so an absent/empty/non-UUID
   // id fails before the service resolves anything, then delegates to the service's clipboard write.
   // Nothing about the resolved environment is logged — see the service method's own note.
-  async copyClaudeEnvironmentSetupCommand(params: { id: string }): Promise<void> {
-    await eyesOnAgentsService.copyClaudeEnvironmentSetupCommand(
-      parseEyesOnAgentsClaudeEnvironmentIdParams(params)
-    );
-  }
-
   async refreshClaudeEnvironmentPluginPresence(
     params: { id: string }
   ): Promise<EyesOnAgentsSnapshot> {

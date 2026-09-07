@@ -24,7 +24,6 @@ import type {
 import {
   buildEyesOnAgentsDeepLink,
   buildEyesOnAgentsClaudeDesktopDeepLink,
-  buildEyesOnAgentsClaudeEnvironmentSetupCommand,
   effectiveEyesOnAgentsRuntimeState,
   isEyesOnAgentsFocused,
   isEyesOnAgentsRecord,
@@ -3137,23 +3136,6 @@ export class EyesOnAgentsService implements EyesOnAgentsApi {
     );
     await this.dependencies.claudeObservation?.refreshPluginPresence?.(environment.id);
     return await this.changedSnapshot();
-  }
-
-  async copyClaudeEnvironmentSetupCommand(params: { id: string }): Promise<void> {
-    const directoryConfig = this.requireClaudeDirectoryConfig();
-    const environment = resolveClaudeBridgeEnvironment(
-      directoryConfig.listEnvironments(),
-      { environmentId: params.id }
-    );
-    if (environment.mode !== 'custom' || environment.configDirectory === null) {
-      throw new Error(
-        `Claude environment "${environment.label}" has no configured directory to wrap`
-      );
-    }
-    this.dependencies.writeClipboardText(buildEyesOnAgentsClaudeEnvironmentSetupCommand({
-      label: environment.label,
-      configDirectory: environment.configDirectory
-    }));
   }
 
   async changeClaudeDirectory(): Promise<EyesOnAgentsSnapshot> {

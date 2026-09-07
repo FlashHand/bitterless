@@ -378,7 +378,7 @@ pipeline.
 The ordinary Claude detail contains `ClaudeObservationCard.vue` followed by
 `ClaudeEnvironmentCard.vue`. The environment card owns the complete general-purpose environment
 list and every existing row control: add, rename, remove, enable, inline path editing, plugin
-presence with Install/Check, per-row Retry, Copy setup command, Use automatic, and the guidance
+presence with Install/Check, per-row Retry, Use automatic, and the guidance
 note. `Desktop metadata directories: N` remains in the observation card and renders once because it
 is the same platform-fixed value for every environment. The single **Claude support** switch gates
 both cards.
@@ -478,46 +478,6 @@ row shows the same title and the same button whether or not that particular
 `CLAUDE_CONFIG_DIR` actually received the plugin. The user's only recourse today is to read
 `~/.claude2/settings.json` by hand or start a session and see whether a row appears.
 
-### Copyable shell command (task 089)
-
-Each `mode: 'custom'` row with a configured directory gains a **Copy setup command** action that
-puts a ready-to-paste shell wrapper on the clipboard, derived from that row's label and directory:
-
-```sh
-# Bitterless: Claude environment "claude2"
-claude2() { CLAUDE_CONFIG_DIR='/Users/ral/.claude2' command claude "$@"; }
-```
-
-- The function name comes from the environment's label, lowercased with every character outside
-  `[a-z0-9_]` collapsed to `_`, prefixed with `_` if it would otherwise start with a digit, and
-  falling back to `claude_env` when nothing usable remains. A label of `claude` is therefore allowed
-  and safe: `command claude` skips function lookup **for the name it is given**, so a wrapper named
-  `claude` runs the `claude` executable instead of recursing into itself.
-- **A label deriving to `command`, or to a shell reserved word, also falls back to `claude_env`.**
-  `command` is a *regular* builtin, so a wrapper named `command` shadows the very mechanism the body
-  relies on and recurses — bash hangs outright, zsh aborts with "maximum nested function level
-  reached" — which is the one case the `claude` guarantee above does **not** cover. Guarded
-  alongside it is the union of bash's and zsh's reserved-word tables restricted to `[a-z0-9_]`
-  (`case`, `coproc`, `do`, `done`, `elif`, `else`, `end`, `esac`, `fi`, `for`, `foreach`,
-  `function`, `if`, `in`, `nocorrect`, `repeat`, `select`, `then`, `time`, `until`, `while`): each
-  either cannot be parsed as a function definition or is parsed as a reserved word at the call site,
-  so the pasted snippet would be a syntax error or an unreachable wrapper rather than a definition.
-  Reserved words made only of punctuation (`!`, `{`, `}`, `[[`, `]]`) collapse to `_` under the
-  `[a-z0-9_]` sanitization and are unreachable, so they are deliberately not listed.
-- The directory is emitted **single-quoted** and verbatim from `configuredDirectory` (already
-  realpath-canonicalized by `requireCanonicalClaudeConfigDirectory`), so the snippet's path matches
-  what the label resolver compares against. Single quotes rather than double: bash and zsh both make
-  history expansion (`!`), parameter expansion, command substitution and backslash escapes inert
-  inside `'…'`, which leaves `'` as the only character to escape (as the standard `'\''`) — whereas a
-  double-quoted path containing `!` cannot be pasted at an interactive prompt in **either** shell
-  (`event not found`).
-- The automatic environment gets no such action — it needs no wrapper, and its `configuredDirectory`
-  is `null` by definition.
-- **The snippet contains a real filesystem path, so it must never be logged.** This is the same
-  constraint the existing "no `configDirectory` in `main.log`" rule imposes; a user-initiated
-  clipboard write is the one sanctioned egress, and it reuses the existing
-  `writeClipboardText` dependency already used by **Copy `/reload-plugins`**.
-
 ### Per-environment install probe (task 090)
 
 A narrow, read-only probe answers exactly one question per environment — *is the Bitterless plugin
@@ -552,8 +512,11 @@ present and enabled in this `CLAUDE_CONFIG_DIR`?* — and nothing else.
   outbox, or `this.inspection` slot.
 - Per-environment listener/runtime status. The listener, socket, and outbox are one per profile, so
   "is the listener running" stays a single global fact and is not duplicated onto environment rows.
-- Writing the task 089 shell snippet into the user's shell profile (`.zshrc`, `.bashrc`, a wrapper
-  script) on their behalf. Bitterless puts it on the clipboard; installing it is the user's step.
+- Generating or installing the wrapper for the user, in any form — a clipboard snippet, a written
+  shell profile, or a `PATH` script. Task 089 shipped the clipboard form and task 096 removed it:
+  the snippet omitted the credential-clearing step, so it could hand a user a `claude2` that
+  silently ran as their first account. Bitterless states the requirement in the guidance note; the
+  wrapper is the user's own.
 - Verifying that the user's wrapper actually exports `CLAUDE_CONFIG_DIR` correctly. Task 090's probe
   inspects the *directory*, not the user's shell configuration; a wrapper that silently fails to set
   the variable shows up as sessions landing on the wrong environment, not as a probe failure.
@@ -647,17 +610,14 @@ Assuming a `claude2` wrapper already exists (the owner's is `/usr/local/bin/clau
 | 9 | Rename the `claude2` environment | the label updates on matching thread metadata; no re-probe, no CLI spawn |
 | 10 | Try **Remove** on the last remaining environment | disabled, with the explanatory hint |
 
-**Copy setup command** is *not* on this path when a wrapper already exists — step 3 replaces it. Use
-it only to check the snippet it produces (see the shell caveat below).
-
 ### Shell wrapper shapes
 
-Task 089's **Copy setup command** emits a shell **function** for a shell profile
-(`.zshrc`/`.bashrc`). That is not the only shape, and not the one the owner actually uses:
+Bitterless does not generate a wrapper (task 096 removed the action that did, because the snippet it
+produced was subtly wrong — see below). The user writes it, and the shape matters:
 
 | shape | works in | survives non-interactive spawn | notes |
 |---|---|---|---|
-| function in a shell profile (what 089 emits) | bash, zsh, sh | no | **syntax error in fish/nushell** |
+| function in a shell profile | bash, zsh, sh | no | **syntax error in fish/nushell** |
 | script on `PATH` (owner's `/usr/local/bin/claude2`) | any shell | yes | shell-agnostic; also reachable by other programs |
 
 The owner's script additionally `unset`s `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and

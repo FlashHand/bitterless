@@ -788,9 +788,10 @@ export const zh: typeof en = {
     claudeEnvironment: {
       title: 'Claude 环境',
       guidance:
-        '每个环境都需要单独安装 Hook。将 Bitterless 指向该环境的 CLAUDE_CONFIG_DIR 后点击安装——'
-        + '并确保该环境使用的 shell 命令（例如 claude2 包装脚本）在调用 claude 之前设置了 '
-        + 'CLAUDE_CONFIG_DIR。',
+        '每个环境都要单独装一次 hook:先把 Bitterless 指向它的 CLAUDE_CONFIG_DIR,再点安装。'
+        + '启动该环境用的命令必须在调用 claude 之前设置 CLAUDE_CONFIG_DIR,并清掉 '
+        + 'ANTHROPIC_API_KEY、ANTHROPIC_AUTH_TOKEN、CLAUDE_CODE_OAUTH_TOKEN —— '
+        + '否则它会继承 shell 里的凭据,用另一个账号登录。',
       addEnvironment: '添加环境',
       addDirectoryPlaceholder: 'CLAUDE_CONFIG_DIR 绝对路径（例如 /Users/you/.claude2）',
       add: '添加',
@@ -800,7 +801,6 @@ export const zh: typeof en = {
       save: '保存',
       cancel: '取消',
       changeDirectory: '更改目录',
-      copySetupCommand: '复制配置命令',
       useAutomatic: '恢复自动发现',
       enable: '启用',
       disable: '停用',
