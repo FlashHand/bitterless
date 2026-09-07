@@ -1,6 +1,7 @@
 # OnlyPreview preview-token test races its own live workspace watcher
 
-Status: repaired in the test; one product observation left open
+Status: repaired in the test; the product observation it raised is now settled and fixed - see
+[a watch commit revokes a newer search session](onlypreview-watch-commit-revokes-a-newer-search-session.md)
 
 ## Symptom
 
@@ -118,10 +119,10 @@ still slips past the drain, since the engine's `onReconcile` closure returns ear
 moves. Watch-driven revocation keeps its own coverage in `onlyPreviewPreviewWatchCommit.test.mjs`
 and `onlyPreviewSearchEngineWatchBoundary.test.mjs`.
 
-## Open product observation - not changed here
+## The product defect this exposed - now fixed
 
-The incremental watch commit revokes more than the refresh path does, and the asymmetry looks
-accidental rather than decided:
+The incremental watch commit revoked more than the refresh path did, and the asymmetry was not
+decided, it was accidental:
 
 | Trigger | Call | Effect |
 | --- | --- | --- |
@@ -129,21 +130,36 @@ accidental rather than decided:
 | incremental watch commit | `revoke()` (`watch-reconciler.mjs:287`) | session identity **and** tokens dropped |
 | promotion | `revoke()` (`search-engine.mjs:484`) | session identity and tokens dropped |
 
-Two things follow from that, and the second is the sharper one.
+The sharper half was ordering, not scope: `revoke()` never asked whether the session it destroyed was
+newer than the change that triggered the reconcile, and `engine.search()` does not serialize against
+the reconcile at all. That is reachable in the shipped app, not only in this test. It is fixed by
+marking the session on reconcile entry - see
+[a watch commit revokes a newer search session](onlypreview-watch-commit-revokes-a-newer-search-session.md)
+for the diagnosis, the fix and its verification.
 
-- **Scope.** One unrelated file changing anywhere in the workspace ends the viewer's whole search
-  session rather than just invalidating its result capabilities, so the renderer sees "preview
-  request is stale" instead of "result capability is stale".
-- **Ordering.** `revoke()` is unconditional: it does not ask whether the session it is destroying is
-  newer than the change that triggered the reconcile. The trace above shows a reconcile revoking a
-  session that began after it started. In the product that reads as: edit a file, type a new search
-  within the 400ms trailing window, and the fresh result list comes back un-previewable even though
-  the edit predates the query.
+With that fix in place this test's own hazard is closed at the source too: the leaked reconcile starts
+before the test's query, so the query's session now outlives it. The `drain: true` change above is
+kept anyway - a test about the query/refresh/explicit-revoke token lifetime should not have a live
+watcher in it at all.
 
-Both are fail-closed, and preview re-verifies on-disk identity regardless, so nothing is exposed.
-Narrowing the call at `watch-reconciler.mjs:287` - to `revokeResults()`, or to a revoke that only
-fires for sessions that predate the reconcile - changes which live sessions survive an unrelated
-edit, so it needs an owner decision rather than being folded into a test repair.
+## Correction worth carrying forward
+
+`close({ drain: false })` followed by `engine.watchRevision += 1` - the idiom at 18 sites in this
+suite - does **not** reliably neutralize a pending reconcile, which is easy to assume it does. The
+revision guard lives inside the enqueued closure:
+
+```js
+onReconcile: (change) => this.enqueue(async () => {
+  if (this.watchRevision !== watchRevision) return;
+  await this.applyWatchChangesInternal(change);
+}),
+```
+
+Once the build releases `operationTail`, that closure's check runs in the same microtask drain that
+resumes the test after `await engine.initialize(...)`. If the check wins, the reconcile is already
+past the guard and the later bump changes nothing. The deterministic A/B above shows exactly that:
+`mode=drop` performs the close **and** the revision bump and still loses 3 out of 3. Only draining
+settles it.
 
 ## Related
 

@@ -497,6 +497,12 @@ earlier review rounds were remediated; Ral's runtime/visual verification remains
 
 ## Issues
 
+- [A watch commit revokes a Global Search session that began after the commit started](issues/onlypreview-watch-commit-revokes-a-newer-search-session.md) -
+  fixed: `engine.search()` never serialized against the watch reconcile, and the writer lease
+  scheduled rather than prevented the clash - the commit waited for exactly the query it then
+  destroyed, so editing any file and searching within 400ms could return an un-previewable result
+  list. The reconcile now marks the session it observed on entry and revokes only that one; ported to
+  the micromeet-cowork vendored copy.
 - [OnlyPreview preview-token test races its own live watcher](issues/onlypreview-preview-token-test-races-live-watcher.md) -
   fixed in the test: macOS delivers FSEvents for fixture writes into the watcher `initialize()` just
   attached, and the resulting reconcile - queued behind the build - revokes the whole global search

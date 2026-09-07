@@ -124,6 +124,13 @@ class OnlyPreviewSearchWatchReconciler {
 
   async apply({ full, paths, renamePaths = [] }) {
     const context = this.resolveContext();
+    // Queries do not serialize against this reconcile: engine.search() holds a reader lease while
+    // acquireSearchSnapshotWriter() below waits for readers to drain, so a query can begin, issue
+    // its tokens and finish inside the window this commit is already open in. Mark the session we
+    // observed on entry and revoke only that one, so a commit never destroys results a later query
+    // produced. Authorities the commit invalidates still fail closed: every preview branch
+    // re-verifies on-disk identity before returning bytes.
+    const sessionMark = context.globalSearchSession.sessionMark();
     const normalizedPaths = [];
     const physicallyExcludedPaths = [];
     let requiresFullReconcile = full === true;
@@ -284,7 +291,7 @@ class OnlyPreviewSearchWatchReconciler {
       const writer = await context.acquireSearchSnapshotWriter();
       let commitNeedsFullReconcile = false;
       try {
-        context.globalSearchSession.revoke();
+        context.globalSearchSession.revokeSessionMark(sessionMark);
         context.index.invalidateTreeSnapshot();
         const removedPaths = new Set(
           mutations

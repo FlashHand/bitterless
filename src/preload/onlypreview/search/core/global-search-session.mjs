@@ -5,10 +5,12 @@ const MAX_SECTION_RESULTS = 250;
 
 export class OnlyPreviewGlobalSearchSession {
   constructor() {
+    this.sequence = 0;
     this.revoke();
   }
 
   begin({ workspaceId, generation, requestId }) {
+    this.sequence += 1;
     this.workspaceId = workspaceId;
     this.generation = generation;
     this.requestId = requestId;
@@ -26,6 +28,10 @@ export class OnlyPreviewGlobalSearchSession {
       this.generation === generation &&
       this.requestId === requestId
     );
+  }
+
+  sessionMark() {
+    return this.sequence;
   }
 
   issue(request, authority) {
@@ -111,6 +117,12 @@ export class OnlyPreviewGlobalSearchSession {
     this.generation = undefined;
     this.requestId = undefined;
     this.revokeResults();
+  }
+
+  revokeSessionMark(sessionMark) {
+    if (this.sequence !== sessionMark) return false;
+    this.revoke();
+    return true;
   }
 }
 

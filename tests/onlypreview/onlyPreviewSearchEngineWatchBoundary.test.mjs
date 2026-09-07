@@ -63,6 +63,23 @@ const indexedPaths = (engine) =>
 const applyWatch = async (engine, change) =>
   await engine.enqueue(async () => await engine.applyWatchChangesInternal(change));
 
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((resolveValue) => {
+    resolve = resolveValue;
+  });
+  return { promise, resolve };
+};
+
+const previewToken = async (engine, requestId, resultToken) =>
+  await engine.preview({
+    workspaceId: 'workspace',
+    generation: 1,
+    requestId,
+    resultToken,
+    isCancelled: () => false
+  });
+
 const execFileAsync = promisify(execFile);
 
 const treeIdentity = (entries) =>
@@ -361,3 +378,72 @@ test('tree and disk estimates never participate in runtime memory thresholds', (
   );
 });
 
+test('a watch commit revokes the search session it observed when the commit began', async () => {
+  await withTempDirectory(async (temp) => {
+    const root = join(temp, 'workspace');
+    await write(join(root, 'subject.txt'), 'subject body token');
+    await write(join(root, 'unrelated.txt'), 'first');
+    const engine = createOnlyPreviewSearchEngine();
+    await engine.initialize({
+      workspaceId: 'workspace',
+      generation: 1,
+      rootPath: root,
+      databasePath: join(temp, 'cache', 'search.sqlite')
+    });
+    await engine.watchController.close({ drain: true });
+    engine.watchController = undefined;
+    engine.watchRevision += 1;
+
+    const response = await search(engine, 'subject', 'before-commit');
+    const subject = response.files.find(({ relativePath }) => relativePath === 'subject.txt');
+    assert.equal((await previewToken(engine, 'before-commit', subject.resultToken)).kind, 'text');
+
+    await write(join(root, 'unrelated.txt'), 'second');
+    await applyWatch(engine, { full: false, paths: ['unrelated.txt'] });
+
+    await assert.rejects(() => previewToken(engine, 'before-commit', subject.resultToken));
+    await engine.shutdown();
+  });
+});
+
+test('a watch commit leaves a session that began inside the commit window alive', async () => {
+  await withTempDirectory(async (temp) => {
+    const root = join(temp, 'workspace');
+    await write(join(root, 'subject.txt'), 'subject body token');
+    await write(join(root, 'unrelated.txt'), 'first');
+    const engine = createOnlyPreviewSearchEngine();
+    await engine.initialize({
+      workspaceId: 'workspace',
+      generation: 1,
+      rootPath: root,
+      databasePath: join(temp, 'cache', 'search.sqlite')
+    });
+    await engine.watchController.close({ drain: true });
+    engine.watchController = undefined;
+    engine.watchRevision += 1;
+
+    // Hold the commit open before it takes the writer lease, so the query below runs entirely
+    // inside the window the reconcile is already in - the ordering a reader lease makes reachable
+    // in the product, because the writer waits for exactly the query it would otherwise revoke.
+    const commitOpened = deferred();
+    const releaseCommit = deferred();
+    const acquireWriter = engine.acquireSearchSnapshotWriter.bind(engine);
+    engine.acquireSearchSnapshotWriter = async (...args) => {
+      commitOpened.resolve();
+      await releaseCommit.promise;
+      return await acquireWriter(...args);
+    };
+
+    await write(join(root, 'unrelated.txt'), 'second');
+    const applying = applyWatch(engine, { full: false, paths: ['unrelated.txt'] });
+    await commitOpened.promise;
+
+    const response = await search(engine, 'subject', 'inside-commit');
+    const subject = response.files.find(({ relativePath }) => relativePath === 'subject.txt');
+    releaseCommit.resolve();
+    await applying;
+
+    assert.equal((await previewToken(engine, 'inside-commit', subject.resultToken)).kind, 'text');
+    await engine.shutdown();
+  });
+});

@@ -119,7 +119,7 @@ test('maximum bounded watch reads and commits file bodies in bounded chunks', as
         isExcludedFilePath: () => false,
         isPhysicallyExcludedPath: () => false
       },
-      globalSearchSession: { revoke: () => undefined },
+      globalSearchSession: { sessionMark: () => 0, revokeSessionMark: () => true },
       acquireSearchSnapshotWriter: async () => ({ release: () => undefined }),
       emitSnapshot: async () => undefined,
       workspaceId: 'workspace',
