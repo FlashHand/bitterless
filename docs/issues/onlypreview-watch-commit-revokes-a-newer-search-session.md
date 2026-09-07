@@ -77,6 +77,30 @@ Only the **incremental** branch is narrowed. The full-reconcile and promotion pa
 `revoke()`, which matters because a config change can move the search policy underneath a captured
 authority.
 
+### The promotion twin is kept deliberately - with a known residual
+
+`promoteCandidate` has the same shape as the defect above and is *not* narrowed:
+`acquireSearchSnapshotWriter()` at `search-engine.mjs:468` claims `promotionPromise` and drains
+readers, then `revoke()` at `:484` - so it too waits for a query before destroying it. That is kept,
+because a promotion is the one commit that can change what a token is *allowed* to read:
+`bindSnapshotAuthority` freezes `lease.searchPolicy` onto every authority
+(`global-search-executor.mjs:160-164`) and `engine.preview` prefers that frozen policy over the live
+one - `authority.searchPolicy ?? this.activeSearchPolicy ?? this.searchPolicy`
+(`search-engine.mjs:683`) - so a session begun inside the promotion window holds authorities bound to
+the pre-promotion policy. `readStableIdentity` fails closed on *content* but not on *policy*, so
+those tokens must die.
+Sequence-marking them would open a real policy hole; the identity re-check above cannot cover it.
+
+The residual: for a full reconcile that is **not** a config change (rename storm, watch overflow,
+initial build), a newer session is still revoked and produces the same user-visible line. Two things
+keep it rare. The executor reads the promotion gate at `global-search-executor.mjs:355` and re-calls
+`begin(request)` after it at `:365`, so a query that arrives while a promotion is already pending
+re-claims the session and survives; only a query that clears the gate in the instant before
+`promoteCandidate` claims `promotionPromise` loses. And full reconciles are orders of magnitude rarer
+than the 400ms incremental commits this issue fixed. Narrowing it properly means distinguishing a
+policy-changing promotion from an index-only one - a larger change than this issue, and not attempted
+here. The `sessionMark()` / `revokeSessionMark()` plumbing to build on already exists.
+
 ### Why this is safe
 
 Surviving tokens are not trusted. Every preview branch re-verifies on-disk identity before returning
