@@ -49,6 +49,15 @@ export interface OnlyPreviewMount {
   /** Fires whenever `contentSize` changes for any reason this host knows about. */
   onResize(listener: () => void): () => void;
 
+  /**
+   * Re-measure now and notify, without waiting for the host's own next change.
+   *
+   * The composite needs this for its first frame: on macOS `maximize()` and `setFullScreen(true)`
+   * settle asynchronously, and a tab is positioned from a rect its renderer measured, so in both
+   * hosts there is a moment where the extent is known but nothing has announced it yet.
+   */
+  refresh(): void;
+
   /** Fires when the composite becomes, or stops being, this host's foreground content. */
   onActivation(listener: (active: boolean) => void): () => void;
 
@@ -67,5 +76,31 @@ export interface OnlyPreviewMount {
   /** Close the composite the way this host closes things: a window, or one tab. */
   requestClose(): void;
 
+  /**
+   * Bring the composite in front of the owner: show and focus a window, or activate a tab.
+   *
+   * Named for the intent rather than the mechanism, because the mechanism is the whole difference
+   * between the two hosts and the composite must not care which one it got.
+   */
+  showSurface(): void;
+
+  /**
+   * Fires once when the host itself goes away — the window was closed, or the tab was.
+   *
+   * This is the signal the composite tears itself down on. It exists because the composite used to
+   * listen to `window.once('closed')` directly, which is exactly the assumption that made it
+   * unhostable anywhere else.
+   */
+  onHostGone(listener: () => void): () => void;
+
+  /**
+   * Take the host down as part of the composite's own teardown: destroy the window, or close the
+   * tab. Distinct from `requestClose()`, which is the owner asking; this is the composite finishing.
+   */
+  destroyHost(): void;
+
   reportTitle(title: string): void;
+
+  /** Release the mount's own listeners. Called by the composite as the last step of teardown. */
+  dispose(): void;
 }

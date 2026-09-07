@@ -22,8 +22,14 @@ export class OnlyPreviewStandaloneMount implements OnlyPreviewMount {
   private container: View | null = null;
   private readonly resizeListeners = new Set<() => void>();
   private readonly activationListeners = new Set<(active: boolean) => void>();
+  private readonly hostGoneListeners = new Set<() => void>();
 
-  constructor(private readonly baseWindow: BaseWindow) {}
+  constructor(
+    private readonly baseWindow: BaseWindow,
+    // The persisted-geometry controller, when this window has one. Held here rather than in the
+    // composite because restoring a window's size is a host concern and a tab has no equivalent.
+    private readonly windowState: { show(): void } | null = null
+  ) {}
 
   attach(container: View): void {
     if (!this.isAlive()) return;
@@ -54,10 +60,10 @@ export class OnlyPreviewStandaloneMount implements OnlyPreviewMount {
   /**
    * Keep the container over the window's content rect and tell the composite to re-lay-out.
    *
-   * Called by the owner on the window's `resize`, which is also what covers the asynchronous settle
-   * of `maximize()` and `setFullScreen(true)` on macOS.
+   * Driven by the window's own `resize`, which is also what covers the asynchronous settle of
+   * `maximize()` and `setFullScreen(true)` on macOS.
    */
-  reportResize(): void {
+  refresh(): void {
     this.applyContainerBounds();
     for (const listener of this.resizeListeners) listener();
   }
@@ -88,6 +94,33 @@ export class OnlyPreviewStandaloneMount implements OnlyPreviewMount {
     if (this.isAlive()) this.baseWindow.close();
   }
 
+  showSurface(): void {
+    if (!this.isAlive()) return;
+    // The window-state controller is what applies persisted bounds and any saved maximize or
+    // full-screen, so it shows the window when there is one; otherwise a plain restore-and-show.
+    if (this.windowState) {
+      this.windowState.show();
+    } else {
+      if (this.baseWindow.isMinimized()) this.baseWindow.restore();
+      this.baseWindow.show();
+    }
+    this.baseWindow.focus();
+  }
+
+  onHostGone(listener: () => void): () => void {
+    this.hostGoneListeners.add(listener);
+    return () => this.hostGoneListeners.delete(listener);
+  }
+
+  /** Called by the owner from the window's own `closed` event. */
+  reportHostGone(): void {
+    for (const listener of [...this.hostGoneListeners]) listener();
+  }
+
+  destroyHost(): void {
+    if (this.isAlive()) this.baseWindow.destroy();
+  }
+
   reportTitle(title: string): void {
     if (this.isAlive()) this.baseWindow.setTitle(title);
   }
@@ -95,6 +128,7 @@ export class OnlyPreviewStandaloneMount implements OnlyPreviewMount {
   dispose(): void {
     this.resizeListeners.clear();
     this.activationListeners.clear();
+    this.hostGoneListeners.clear();
     this.container = null;
   }
 

@@ -197,3 +197,18 @@ Non-blocking review findings are recorded here after task verification.
   removed in `docs/issues/onlypreview-verification-checks-red-at-head.md`. Left in place rather than
   cleaned up as unrelated work; drop them once the surface-container work confirms it will not need
   frame lookups again.
+
+- `yarn lint` (`eslint --cache .`) cannot finish on this checkout: it exhausts the default ~4 GB V8
+  heap and aborts with `FATAL ERROR: Ineffective mark-compacts near heap limit` / `SIGABRT` before
+  producing any verdict, so the repo-wide lint gate is currently unrunnable rather than merely slow
+  (observed 2026-09-04 at `94dfa75`, both with and without a competing lint process). Until it is
+  fixed, per-file `eslint --no-cache <paths>` is the only usable form.
+
+  Diagnosed: ESLint flat config does not read `.gitignore` (that needs `@eslint/compat`'s
+  `includeIgnoreFile`), and `eslint.config.mjs` ignores only `**/node_modules`, `**/dist`, `**/out`.
+  So the run type-aware lints **6,137 files under the gitignored `tmp/` playground** (1.7 GB) — the
+  scratch tree CLAUDE.md reserves for throwaway agent experiments. Raising the heap would only make
+  a bigger heap for files that should never be linted; the fix belongs in the ignore set, ideally by
+  wiring `.gitignore` in so the two lists cannot drift. Owner deprioritized this on 2026-09-07
+  (typecheck runs, which is enough for now), so the fix is **diagnosed but unverified** — nobody has
+  confirmed that ignoring `tmp/` alone brings the run under the heap limit.

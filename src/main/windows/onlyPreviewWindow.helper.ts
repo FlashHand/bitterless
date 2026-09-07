@@ -30,6 +30,7 @@ import {
 import { resolveOnlyPreviewSettingsBounds } from '@main/onlypreview/onlyPreviewWindowBounds.service';
 import { clampOnlyPreviewSurfaceLayout } from '@main/onlypreview/onlyPreviewSurfaceLayout';
 import { OnlyPreviewStandaloneMount } from '@main/windows/onlyPreviewStandaloneMount';
+import type { OnlyPreviewMount } from '@main/onlypreview/onlyPreviewSurface.mount';
 import { onlyPreviewSearchBootstrapRegistry } from '@main/onlypreview/onlyPreviewSearchBootstrap.registry';
 import { onlyPreviewProjectIndexStateService } from '@main/onlypreview/onlyPreviewProjectIndexState.service';
 import { onlyPreviewViewLayerService } from '@main/onlypreview/views/onlyPreviewViewLayer.service';
@@ -213,7 +214,7 @@ export class OnlyPreviewWindowHelper {
   surfaceContainer: View | null = null;
   // The host, behind the seam. The composite asks this for its extent, its window and its chrome
   // capability, and never reads geometry off `baseWindow` again.
-  private standaloneMount: OnlyPreviewStandaloneMount | null = null;
+  private standaloneMount: OnlyPreviewMount | null = null;
   // The overlay owners are started after the window is shown, so the first frames lay out the shell
   // before anything exists to receive an overlay rect. Without this the startup path would fan a
   // layout out to services that would refuse the host token they have not been given yet.
@@ -430,15 +431,8 @@ export class OnlyPreviewWindowHelper {
   }
 
   show(): void {
-    const window = this.baseWindow;
-    if (!window || window.isDestroyed()) return;
-    if (this.baseWindowState) {
-      this.baseWindowState.show();
-    } else {
-      if (window.isMinimized()) window.restore();
-      window.show();
-    }
-    window.focus();
+    // Showing is the host's business: a window shows and focuses itself, a Cowork tab activates.
+    this.standaloneMount?.showSurface();
   }
 
   reportShellMounted(
@@ -734,9 +728,11 @@ export class OnlyPreviewWindowHelper {
     fileSearchWindowService.stop();
     onlyPreviewViewLayerService.stop();
     mount?.detach();
-    mount?.dispose();
     closeView(shellView);
-    if (window && !window.isDestroyed()) window.destroy();
+    // The host goes down the way this host goes down — the standalone window is destroyed, a Cowork
+    // tab is closed — and only then are the mount's own listeners released.
+    mount?.destroyHost();
+    mount?.dispose();
     if (this.searchBootstrapToken) {
       onlyPreviewSearchBootstrapRegistry.revoke(this.searchBootstrapToken);
     }
@@ -826,21 +822,49 @@ export class OnlyPreviewWindowHelper {
     // `keyOwner` separates the two reasons a chord never arrives: another application took over
     // (nothing this window can do), or a window of this application did — a detached DevTools
     // window, which binds Command+F and Shift+Command+F itself.
+    this.baseWindowState = windowStateService.register('onlypreview', window);
+    const mount = new OnlyPreviewStandaloneMount(window, this.baseWindowState);
+    // The three window events this host translates for the composite: it went away, and it gained or
+    // lost the owner's attention. Everything else the composite needs, it asks the mount for.
+    window.once('closed' as any, () => mount.reportHostGone());
     window.on('focus', () => {
       console.info(
         `[onlypreview] event=window-focus state=focus focus=${electronWebContents.getFocusedWebContents() ? 'view' : 'none'}`
       );
-      // One pair of listeners, not two: the mount is created later in this method, so activation is
-      // reported through the field rather than a captured reference.
-      if (this.baseWindow === window) this.standaloneMount?.reportActivation(true);
+      if (this.baseWindow === window) mount.reportActivation(true);
     });
     window.on('blur', () => {
       const keyWindow = BaseWindow.getFocusedWindow();
       const keyOwner = !keyWindow ? 'other-app' : keyWindow === window ? 'self' : 'own-window';
       console.info(`[onlypreview] event=window-focus state=blur keyOwner=${keyOwner}`);
-      if (this.baseWindow === window) this.standaloneMount?.reportActivation(false);
+      if (this.baseWindow === window) mount.reportActivation(false);
     });
-    this.baseWindowState = windowStateService.register('onlypreview', window);
+    await this.attachSurface(host, mount, diagnostic, openTrace);
+  }
+
+  /**
+   * Build the composite onto a host and wire everything that is not the host itself.
+   *
+   * Split out of `createStandaloneWindow` so a Cowork tab can run the identical sequence. Every
+   * line below was already here; what changed is that the four host-shaped behaviours — showing the
+   * surface, learning the host went away, taking the host down, and reporting extent — now come from
+   * the mount instead of from a `BaseWindow` this code happened to own.
+   *
+   * `window` is still read from the mount and still used for the visibility and focus fields of the
+   * open trace, for `isCurrentShell`, and for the DevTools guards. In the standalone host that is
+   * OnlyPreview's own window; in a Cowork tab it is the window carrying the tab. Either way it is
+   * "the window this composite is currently inside", which is what those checks always meant.
+   */
+  private async attachSurface(
+    host: OnlyPreviewHostCapability,
+    mount: OnlyPreviewMount,
+    diagnostic: { tag: string; startedAt: number },
+    openTrace: OnlyPreviewOpenTrace
+  ): Promise<void> {
+    const window = mount.window();
+    if (!window) throw new Error('OnlyPreview mount has no window to build into.');
+    this.baseWindow = window;
+    this.standaloneMount = mount;
     const searchBootstrap = onlyPreviewSearchBootstrapRegistry.issue(host.hostToken);
     this.searchBootstrapToken = searchBootstrap.searchToken;
     await fileSearchWindowService.start({
@@ -905,8 +929,6 @@ export class OnlyPreviewWindowHelper {
     this.shellStartupLease = { hostToken: host.hostToken, window, view: shellView };
     const surfaceContainer = new View();
     this.surfaceContainer = surfaceContainer;
-    const mount = new OnlyPreviewStandaloneMount(window);
-    this.standaloneMount = mount;
     mount.attach(surfaceContainer);
     mount.onResize(() => {
       if (this.baseWindow !== window) return;
@@ -925,7 +947,7 @@ export class OnlyPreviewWindowHelper {
       if (this.baseWindow !== window) return;
       // The window tells its mount; the mount re-sizes the container and tells the composite. The
       // composite never listens to a window.
-      mount.reportResize();
+      mount.refresh();
     });
     this.applyInitialBounds();
     this.show();
@@ -1025,7 +1047,9 @@ export class OnlyPreviewWindowHelper {
       this.settleShellStartupLease(host.hostToken, window, shellView);
       this.finishShellOpenTrace(openTrace.tag, 'failure', 'unresponsive');
     });
-    window.once('closed' as any, () => {
+    // The host going away, not a window closing: the standalone mount raises this from its own
+    // window's `closed`, and a Cowork tab raises it when the tab is closed.
+    mount.onHostGone(() => {
       if (
         this.baseWindow !== window ||
         this.standaloneHost?.hostToken !== host.hostToken
@@ -1146,7 +1170,7 @@ export class OnlyPreviewWindowHelper {
   // the first frame and the window's `resize` listener covers the settle. Both go through the mount,
   // so the container and the layers can never be sized from two different notions of the extent.
   private applyInitialBounds(): void {
-    this.standaloneMount?.reportResize();
+    this.standaloneMount?.refresh();
   }
 
   private finishShellOpenTrace(

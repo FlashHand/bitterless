@@ -129,9 +129,10 @@ a separate pre-existing debt and none of it belongs to the repairs below.
   modules are completely clean. 226 of the 249 are pre-existing `prettier/prettier` warnings in
   `check-renderer-i18n.mjs`, which is deliberately semicolon-free; reformatting it would be a large
   unrelated diff.
-- **`yarn lint` (whole repo) was not completed in this session.** Two attempts each burned more than
-  20 minutes of CPU without finishing while a concurrent session's `eslint --cache .` had been
-  running for over three hours against the same `.eslintcache`; both of this session's runs were
-  killed rather than add a third competing process. The per-file evidence above is what decides the
-  gate — `yarn lint` fails on errors, not warnings, and there are none.
+- **`yarn lint` (whole repo) cannot complete on this checkout — it runs out of memory.** A clean
+  run with no competing process ends in `FATAL ERROR: Ineffective mark-compacts near heap limit -
+  JavaScript heap out of memory` at roughly 4 GB, aborting with `SIGABRT`; it never reaches a
+  verdict. That also explains the concurrent session's three-hour run, which was heading to the same
+  crash. This is independent of the repairs here and reproduces without them. The per-file evidence
+  above is what decides the gate — `yarn lint` fails on errors, not warnings, and there are none.
 - Electron E2E, packaging, signing, and notarization were intentionally not run.
