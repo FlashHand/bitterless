@@ -90,6 +90,14 @@ test('result preview is token-only, bounded, typed, and revoked by the next quer
   const engine = createOnlyPreviewSearchEngine();
   try {
     await engine.initialize({ workspaceId: 'workspace', generation: 3, rootPath, databasePath });
+    // This test owns the query, refresh, and explicit-revoke token lifetime only. macOS still
+    // delivers FSEvents for the fixture writes above into the recursive watcher initialize() just
+    // attached, and a watch commit revokes the whole session, so the watcher is stopped first.
+    // Draining matters: its reconcile is already queued behind the build, and dropping the
+    // controller without draining lets that reconcile land after the query below issues tokens.
+    await engine.watchController.close({ drain: true });
+    engine.watchController = undefined;
+    engine.watchRevision += 1;
     const response = await engine.search({
       workspaceId: 'workspace',
       generation: 3,

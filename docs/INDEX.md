@@ -229,6 +229,11 @@ design document.
   sign-in instead of blaming local SQLite, on the board, its write path, and the home placeholder.
 - [EyesOnAgents Focus-only board](features/eyes-on-agents-focus-board.md) - one full-width Focus
   column listing every visible thread, retired Domain and Project UI, and a keyboard-first search modal.
+- [EyesOnAgents local session removal](plan/tasks/eyes-on-agents-local-delete-098.md) - delete a
+  Bitterless-only session mirror from either card-menu entrance without changing Codex or Claude.
+- [EyesOnAgents Search after long uptime](issues/eyes-on-agents-search-after-long-uptime.md) -
+  fixed; owner verification pending: the reproduced interrupted-composition state no longer survives
+  modal close; each lifecycle gets a fresh Input, while matching remains renderer-local.
 - [EyesOnAgents Project filter](features/eyes-on-agents-project-filter.md) - Git-worktree-derived
   Project metadata; its renderer filter is retired and only resolution/storage remains.
 - [EyesOnAgents Codex observation](features/eyes-on-agents-codex-observation.md) - global Hook
@@ -492,6 +497,12 @@ earlier review rounds were remediated; Ral's runtime/visual verification remains
 
 ## Issues
 
+- [OnlyPreview preview-token test races its own live watcher](issues/onlypreview-preview-token-test-races-live-watcher.md) -
+  fixed in the test: macOS delivers FSEvents for fixture writes into the watcher `initialize()` just
+  attached, and the resulting reconcile - queued behind the build - revokes the whole global search
+  session after the next query has issued its tokens, so the token-lifetime test lost a valid token
+  under parallel-run contention. Fail-closed, so no token-lifetime defect; one product observation
+  left open on the scope and ordering of that revoke.
 - [OnlyPreview verification checks red at HEAD](issues/onlypreview-verification-checks-red-at-head.md) -
   fixed: repinned the stale tray-ordering, Global Search layout, and shell-view assertions, brought
   the three files that had crept past the 800-line TS-1 limit back under budget by extraction, gave
