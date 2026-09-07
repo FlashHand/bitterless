@@ -134,6 +134,11 @@ the board. Search never narrows the Focus list behind the modal.
 | double-click or card-menu Open | open that result and close Search after success |
 | Escape, Close, or mask | close and clear query plus selection |
 
+The input uses `v-model` for raw text. Spaces, case and Unicode remain untouched while read-only
+computed values derive normalized matching tokens. Neither input-event transformations, result
+updates nor background snapshots may write processed text back into the field. Fresh Input
+instances per modal lifetime retain the interrupted-composition recovery from task 099.
+
 Selection is retained by `sessionKey` through snapshot updates and falls back to the first match if
 that key disappears. Successful Open clears the modal state; an unavailable, already-opening, or
 failed Open leaves it unchanged. The popup is anchored inside `.eyes-on-agents__main`; the input
@@ -503,7 +508,9 @@ A card displays only observation metadata:
   has no trusted route; the read-state item (**Mark as read** / **Mark as unread**) labelled from the
   stored unread flag; **Copy session path**, which puts the session JSONL's absolute path on the
   clipboard for a Claude row with a known transcript (Codex rows have no discovered session file);
-  and Codex-only **Archive**;
+  Codex-only **Archive**; and **Delete from Bitterless** for either provider. Local deletion is
+  available even when the source session no longer exists or its provider is disconnected, and
+  does not delete or archive anything in Codex/Claude;
 - one status slot right of the title carries either the working spinner or the unread red dot — the
   dot for any non-active unread row, which means terminal (`idle`, `ended`, `failed`) **and**
   `unknown`. Working and waiting cards show only the spinner, so the two states cannot collide in that

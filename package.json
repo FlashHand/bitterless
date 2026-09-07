@@ -15,12 +15,14 @@
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
-    "typecheck:node": "tsc --noEmit --noCheck -p tsconfig.node.json --composite false",
+    "typecheck:surfaces": "node scripts/typecheck/surfaces.mjs",
+    "typecheck:node": "node scripts/typecheck/surfaces.mjs --kind=node",
+    "typecheck:web": "node scripts/typecheck/surfaces.mjs --kind=web",
+    "parse:node": "tsc --noEmit --noCheck -p tsconfig.node.json --composite false",
     "typecheck:mcp": "tsc -p scripts/mcp/tsconfig.strict.json",
-    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "check:todo-web-boundary-types": "tsc src/main/xpc/todoWindow.handler.ts src/main/xpc/windowControl.handler.ts --declaration --emitDeclarationOnly --noCheck --module esnext --moduleResolution bundler --target esnext --skipLibCheck --outDir node_modules/.cache/bitterless/todo-web-main-types && tsc src/preload/todo/todo.preload.ts --declaration --emitDeclarationOnly --noCheck --module esnext --moduleResolution bundler --target esnext --skipLibCheck --outDir node_modules/.cache/bitterless/todo-web-preload-types && node -e \"const fs=require('fs');const pairs=[['src/renderer/todo/src/emitter/contracts/xpc/todoWindow.handler.d.ts','node_modules/.cache/bitterless/todo-web-main-types/xpc/todoWindow.handler.d.ts'],['src/renderer/todo/src/emitter/contracts/xpc/windowControl.handler.d.ts','node_modules/.cache/bitterless/todo-web-main-types/xpc/windowControl.handler.d.ts']];for(const [expected,actual] of pairs){if(fs.readFileSync(expected,'utf8')!==fs.readFileSync(actual,'utf8')){console.error('Generated Todo web Main type contract is stale: '+expected);process.exitCode=1;}}\"",
     "typecheck:todo-web": "yarn check:todo-web-boundary-types && vue-tsc --noEmit -p scripts/todoist-sync/tsconfig.todo-web.json --composite false",
-    "typecheck": "yarn typecheck:node && yarn typecheck:web",
+    "typecheck": "yarn typecheck:surfaces",
     "audit:desktop-package": "node scripts/package/desktopPackage.audit.cjs",
     "test:desktop-app-icon": "node --test scripts/package/desktopAppIcon.test.mjs",
     "test:desktop-auto-update": "node --test tests/update/updatePolling.test.mjs tests/update/updateChannel.test.mjs",
@@ -291,7 +293,7 @@
     "rigs/*",
     "rig_dev/*"
   ],
-  "name": "Bitterless_DEBUG_PROD",
+  "name": "Bitterless",
   "version": "0.0.92",
   "version_code": "260904172934"
 }

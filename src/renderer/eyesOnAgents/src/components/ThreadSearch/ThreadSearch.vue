@@ -23,15 +23,15 @@
         class="thread-search__input-region"
       >
         <a-input
+          :key="eyesOnAgentsStore.threadSearchRevision"
           ref="inputRef"
           name="eyesOnAgents__threadSearch__input"
           class="thread-search__input"
           size="mini"
           allow-clear
-          :model-value="eyesOnAgentsStore.titleDraft"
+          v-model="titleDraft"
           :placeholder="i18nHelper.eyesOnAgents.search.placeholder"
           :input-attrs="inputAttributes"
-          @update:model-value="handleTitleInput"
           @clear="handleQueryClear"
           @keydown="handleKeydown"
         >
@@ -93,6 +93,13 @@ const RESULT_LIST_ID = 'eyes-on-agents-thread-search-results';
 const inputRef = ref<{ focus?: () => void } | null>(null);
 const resultsRef = ref<HTMLElement | null>(null);
 
+const titleDraft = computed({
+  get: () => eyesOnAgentsStore.titleDraft,
+  set: (value: string) => {
+    eyesOnAgentsStore.setTitleDraft(value);
+  },
+});
+
 const threadSearchOptionId = (sessionKey: string): string =>
   `eyes-on-agents-thread-search-option-${encodeURIComponent(sessionKey)}`;
 
@@ -137,10 +144,6 @@ const scrollSelectedResultIntoView = async (): Promise<void> => {
 
 const closeThreadSearch = (): void => {
   eyesOnAgentsStore.closeThreadSearch();
-};
-
-const handleTitleInput = (value: string): void => {
-  eyesOnAgentsStore.setTitleDraft(value);
 };
 
 const handleModalOpen = (): void => {

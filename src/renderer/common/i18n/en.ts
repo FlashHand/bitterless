@@ -843,6 +843,7 @@ export const en = {
       markUnread: 'Mark as unread',
       copySessionPath: 'Copy session path',
       archive: 'Archive',
+      deleteFromBitterless: 'Delete from Bitterless',
       more: 'More actions',
       searchTitles: 'Search thread titles',
       searchTitlesMac: 'Search titles (⌘F)',

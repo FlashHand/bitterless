@@ -32,12 +32,12 @@ import {
   MAESTRO_AI_CRMS_LOGIN_DISPLAY_URL,
   MAESTRO_LOCAL_HOME_DISPLAY_URL
 } from '@maestro-shared/coach.api'
+import type { MaestroCompositeTabSpec } from '@maestro-shared/compositeTab.api'
 import type { InjectBtnApi, InjectBtnEntry, InjectBtnInput } from '@maestro-shared/injectBtn.api'
 import type { SavedTab } from '@maestro-shared/tabs.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
-import { createBoundsApplier } from './viewBounds'
-import { OnlyPreviewCoworkMount } from './onlyPreviewCoworkMount'
-import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper'
+import { createBoundsApplier, maestroFirstFrameOperationRect } from './viewBounds'
+import { getMaestroCompositeTab } from './compositeTab.registry'
 
 export const shouldOpenOperationDevTools = (): boolean => {
   if (import.meta.env.VITE_MODE !== 'debug') return false
@@ -55,8 +55,6 @@ const AI_CRMS_TITLE = 'AI-CRMS'
 const AI_CRMS_FAVICON = ''
 const LOCAL_HOME_TITLE = 'Home'
 const LOCAL_HOME_FAVICON = ''
-const ONLY_PREVIEW_TAB_TITLE = 'OnlyPreview'
-const ONLY_PREVIEW_TAB_FAVICON = ''
 const ATTACH_BEFORE_NAVIGATE_TIMEOUT_MS = 3000
 // Chromium may keep a page "loading" for a stalled subresource or never emit a stop event when
 // its renderer dies. The tab spinner is only a status hint, so always settle it after this cap.
@@ -146,7 +144,6 @@ export interface OperationTab {
    * workspace and its host capability alive and unreachable.
    */
   surface?: View | null
-  surfaceDispose?: (() => void) | null
   capture: DebuggerCapture | null
   /** Internal debugger owner for the trusted AI-CRMS auth bridge; never exposed to agent tools. */
   bridgeCapture?: DebuggerCapture | null
@@ -203,7 +200,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   private prewarming = false
   private creatingTab = false
   private injectedButtonNonces = new Map<string, string>()
-  private readonly onlyPreviewMounts = new Map<string, OnlyPreviewCoworkMount>()
+  private readonly compositeTabs = new Map<string, MaestroCompositeTabSpec>()
   private authBridgeOwner: WebContents | null = null
   private authBridgeCleanup: Promise<void> = Promise.resolve()
   private aiCrmsPreparation: Promise<void> = Promise.resolve()
@@ -364,7 +361,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   }
 
   layout(bounds: { x: number; y: number; width: number; height: number }): void {
-    this._state.operationView?.setBounds(bounds)
+    this.setBounds(bounds)
   }
 
   setBounds(rect: ViewRect): void {
@@ -437,30 +434,61 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   }
 
   /**
-   * Open OnlyPreview as a tab, or bring the existing one forward.
+   * Open a registered composite mini app as a tab, or bring the existing one forward.
    *
-   * The tab carries the composite's container instead of a web view, so `view` stays `null` and
-   * every path that reaches for `tab.view` skips it — including the warm cap, which must never cool
-   * a whole sub-application. Only one such tab can exist, because only one OnlyPreview content
-   * surface is live at a time.
+   * The tab carries the mini app's own container view instead of a web view, so `view` stays `null`
+   * and every path that reaches for `tab.view` skips it — including the warm cap, which must never
+   * cool a whole sub-application. Nothing here knows which mini app it is: the host registered a
+   * spec, and this drives it.
    */
-  async openOnlyPreviewTab(): Promise<OperationTab | null> {
-    const existing = this.tabs.find((tab) => tab.kind === 'onlypreview')
+  /**
+   * Open a composite tab and show `path` inside it (Ral 2026-09-07: the chat workspace chip should
+   * land in OnlyPreview, not in a folder picker).
+   *
+   * Both steps here rather than in the caller, because the ORDER is load-bearing and easy to get
+   * backwards: the tab has to exist before the target is handed over, or the mini app's own
+   * "ensure a host" path finds none and opens a standalone window instead of filling the tab.
+   * Maestro still learns nothing about what is in the tab — `openTarget` is a capability the host
+   * registered with the spec.
+   */
+  async openCompositeTabTarget(params: {
+    id: string
+    path: string
+  }): Promise<{ ok: boolean; error?: string }> {
+    const target = String(params?.path || '').trim()
+    if (!target) return { ok: false, error: 'A path is required.' }
+    try {
+      const tab = await this.openCompositeTab({ id: params.id })
+      if (!tab) return { ok: false, error: `No composite tab is registered as '${params.id}'.` }
+      const spec = this.compositeTabs.get(tab.id)
+      if (!spec?.openTarget) {
+        return { ok: false, error: `'${params.id}' cannot open a path.` }
+      }
+      await spec.openTarget(target)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    }
+  }
+
+  async openCompositeTab(params: { id: string }): Promise<OperationTab | null> {
+    const spec = getMaestroCompositeTab(params.id)
+    if (!spec) return null
+    const existing = this.tabs.find((tab) => tab.kind === spec.id)
     if (existing) {
       await this.activateTab({ id: existing.id })
       return existing
     }
     const tab: OperationTab = {
       id: `tab-${++this.tabSeq}`,
-      kind: 'onlypreview',
+      kind: spec.id as TabKind,
       view: null,
       surface: null,
-      surfaceDispose: null,
       capture: null,
       replay: null,
       url: '',
-      title: ONLY_PREVIEW_TAB_TITLE,
-      favicon: ONLY_PREVIEW_TAB_FAVICON,
+      title: spec.title,
+      favicon: spec.favicon,
       debuggerEnabled: false,
       pinned: false,
       lastActive: Date.now(),
@@ -468,38 +496,36 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       loadWatchdog: null
     }
     this.tabs.push(tab)
-    const mount = new OnlyPreviewCoworkMount({
-      window: () => this._state.browserWindow,
-      contentRect: () => this._state.opBounds,
-      attach: (container) => {
-        tab.surface = container
-        // Index 0 is the tab-view position, so the whole composite sits below Maestro's chrome and
-        // control sidebar by construction — no re-assertion rule needed.
-        this._state.browserWindow?.contentView.addChildView(container, 0)
-      },
-      detach: (container) => {
-        if (tab.surface === container) tab.surface = null
-        try {
-          this._state.browserWindow?.contentView.removeChildView(container)
-        } catch {
-          // The parent window may already have released the child view.
-        }
-      },
-      activate: () => void this.activateTab({ id: tab.id }),
-      closeTab: () => void this.closeTab({ id: tab.id }),
-      setTitle: (title) => {
-        tab.title = title || ONLY_PREVIEW_TAB_TITLE
-        this.broadcastTabs()
-      },
-      isOpen: () => this.tabs.includes(tab)
-    })
-    tab.surfaceDispose = () => mount.reportHostGone()
-    this.onlyPreviewMounts.set(tab.id, mount)
+    this.compositeTabs.set(tab.id, spec)
     try {
-      await onlyPreviewWindowHelper.openOnMount(mount)
+      await spec.open({
+        window: () => this._state.browserWindow,
+        contentRect: () => this._state.opBounds ?? this.firstFrameOperationRect(),
+        attach: (container) => {
+          tab.surface = container
+          // Index 0 is the tab-view position, so the whole composite sits below Maestro's chrome and
+          // control sidebar by construction — no re-assertion rule needed.
+          this._state.browserWindow?.contentView.addChildView(container, 0)
+        },
+        detach: (container) => {
+          if (tab.surface === container) tab.surface = null
+          try {
+            this._state.browserWindow?.contentView.removeChildView(container)
+          } catch {
+            // The parent window may already have released the child view.
+          }
+        },
+        activate: () => void this.activateTab({ id: tab.id }),
+        close: () => void this.closeTab({ id: tab.id }),
+        setTitle: (title) => {
+          tab.title = title || spec.title
+          this.broadcastTabs()
+        },
+        isOpen: () => this.tabs.includes(tab)
+      })
     } catch (err) {
-      this._state.emitTrace({ kind: 'error', msg: 'onlypreview tab: ' + (err as Error).message, ts: Date.now() })
-      this.onlyPreviewMounts.delete(tab.id)
+      this._state.emitTrace({ kind: 'error', msg: `composite tab ${spec.id}: ` + (err as Error).message, ts: Date.now() })
+      this.compositeTabs.delete(tab.id)
       const index = this.tabs.indexOf(tab)
       if (index >= 0) this.tabs.splice(index, 1)
       this.broadcastTabs()
@@ -507,6 +533,30 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
     await this.activateTab({ id: tab.id })
     return tab
+  }
+
+  /**
+   * The rect a tab's content occupies before the Home renderer has measured one.
+   *
+   * A web tab can afford to wait — it is loading anyway. A composite tab cannot: with no rect its
+   * container gets no bounds, and a zero-size container hides its children, so the mini app would
+   * open to nothing at all.
+   */
+  private firstFrameOperationRect(): ViewRect | null {
+    const win = this._state.browserWindow
+    if (!win) return null
+    const [width, height] = win.getContentSize()
+    return maestroFirstFrameOperationRect(width, height)
+  }
+
+  /**
+   * Re-position every composite tab after the host reports new content bounds.
+   *
+   * Web tab views are moved by `setBounds` on the active view; a composite tab is moved by its own
+   * mini app, and nothing else in this file knows how to reach it.
+   */
+  refreshCompositeTabs(): void {
+    for (const spec of this.compositeTabs.values()) spec.refresh()
   }
 
   private buildPinnedHomeView(): WebContentsView {
@@ -528,8 +578,9 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
 
   /** Hide a tab's content, whichever kind of content it has. */
   private hideTabContent(tab: OperationTab): void {
-    if (tab.kind === 'onlypreview') {
-      this.onlyPreviewMounts.get(tab.id)?.reportActivation(false)
+    const composite = this.compositeTabs.get(tab.id)
+    if (composite) {
+      composite.setActive(false)
       return
     }
     if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.setVisible(false)
@@ -968,6 +1019,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
 
   private displayUrl(tab: OperationTab): string {
     if (tab.kind === 'home') return MAESTRO_LOCAL_HOME_DISPLAY_URL
+    if (tab.kind === 'onlypreview') return this.compositeTabs.get(tab.id)?.displayUrl ?? ''
     if (tab.kind === 'ai-crms') return MAESTRO_AI_CRMS_LOGIN_DISPLAY_URL
     return tab.url
   }
@@ -1217,7 +1269,8 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     // tab and telling this one's mount it is foreground is the whole switch: hiding a container
     // hides its children, and each layer keeps its own visibility flag, so the composite's layer
     // state survives the round trip.
-    if (tab.kind === 'onlypreview') {
+    const composite = this.compositeTabs.get(tab.id)
+    if (composite) {
       const previous = this.tabs.find((item) => item.id === this.activeTabId)
       if (previous && previous.id !== tab.id) this.hideTabContent(previous)
       this.activeTabId = tab.id
@@ -1225,16 +1278,16 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       this._state.operationView = null
       this._state.capture = null
       this._state.replayEngine = null
-      this.onlyPreviewMounts.get(tab.id)?.reportActivation(true)
+      composite.setActive(true)
+      this.sendTabNav(tab)
+      this.sendTitle(tab.title)
       this.broadcastTabs()
       return
     }
     // Leaving a composite tab: it is not the `previous` branch below, because that one only knows
     // how to hide a `WebContentsView`.
     const leaving = this.tabs.find((item) => item.id === this.activeTabId)
-    if (leaving && leaving.id !== tab.id && leaving.kind === 'onlypreview') {
-      this.onlyPreviewMounts.get(leaving.id)?.reportActivation(false)
-    }
+    if (leaving && leaving.id !== tab.id) this.compositeTabs.get(leaving.id)?.setActive(false)
     if (this.activeTabId === tab.id && tab.view && !tab.view.webContents.isDestroyed()) {
       if (this.isPinnedHomeTab(tab)) this.openPinnedHomeDevTools(tab, tab.view)
       if (tab.kind === 'ai-crms') {
@@ -1339,13 +1392,12 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     // A composite tab owns a whole sub-application, so closing it must reach that sub-application's
     // own teardown — cooling a web view it does not have would silently orphan four renderers, a
     // hidden search runtime and a bound workspace.
-    if (tab.kind === 'onlypreview') {
+    const composite = this.compositeTabs.get(tab.id)
+    if (composite) {
       const index = this.tabs.indexOf(tab)
       if (index >= 0) this.tabs.splice(index, 1)
-      const dispose = tab.surfaceDispose
-      tab.surfaceDispose = null
-      this.onlyPreviewMounts.delete(tab.id)
-      dispose?.()
+      this.compositeTabs.delete(tab.id)
+      composite.close()
       const wasActive = this.activeTabId === tab.id
       if (wasActive) {
         const next = this.tabs[index] || this.tabs[this.tabs.length - 1]

@@ -140,6 +140,11 @@ export class OnlyPreviewRecentDirectoryService {
     this.resolveStorageLatch = null;
   }
 
+  async flushPendingWrites(): Promise<void> {
+    // Relocation only waits for work already queued; storage startup is not a new dependency.
+    await this.storageWriteChain;
+  }
+
   beginExplicitTarget(hostToken?: string): number {
     const generation = ++this.mutationGeneration;
     this.activeExplicitGeneration = generation;

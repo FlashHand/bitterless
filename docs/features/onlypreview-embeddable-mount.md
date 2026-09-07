@@ -1,8 +1,7 @@
 # OnlyPreview Embeddable Mount
 
-Status: in progress — tasks `onlypreview-surface-container-130` and `onlypreview-mount-seam-131`
-implemented (owner verification pending), tasks 132–137 pending. Electron E2E updated but not run by
-an agent.
+Status: in progress — tasks 130, 131 and 135 implemented (owner manual verification pending); 132,
+133, 134, 136, 137 and 138 pending. Electron E2E updated but not run by an agent.
 
 Owner request, 2026-09-04: 「重大功能优化 bitterless 中的 only preview 需要改造成可以在子窗口
 （webcontentsview 打开）这样可以实现 only preview 做成 miniapp 在 bitterless /cowork 浏览器中打开
@@ -257,7 +256,26 @@ both Find chords itself. Both are handled by having the mount claim keyboard foc
 composite's own preferred view — on mount, on activation, and immediately after
 `openDevTools({ mode: 'detach', activate: false })`.
 
-### Focus
+### Explicit host toggle
+
+The MenuBar carries one 27px Tabler button immediately right of Settings in either host. In a tab,
+`IconExternalLink` offers moving to a separate window; in a window, `IconBrowser` plus a subtle
+selected tint offers moving back into the existing browser. Its localized tooltip/accessible name
+identifies the action and its availability; absent browser and in-flight relocation disable it.
+
+This is the explicit serialized relocation in [task 139](../plan/tasks/onlypreview-host-toggle-139.md),
+not the still-planned automatic priority/placeholder arbiter below. It disposes the old mount and
+rebuilds the destination. Existing persistence restores the Project, and a bounded Main-authority
+target descriptor may preserve an explicitly selected external file through reauthorization on
+the new host. No renderer-supplied paths, old capabilities, file bytes or live views cross mounts;
+no container re-parenting or extra file-I/O pipeline is introduced.
+
+### Focus and MenuBar chrome
+
+The Shell already receives the immutable `window | cowork` host kind. Only a standalone macOS
+window reserves the 78px traffic-light gutter; a Cowork tab keeps the normal 10px MenuBar gutter.
+The Open folder action is icon-only with a localized tooltip/accessibility label and a centered
+27px square target in either host. See [MenuBar alignment 144](../plan/tasks/onlypreview-tab-menubar-alignment-144.md).
 
 Focus questions are asked of the **surface's own views**, never of the window's children. This is
 not a preference: with a container in place a window holds exactly one child, and a plain `View` has
@@ -388,6 +406,36 @@ collapse the renderers, nest child views in the cell, or embed a preview-only su
 answered by this design (nest, behind a mount), so if the owner ever un-defers it, Omni becomes a
 third `OnlyPreviewMount` implementation rather than a rewrite.
 
+## How Cowork carries it
+
+Maestro must not import a mini app. `scripts/maestro/_harness.mjs` enforces that with an alias
+boundary — no `@main/*`, `@shared/*` or `@renderer/*` specifier inside `src/main/maestro/**` or
+`src/renderer/maestro/**` unless it is on an explicit per-file allowlist — and a host mini-app
+integration is exactly the crossing that should be inverted rather than allowlisted.
+
+So Maestro offers a **generic composite tab** and knows nothing about OnlyPreview:
+
+| piece | side | what it knows |
+| --- | --- | --- |
+| `@maestro-shared/compositeTab.api.ts` | shared | `MaestroCompositeTabHostApi` (window, contentRect, attach/detach, activate, close, setTitle, isOpen) and `MaestroCompositeTabSpec` (open/close/setActive/refresh) |
+| `compositeTab.registry.ts` | Maestro | a `Map` of registered specs. Empty until a host registers one |
+| `maestroBrowserView.openCompositeTab({ id })` | Maestro | how to carry *a* container in *a* tab |
+| `onlyPreviewCoworkMount.ts` | host | implements `OnlyPreviewMount` on top of `MaestroCompositeTabHostApi` |
+| `onlyPreviewCoworkTab.ts` | host | registers the spec; the only file that knows both halves |
+| `app.main.ts` | host | calls `registerOnlyPreviewCoworkTab()` before `startGui()` |
+
+The tab holds the composite's container with `view: null`, and that null is load-bearing twice:
+`enforceWarmCap`'s `warm` filter counts only tabs with a live `view`, so a composite tab can never
+be cooled — cooling would detach the container while orphaning four renderers, the hidden
+`fileSearch` runtime, the bound workspace and the host capability — and the tab-strip persistence
+writer filters to `kind === 'browser'`, so a URL-less tab is never saved or restored as a broken web
+tab. Both checked in the source, not assumed.
+
+`MAESTRO_TOOLBAR_H`/`MAESTRO_SIDEBAR_W` and a first-frame rect helper moved into `viewBounds.ts`,
+which both sides already import, because a composite tab cannot wait for the renderer's first
+measurement the way a loading web page can: with no rect the container gets no bounds, and a
+zero-size container hides its children, so the mini app would open to nothing.
+
 ## How this is verified without Electron E2E
 
 Agent-initiated Electron E2E is prohibited in this project, so the non-E2E proofs have to be the
@@ -437,4 +485,4 @@ second composite mini-app can generalise it with evidence.
 | ---- | -------- | ---------------- | --------------------- |
 | PQ-1 | ~~Can a standalone window and a Cowork tab show OnlyPreview at the same time?~~ | **Answered by the owner, 2026-09-04: no.** The standalone window has priority, the tab shows a **View in window** placeholder, and on standalone close the tab rebuilds and resumes from the persisted directory and file. See *Lifecycle, ownership and identity*. | — |
 | PQ-2 | Does the Cowork OnlyPreview tab appear as an ordinary closable tab, or as a second pinned tab next to local Home? | Product placement. | Ordinary closable tab, opened from the Mini Apps grid. |
-| PQ-3 | While a Cowork tab holds the live surface, should an agent/MCP `preview_open` or an OS file-open land in that tab, or open the standalone window and demote the tab? | Both are defensible; the second keeps one rule ("explicit external opens go to the window") at the cost of moving the owner's eyes to another window. | Open the standalone window and demote the tab, so priority has exactly one direction. |
+| ~~PQ-3~~ | ~~Should an agent/MCP `preview_open` or an OS file-open land in the Cowork tab, or open the standalone window and demote the tab?~~ | **Superseded by the owner's 2026-09-07 requirement** that OnlyPreview reopen in whichever host it was last opened in. The remembered host now decides for *every* route, external opens included — see [`onlypreview-remembered-host-140`](../plan/tasks/onlypreview-remembered-host-140.md). | — |

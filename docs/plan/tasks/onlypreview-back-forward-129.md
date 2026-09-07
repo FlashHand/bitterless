@@ -8,6 +8,11 @@ verify: node --test tests/onlypreview/onlyPreviewHistory.test.mjs && yarn typech
 
 # Back and forward through the visit stack
 
+Superseded for file navigation by Ral's 2026-09-07
+[Recents/navigation task 150](onlypreview-recents-navigation-150.md). Back/Forward now traverse the
+existing Recents order without reordering, truncating, or maintaining the old separate browser stack.
+The older contract below is historical, not an independent implementation target.
+
 ## Objective
 
 Put back/forward controls to the left of the name in the preview toolbar, moving through what this

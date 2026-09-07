@@ -135,6 +135,16 @@ The popup is contained by `.eyes-on-agents__main`. Its input stays fixed above a
 scrolling result region, and the complete modal is bounded by the current viewport. An empty,
 cleared, or separator-only query shows a quiet start-typing prompt and no cards.
 
+Each search lifecycle gets a fresh Input instance even though the Modal retains its children while
+closed. This resets private input-method composition state when a composition is interrupted by
+closing/hiding Search; clearing the bound draft alone is insufficient. Normal completed composition
+and composing navigation keys retain their input-method behavior.
+
+The field binds its unmodified draft with `v-model`. Read-only computed search state owns Unicode,
+case and separator normalization; none of those transformations writes back to the input. Search
+throttling publishes matching state only, and background snapshots cannot clear or replace the
+draft. Explicit clear/close remains the reset boundary.
+
 Matching keeps the stronger token semantics delivered by
 `eyes-on-agents-token-title-search-032` instead of the previous plain substring test:
 
@@ -200,10 +210,13 @@ The card has one status slot and one menu:
   2. **Mark as read** / **Mark as unread** — labelled from the row's stored unread flag.
   3. **Copy session path** — copies the session JSONL's absolute path to the clipboard, for Claude
      rows with a known transcript. Codex rows have no discovered session file, so the item is absent.
-  4. **Archive** — last and visually separated, shown only for Codex. It invokes the provider's
+  4. **Archive** — in the visually separated final action group, shown only for Codex. It invokes the provider's
      `thread/archive` request and removes the card only after provider success. Claude does not show
      this item because neither Claude Code nor Claude Hooks exposes a supported archive mutation;
      Bitterless never writes Claude Desktop's private metadata to imitate one.
+  5. **Delete from Bitterless** — always available for both providers, including stale/offline
+     sessions. Removes only this local session mirror and its snapshot/receipt records. It never
+     contacts Codex or Claude or removes their files. Later discovery or Hooks may add it again.
 - There is no icon-only Open button. Double-click, `Enter`, and the menu item all run the same
   `openThread` path, so read acknowledgement, `last_opened_*` evidence, and the on-Open status sync
   are unchanged.
@@ -214,6 +227,7 @@ left-edge right-click                  right-edge right-click
   │ Open / read / copy   │             │ Open / read / copy   │
   │ ──────────────────── │             │ ──────────────────── │
   │ Archive (Codex only) │             │ Archive (Codex only) │
+  │ Delete locally      │             │ Delete locally      │
   └──────────────────────┘             └──────────────────────┘
 
 near bottom: the same complete menu flips above × instead of clipping.

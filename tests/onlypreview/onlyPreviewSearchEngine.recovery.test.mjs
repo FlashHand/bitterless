@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { createOnlyPreviewSearchEngine } from '../../src/preload/onlypreview/search/core/search-engine.mjs';
 import { OnlyPreviewSqliteIndex } from '../../src/preload/onlypreview/search/core/sqlite-index.mjs';
+import { loadOnlyPreviewWorkspaceConfig } from '../../src/preload/onlypreview/search/core/workspace-config.mjs';
 
 const withTempDirectory = async (callback) => {
   const path = await mkdtemp(join(tmpdir(), 'onlypreview-search-recovery-'));
@@ -452,7 +453,9 @@ test('candidate failure and cancellation preserve the active index and remove ar
       throw new Error('candidate build failed');
     };
     await assert.rejects(
-      engine.refresh({ workspaceId: 'workspace', generation: 1 }),
+      engine.enqueue(async () =>
+        await engine.refreshInternal(await loadOnlyPreviewWorkspaceConfig(rootPath))
+      ),
       /candidate build failed/u
     );
     assert.equal(engine.config.hash, activeConfigHash);
@@ -478,7 +481,9 @@ test('candidate failure and cancellation preserve the active index and remove ar
       return await originalRunTraversal(...args);
     };
     await assert.rejects(
-      engine.refresh({ workspaceId: 'workspace', generation: 1 }),
+      engine.enqueue(async () =>
+        await engine.refreshInternal(await loadOnlyPreviewWorkspaceConfig(rootPath))
+      ),
       (error) => error?.code === 'CANCELLED'
     );
     assert.equal(

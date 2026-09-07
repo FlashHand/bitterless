@@ -1,0 +1,116 @@
+.onlypreview-project-tabs {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-self: stretch;
+  gap: 9px;
+}
+
+.onlypreview-project-tabs__tab {
+  min-width: 0;
+  padding: 0 1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--onlypreview-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.onlypreview-project-tabs__tab:hover,
+.onlypreview-project-tabs__tab--active {
+  color: var(--onlypreview-royal);
+}
+
+.onlypreview-project-tabs__tab--active {
+  border-bottom-color: var(--onlypreview-royal);
+}
+
+.onlypreview-project-tabs__tab:focus-visible,
+.onlypreview-recents__row:focus-visible {
+  outline: 2px solid var(--onlypreview-focus);
+  outline-offset: -2px;
+}
+
+.onlypreview-project-panel {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.onlypreview-recents {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.onlypreview-recents__list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 4px;
+}
+
+.onlypreview-recents__row {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--onlypreview-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.onlypreview-recents__row:hover {
+  background: var(--onlypreview-royal-soft);
+}
+.onlypreview-recents__row--selected {
+  background: #d7e8ff;
+}
+.onlypreview-recents__row--selected:hover {
+  background: #cce2ff;
+}
+.onlypreview-recents__icon {
+  flex: 0 0 14px;
+  margin-top: 2px;
+  color: var(--onlypreview-royal);
+}
+.onlypreview-recents__identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.onlypreview-recents__name,
+.onlypreview-recents__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onlypreview-recents__name {
+  font-size: 12px;
+  font-weight: 600;
+}
+.onlypreview-recents__path {
+  color: var(--onlypreview-muted);
+  font-size: 10px;
+}
+.onlypreview-recents__state {
+  padding: 16px 12px;
+  color: var(--onlypreview-muted);
+  font-size: 11px;
+}
+.onlypreview-recents__state--error {
+  color: var(--onlypreview-danger);
+}

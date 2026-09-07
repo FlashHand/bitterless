@@ -129,37 +129,68 @@ test('external Preview wiring keeps Project state separate and revokes exact rea
     /workspace\.kind === 'external-preview'[\s\S]*externalPreviewWorkspaceByHost\.get[\s\S]*workspace\.selectedRelativePath !== fileRef\.relativePath[\s\S]*WORKSPACE_ACCESS_DENIED/
   );
 
-  const explicitOpenBody = explicitOpen.slice(
+  // Two regions now, because the file-preview half was extracted into
+  // `presentOnlyPreviewExplicitFile`. Slicing only `performOpenOnlyPreviewAbsoluteTarget` left this
+  // guard matching a region that no longer holds any of the calls it names — it went red without
+  // any behaviour changing, and it would have gone SILENT if the assertions had been looser.
+  //
+  // A related trap this one walked into: a source-shape assertion can be satisfied by a COMMENT.
+  // While the slice was wrong, a prose mention of `resolveProjectFileRef` elsewhere in the file was
+  // enough to make one of the four symbols "present". Keep each assertion anchored to the region
+  // that actually contains the code it describes.
+  const openBody = explicitOpen.slice(
     explicitOpen.indexOf('const performOpenOnlyPreviewAbsoluteTarget'),
     explicitOpen.indexOf('const serializedOpenOnlyPreviewAbsoluteTarget')
   );
-  assert.match(explicitOpenBody, /fileSearchWindowService\.inspectTarget\(target\)/);
-  assert.match(
-    explicitOpenBody,
-    /resolveProjectFileRef[\s\S]*authorizeProjectItem[\s\S]*revokeExternalPreview[\s\S]*\.select\(/
+  const explicitOpenBody = explicitOpen.slice(
+    explicitOpen.indexOf('export const presentOnlyPreviewExplicitFile'),
+    explicitOpen.indexOf('const performOpenOnlyPreviewAbsoluteTarget')
   );
-  assert.match(
-    explicitOpenBody,
-    /registerExternalPreview[\s\S]*clearProjectSelection[\s\S]*onlyPreviewPreviewRegionService\.present\(host\.hostToken, fileRef, trace\.tag\)[\s\S]*ONLY_PREVIEW_SELECTION_CHANGED_EVENT/
-  );
+  assert.match(openBody, /fileSearchWindowService\.inspectTarget\(target\)/);
+  // Re-opening the directory that is already the active project must short-circuit BEFORE
+  // `openExplicitTarget` — a re-bind mints a new authority generation and is what produced
+  // WORKSPACE_ACCESS_DENIED (docs/issues/onlypreview-reopening-same-workspace-reloads.md).
   assert.ok(
-    explicitOpenBody.indexOf('inspectTarget(target)') <
-      explicitOpenBody.indexOf('resolveProjectFileRef'),
+    openBody.indexOf('isActiveProjectRoot') > -1 &&
+      openBody.indexOf('isActiveProjectRoot') <
+        openBody.indexOf('onlyPreviewRecentDirectoryService.openExplicitTarget'),
+    're-opening the active project root must short-circuit before openExplicitTarget'
+  );
+  assert.match(
+    explicitOpenBody,
+    /classifyProjectTarget[\s\S]*authorizeProjectItem[\s\S]*revokeExternalPreview[\s\S]*\.select\(/
+  );
+  assert.match(
+    explicitOpenBody,
+    /registerExternalPreview[\s\S]*clearProjectSelection[\s\S]*onlyPreviewPreviewRegionService\.present\(host\.hostToken, fileRef, trace\?\.tag\)[\s\S]*ONLY_PREVIEW_SELECTION_CHANGED_EVENT/
+  );
+  // Now a cross-function ordering: the caller inspects, then hands the validated target to the
+  // extracted presenter. Comparing indexes across two slices would compare unrelated offsets.
+  assert.ok(
+    openBody.indexOf('inspectTarget(target)') <
+      openBody.indexOf('presentOnlyPreviewExplicitFile('),
     'target inspection must precede Project/external authority selection'
   );
+  // The clear must be GUARDED, not unconditional: an 'unsettled' classification means containment
+  // is not decidable yet, and clearing on it is what dropped the selection for a file that was
+  // inside the open project (docs/issues/onlypreview-external-preview-clears-project-selection.md).
+  assert.match(
+    explicitOpenBody,
+    /if \(classification\.kind === 'outside'\) \{[\s\S]*clearProjectSelection/
+  );
   assert.ok(
-    explicitOpenBody.indexOf('resolveProjectFileRef') <
+    explicitOpenBody.indexOf('classifyProjectTarget') <
       explicitOpenBody.indexOf('registerExternalPreview'),
     'Project authority must be attempted before issuing an external single-file authority'
   );
   assert.ok(
-    explicitOpenBody.indexOf('present(host.hostToken, fileRef, trace.tag)') <
-      explicitOpenBody.indexOf("trace.mark({ phase: 'presentation-issued' })"),
+    explicitOpenBody.indexOf('present(host.hostToken, fileRef, trace?.tag)') <
+      explicitOpenBody.indexOf("trace?.mark({ phase: 'presentation-issued' })"),
     'presentation publication must complete before Main records it as issued'
   );
   assert.ok(
     explicitOpenBody.indexOf('ONLY_PREVIEW_SELECTION_CHANGED_EVENT') <
-      explicitOpenBody.indexOf("trace.mark({ phase: 'accepted' })"),
+      explicitOpenBody.indexOf("trace?.mark({ phase: 'accepted' })"),
     'selection notification must retain its existing position before accepted terminal feedback'
   );
   const restoreBody = handler.slice(

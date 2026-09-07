@@ -37,6 +37,7 @@ export class MaestroControlViewService extends CommonService<MaestroControlViewS
         partition: MAESTRO_PARTITION
       }
     })
+    view.setVisible(false)
     this.view = view
     win.contentView.addChildView(view)
     const load =
@@ -59,11 +60,14 @@ export class MaestroControlViewService extends CommonService<MaestroControlViewS
   }
 
   layout(bounds: { x: number; y: number; width: number; height: number }): void {
-    this.view?.setBounds(bounds)
+    this.setBounds(bounds)
   }
 
   setBounds(rect: ViewRect): void {
-    this.applyBounds(this.view, rect)
+    const view = this.view
+    if (!view || view.webContents.isDestroyed()) return
+    this.applyBounds(view, rect)
+    view.setVisible(Math.round(rect.width) > 0 && Math.round(rect.height) > 0)
   }
 
   reset(): void {

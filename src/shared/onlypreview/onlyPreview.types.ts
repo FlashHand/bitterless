@@ -419,6 +419,7 @@ export interface OnlyPreviewDirectoryTargetEntry {
 }
 
 export interface OnlyPreviewPreviewPresentation extends OnlyPreviewHostEvent {
+  fragment?: string;
   workspaceId: string | null;
   selectionRevision: number;
   surface: OnlyPreviewPreviewSurface;
@@ -468,7 +469,9 @@ export interface OnlyPreviewCharacterCountRevisionEvent extends OnlyPreviewHostE
 }
 
 export const ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT = 'onlypreview/workspaceChanged' as const;
+export const ONLY_PREVIEW_HOST_TOGGLE_CHANGED_EVENT = 'onlypreview:host-toggle-changed' as const;
 export const ONLY_PREVIEW_SELECTION_CHANGED_EVENT = 'onlypreview/selectionChanged' as const;
+export const ONLY_PREVIEW_RECENTS_CHANGED_EVENT = 'onlypreview/recentsChanged' as const;
 export const ONLY_PREVIEW_REFRESH_EVENT = 'onlypreview/refresh' as const;
 export const ONLY_PREVIEW_FOCUS_PROJECT_EVENT = 'onlypreview/focusProject' as const;
 export const ONLY_PREVIEW_FOCUS_SEARCH_EVENT = 'onlypreview/focusSearch' as const;
@@ -534,7 +537,46 @@ export interface OnlyPreviewFocusSearchEvent extends OnlyPreviewHostEvent {
   origin: OnlyPreviewGlobalSearchFocusOrigin;
 }
 
+export interface OnlyPreviewHostToggleState {
+  canDock: boolean;
+  pending: boolean;
+  error?: OnlyPreviewErrorPayload;
+}
+
+export interface OnlyPreviewRecentEntry {
+  id: string;
+  name: string;
+  relativePath: string;
+}
+
+export interface OnlyPreviewRecentsSnapshot extends OnlyPreviewHostEvent {
+  revision: number;
+  entries: OnlyPreviewRecentEntry[];
+  activeEntryId: string | null;
+  canBack: boolean;
+  canForward: boolean;
+  canReload: boolean;
+  canLocate: boolean;
+}
+
 export interface OnlyPreviewApi {
+  getRecents(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<OnlyPreviewRecentsSnapshot>>;
+  openRecent(params: OnlyPreviewHostRequest & {
+    entryId: string;
+    revision: number;
+  }): Promise<OnlyPreviewResult<void>>;
+  navigateRecent(params: OnlyPreviewHostRequest & {
+    direction: 'back' | 'forward';
+    revision: number;
+  }): Promise<OnlyPreviewResult<void>>;
+  reloadPreview(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
+  openMarkdownLink(params: OnlyPreviewPreviewRevisionRequest & {
+    href: string;
+  }): Promise<OnlyPreviewResult<void>>;
+  getHostToggleState(
+    params: OnlyPreviewHostRequest
+  ): Promise<OnlyPreviewResult<OnlyPreviewHostToggleState>>;
+  toggleHost(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
   openOnlyPreviewWindow(): Promise<OnlyPreviewResult<void>>;
   reportShellMounted(params: OnlyPreviewHostRequest & {
     openTag: string;

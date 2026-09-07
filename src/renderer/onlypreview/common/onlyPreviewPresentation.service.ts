@@ -148,7 +148,7 @@ export const isOnlyPreviewPresentation = (
 ): value is OnlyPreviewPreviewPresentation => {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
+    !hasRequiredAndOptionalKeys(value, [
       'adapterId',
       'descriptor',
       'error',
@@ -159,12 +159,14 @@ export const isOnlyPreviewPresentation = (
       'status',
       'surface',
       'workspaceId'
-    ])
+    ], ['fragment'])
   ) {
     return false;
   }
   return (
     typeof value.hostId === 'string' &&
+    (value.fragment === undefined || (typeof value.fragment === 'string' &&
+      value.fragment.length <= 8192 && !value.fragment.includes('\0'))) &&
     isNullableBoundedString(value.workspaceId, 256) &&
     Number.isSafeInteger(value.selectionRevision) &&
     (value.selectionRevision as number) >= 0 &&

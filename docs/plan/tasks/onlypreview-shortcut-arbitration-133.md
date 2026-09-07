@@ -1,7 +1,7 @@
 ---
 id: onlypreview-shortcut-arbitration-133
 scope: resolve the macOS Find accelerators through a surface resolver so they reach an embedded OnlyPreview and still fall through to every other window
-status: pending
+status: partially implemented — the Command+W hole is fixed; the menu resolver is still pending
 depends-on: [onlypreview-surface-registry-132]
 verify: node --test tests/onlypreview/onlyPreviewApplicationFindMenu.test.mjs && node --test tests/onlypreview/onlyPreviewShortcutArbitration.test.mjs && yarn typecheck:node && git diff --check
 ---
@@ -56,3 +56,36 @@ when OnlyPreview is a Cowork tab without taking those chords from Maestro or fro
   active; focus in the host chrome with the surface in a background tab (not claimed); no surface at
   all; a revoked surface.
 - The existing find-menu test passes, including the unclaimed-chord replay.
+
+## Result so far
+
+**The Command+W hole is fixed** — it was a live defect in what task 135 shipped, not a future risk.
+
+`src/main/maestro/common/shortcutsHelper/shortcuts.helper.ts` gains a module `WeakSet` and
+`enrollMaestroShortcutContents(contents)`, and its gate widens from
+`contents.session !== session.fromPartition(MAESTRO_PARTITION)` to also admit enrolled contents. The
+partition test stays the default on purpose: it is what stops arbitrary web content in a tab from
+claiming Bitterless chords. Enrollment grants a keystroke, not a session — the composite keeps its
+own session.
+
+Enrollment reaches the seam rather than the host: `OnlyPreviewMount` gains
+`registerSurfaceView(webContents)`, the standalone mount ignores it, and the Cowork mount enrolls.
+The composite offers every view it creates — in `createView` for the four layers, and in
+`bindChromeShortcuts` for the raw Chromium surface, which `createView` does not build and would
+otherwise have left Command+W taking the window whenever a PDF had focus.
+
+One ordering detail that would have been a silent no-op: enrollment can happen before or after
+`activateShortcuts`, so the actions are remembered in a module variable rather than captured. A view
+enrolled first would otherwise have received no binding at all.
+
+### Still pending in this task
+
+The three-rule menu-accelerator resolver, the widened alert swallow, `claimKey()` on
+mount/activation/after detached DevTools, and the own-views focus scan. Those need the surface
+registry (task 132); the Command+W fix did not, so it went in first.
+
+### Verification
+
+Build clean, `yarn test:onlypreview` green, `check:maestro` gains no violation from the change
+(my count stays 0; the 29 it reports are pre-existing). Electron E2E not run.
+

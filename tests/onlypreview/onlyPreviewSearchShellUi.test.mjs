@@ -127,8 +127,8 @@ test('Project errors are dismissible and Project tree typography increases by on
     /\.onlypreview-shell__inline-error-dismiss \{[\s\S]*width:\s*22px;[\s\S]*cursor:\s*pointer;/
   );
   assert.match(style, /\.onlypreview-shell__inline-error-dismiss:focus-visible \{/);
-  assert.match(treeRow, /height:\s*27px/);
-  assert.match(treeRow, /font-size:\s*13px/);
+  assert.match(treeRow, /height:\s*22px/);
+  assert.match(treeRow, /font-size:\s*14px/);
   assert.match(treeRow, /font-weight:\s*500/);
 });
 

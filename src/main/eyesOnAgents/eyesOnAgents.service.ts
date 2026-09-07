@@ -2305,6 +2305,15 @@ export class EyesOnAgentsService implements EyesOnAgentsApi {
     return { url, snapshot: await this.getSnapshot() };
   }
 
+  async deleteThreadFromBitterless(params: {
+    sessionKey: EyesOnAgentsSessionKey;
+  }): Promise<EyesOnAgentsSnapshot> {
+    const sessionKey = parseEyesOnAgentsSessionKey(params?.sessionKey);
+    await this.dependencies.repository.deleteThreadFromBitterless({ sessionKey });
+    this.notify();
+    return await this.getSnapshot();
+  }
+
   async archiveThread(params: {
     sessionKey: EyesOnAgentsSessionKey;
   }): Promise<EyesOnAgentsSnapshot> {

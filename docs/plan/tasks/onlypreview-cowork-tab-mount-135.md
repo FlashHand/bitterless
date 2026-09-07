@@ -1,7 +1,7 @@
 ---
 id: onlypreview-cowork-tab-mount-135
 scope: implement the Cowork mount as a Maestro tab kind that carries the OnlyPreview container, and open it from the Mini Apps grid inside Maestro
-status: pending
+status: done — owner verified 2026-09-07
 depends-on: [onlypreview-mount-chrome-134]
 verify: node --test tests/onlypreview/onlyPreviewCoworkMount.test.mjs && node --test tests/maestro/maestroTabSurface.test.mjs && yarn typecheck:node && yarn typecheck:web && yarn check:maestro && yarn check:renderer-i18n && git diff --check
 ---
@@ -65,3 +65,93 @@ already measures and the tab visibility it already toggles.
   fallback, activate/deactivate visibility, close in both directions.
 - Non-web tab kinds do not reach `webContents` on any tab path.
 - Existing Maestro checks and tab tests pass.
+
+## Result
+
+Implemented, with the surface/window split that made it possible.
+
+**The split.** `createStandaloneWindow` now stops after creating the window, registering its
+persisted geometry and translating its three events (`closed`, `focus`, `blur`) for the mount. The
+~250 lines after that moved verbatim into `attachSurface(host, mount, ...)`, which both hosts run.
+`openOnMount(mount)` is the second entry: it issues the host capability and calls the identical
+`attachSurface`, so the Cowork path shares every diagnostic, lease, renderer-failure handler and
+DevTools guard rather than reimplementing them.
+
+Three more host-shaped behaviours left the composite for the seam: `showSurface()` (a window shows
+and focuses itself; a tab activates), `onHostGone()` (was `window.once('closed')` directly, which is
+precisely the assumption that made the composite unhostable), and `destroyHost()`.
+
+**The tab.** `TabKind` gains `'onlypreview'`; `OperationTab` gains `surface`/`surfaceDispose` and
+keeps `view: null`. That null is load-bearing twice over: `enforceWarmCap`'s `warm` filter only
+counts tabs with a live `view`, so a composite tab can never be cooled — which would have detached
+the container while orphaning four renderers, the hidden `fileSearch` runtime, the bound workspace
+and the host capability — and the persistence writer filters to `kind === 'browser'`, so a URL-less
+tab is never saved or restored as a broken web tab. Both were checked, not assumed.
+
+`activateTab` gains one early branch for the kind (no warm, no load, no capture, no replay) plus a
+`hideTabContent` helper so leaving a composite tab reaches its mount; `performCloseTab` gains a
+branch that routes to the surface's own teardown. The container attaches at
+`addChildView(container, 0)` — the tab-view position — so the whole composite sits below Maestro's
+chrome and control sidebar by construction, and OnlyPreview's own sort can never interleave with
+Maestro's views. Two independent stacks, one nested inside the other.
+
+**Bounds.** `MAESTRO_TOOLBAR_H`/`MAESTRO_SIDEBAR_W` and a `maestroFirstFrameOperationRect` helper
+moved into `viewBounds.ts`, which both sides already import. A composite tab cannot wait for the
+renderer's first measurement the way a loading web page can: with no rect the container gets no
+bounds, and a zero-size container hides its children, so OnlyPreview would have opened to nothing.
+`setViewBounds` and `layout()` both now call `refreshCompositeTabs()`, without which the container
+would keep a stale rect through every window resize.
+
+**The front door.** The Mini Apps grid is one component shared by the Bitterless Home window and
+Maestro's bundled Home tab, so it takes a `host` prop — `'cowork'` from `localHome.router.ts`, the
+same way that router already passes `showChatMenuControl` — and routes to `coach.openOnlyPreviewTab`
+in Cowork and to the standalone window everywhere else. The Workbench Apps pane, being
+Maestro-only, calls the tab route unconditionally.
+
+### Not in this slice
+
+- Shortcut arbitration, including the Command+W hole (task 133) and the Maestro enrollment seam.
+- The chrome capability, so the embedded Shell still renders its window controls (task 134). Close
+  works; minimize and maximize will do nothing until 134.
+- The `deferred` placeholder and the standalone-close takeover (tasks 136, 137). Today the ownership
+  rule is enforced only as "one live surface": whichever entry point asks second brings the existing
+  surface forward instead of building a rival.
+- `onlyPreviewHostRegistry.issue('standalone', 'content')` is still the kind issued for a Cowork
+  surface, because two guards and a pinned union test compare against `'standalone'`. The name is
+  now a misnomer meaning "the content host"; task 132 renames it.
+
+### Verification
+
+`yarn build` clean, `yarn typecheck:web` clean for these changes (19 pre-existing errors, all in
+`src/renderer/common/poker/gto/tests/gtoEngine.test.ts`), `yarn check:maestro` clean,
+`yarn test:onlypreview` 817/817, targeted ESLint 0 errors on every touched file. Electron E2E not
+run, by instruction.
+
+**Owner verified 2026-09-07**: 「bitterless 里那个 Cowork tab 出来了」. The remaining checklist items
+below stay useful as a regression script, but the load-bearing one — the tab appears and carries the
+composite — is confirmed.
+
+## Owner manual checklist
+
+Priority order, per the owner's instruction that OnlyPreview must open first.
+
+1. **Standalone still opens.** Bitterless Home → Mini Apps → OnlyPreview. Expect the window exactly
+   as before: project rail, toolbar, status bar, traffic lights, 800x600 minimum, restored geometry.
+   Open a file, resize the window, open Global Search (Shift+Cmd+F), open Find (Cmd+F), delete
+   something to get a dialog. This is the regression check for tasks 130 and 131.
+2. **OnlyPreview opens in Cowork.** Open Cowork, Home tab → Mini Apps → OnlyPreview. Expect a new
+   tab titled "OnlyPreview" whose content is the full OnlyPreview surface, sitting under the tab
+   strip and address row and left of the chat sidebar.
+3. **Tab switching.** Switch to another tab and back. Expect OnlyPreview to disappear and return
+   with its project and selected file intact — including any open dialog or Global Search.
+4. **Resize.** Resize the Cowork window with the OnlyPreview tab active. Expect the composite to
+   track the content rect with no gap and no overhang over the chrome or the sidebar.
+5. **Close.** Close the OnlyPreview tab. Expect the tab to go and OnlyPreview to shut down — not the
+   window. Then reopen it from Mini Apps.
+6. **One at a time.** With the Cowork tab open, open OnlyPreview from the Bitterless Home grid.
+   Expect the existing surface to be brought forward rather than a second one appearing. The
+   placeholder and the rebuild-on-close behaviour are tasks 136/137 and are not in yet.
+
+Known-not-done while testing: minimize/maximize in the embedded Shell do nothing, and Command+W with
+focus inside the embedded OnlyPreview may close the Cowork window (task 133).
+

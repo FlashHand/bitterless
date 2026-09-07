@@ -88,6 +88,12 @@ export class FileSearchOfficeReadClientService {
   }
 
   async waitUntilReady(stopped: Promise<void>): Promise<void> {
+    // Snapshot the lifecycle we are talking to. A teardown that lands while this readiness call is
+    // in flight makes the response arrive against a runtime that no longer exists, and the invalid
+    // -response path below reacts by tearing down whatever runtime is CURRENT — which during a host
+    // transition is the new one being built. See
+    // docs/issues/onlypreview-host-toggle-tears-down-the-new-runtime.md.
+    const startedLifecycleId = this.host.getLifecycleState().lifecycleId;
     const client = this.client;
     const capability = this.capability;
     const instanceId = this.instanceId;
@@ -114,6 +120,12 @@ export class FileSearchOfficeReadClientService {
       isReady = unwrapOnlyPreviewOfficeReadReadyResponse(ready);
     } catch (error) {
       if (error instanceof OnlyPreviewOfficeReadProtocolError) {
+        // Superseded beats "invalid": a stale conversation must not be treated as a protocol
+        // violation by the runtime that replaced it. Same test the request wrapper already makes
+        // after its await.
+        if (this.host.getLifecycleState().lifecycleId !== startedLifecycleId) {
+          throw new Error('Office read runtime startup was superseded.');
+        }
         return this.rejectProtocol('Office read readiness response is invalid.');
       }
       throw error;

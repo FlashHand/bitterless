@@ -25,6 +25,8 @@ const emitterPlugin = {
             getSnapshot: () => harness().getSnapshot(),
             openThread: (params) => harness().openThread(params),
             archiveThread: (params) => harness().archiveThread(params),
+            deleteThreadFromBitterless: (params) => harness().deleteThreadFromBitterless(params),
+            refreshThreadPages: async () => ({ changed: false }),
             setThreadUnread: (params) => harness().setThreadUnread(params)
           };
           export const subscribeEyesOnAgentsChanges = () => undefined;
@@ -166,6 +168,7 @@ test('Focus board store contract', async (context) => {
     let openSnapshot = currentSnapshot;
     const openedThreadIds = [];
     const archivedSessionKeys = [];
+    const deletedSessionKeys = [];
     const readStateCalls = [];
     const defaultOpenThread = async ({ sessionKey: openedSessionKey }) => {
       openedThreadIds.push(openedSessionKey);
@@ -181,10 +184,21 @@ test('Focus board store contract', async (context) => {
       return next;
     };
     let archiveThread = defaultArchiveThread;
+    const defaultDeleteThread = async ({ sessionKey: deletedSessionKey }) => {
+      deletedSessionKeys.push(deletedSessionKey);
+      currentSnapshot = createSnapshot(currentSnapshot.threads.filter(
+        (thread) => thread.sessionKey !== deletedSessionKey,
+      ));
+      return currentSnapshot;
+    };
+    let deleteThread = defaultDeleteThread;
+    const defaultGetSnapshot = async () => currentSnapshot;
+    let getSnapshot = defaultGetSnapshot;
     globalThis.__eyesOnAgentsFocusBoardHarness = {
-      getSnapshot: async () => currentSnapshot,
+      getSnapshot: () => getSnapshot(),
       openThread: (params) => openThread(params),
       archiveThread: (params) => archiveThread(params),
+      deleteThreadFromBitterless: (params) => deleteThread(params),
       setThreadUnread: async (params) => {
         readStateCalls.push(params);
         const next = createSnapshot(currentSnapshot.threads.map((thread) =>
@@ -212,8 +226,11 @@ test('Focus board store contract', async (context) => {
       openSnapshot = snapshot;
       openThread = defaultOpenThread;
       archiveThread = defaultArchiveThread;
+      deleteThread = defaultDeleteThread;
+      getSnapshot = defaultGetSnapshot;
       openedThreadIds.length = 0;
       archivedSessionKeys.length = 0;
+      deletedSessionKeys.length = 0;
       readStateCalls.length = 0;
     };
     const threadIds = (threads) => threads.map((thread) => thread.threadId);
@@ -476,6 +493,36 @@ test('Focus board store contract', async (context) => {
       assert.deepEqual(searchIds(), []);
     });
 
+    await context.test('pending snapshot work and a busy action do not gate local Search', async () => {
+      resetStore(createSnapshot([
+        createThread({ threadId: 'ops', title: 'ops-git' }),
+        createThread({ threadId: 'release', title: 'release notes' }),
+      ]));
+      let resolveSnapshot;
+      getSnapshot = () => new Promise((resolve) => {
+        resolveSnapshot = resolve;
+      });
+      const pendingSnapshot = store.loadSnapshot(true);
+      store.busyAction = 'sync';
+      try {
+        for (const [query, expected] of [['ops', 'ops'], ['release', 'release'], ['git', 'ops']]) {
+          store.openThreadSearch();
+          store.setTitleDraft(query);
+          assert.equal(store.titleDraft, query);
+          assert.equal(store.titleQuery, query);
+          assert.deepEqual(searchIds(), [expected]);
+          assert.equal(store.threadSearchSelectedSessionKey, sessionKey(expected));
+          store.closeThreadSearch();
+          assert.equal(store.titleDraft, '');
+          assert.equal(store.titleQuery, '');
+        }
+      } finally {
+        store.busyAction = null;
+        resolveSnapshot(currentSnapshot);
+        await pendingSnapshot;
+      }
+    });
+
     await context.test('token matching ignores order and mixed supported separators', () => {
       const opsGit = createThread({
         threadId: 'ops-git',
@@ -648,6 +695,95 @@ test('Focus board store contract', async (context) => {
       store.setTitleDraft('ops');
       assert.equal(store.titleQuery, 'ops');
       assert.deepEqual(searchIds(), ['ops']);
+    });
+
+    await context.test('programmatic drafts preserve raw text while matching normalized titles', () => {
+      const ops = createThread({ threadId: 'ops', title: 'ops-git 中文' });
+      const cafe = createThread({ threadId: 'cafe', title: 'CAFÉ résumé' });
+      resetStore(createSnapshot([ops, cafe]));
+      store.openThreadSearch();
+
+      for (const [raw, expected, hasTokens] of [
+        ['  OpS  ', ['ops'], true],
+        ['\tＧＩＴ＿ＯＰＳ / 中文　', ['ops'], true],
+        ['  Cafe\u0301 : RÉSUMÉ  ', ['cafe'], true],
+        ['  中文  ', ['ops'], true],
+        ['  - _ . / \\ : | \t　', [], false],
+        ['  ＯＰＳ !?  ', [], true],
+      ]) {
+        store.setTitleDraft(raw);
+        assert.equal(store.titleDraft, raw, 'the programmatic setter keeps every raw character');
+        assert.equal(store.titleQuery, raw, 'committing never writes normalized tokens as text');
+        assert.deepEqual(searchIds(), expected);
+        assert.equal(store.hasThreadSearchQueryTokens, hasTokens);
+        assert.equal(store.titleDraft, raw, 'reading computed matching state cannot rewrite input');
+        assert.equal(store.titleQuery, raw);
+      }
+      assert.equal(focusIds().length, 2, 'raw title filtering does not filter the Focus board');
+    });
+
+    await context.test('the real 120ms scheduler publishes the newest raw replacement', (subtest) => {
+      subtest.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000_000 });
+      resetStore(createSnapshot([
+        createThread({ threadId: 'ops', title: 'ops-git 中文' }),
+        createThread({ threadId: 'release', title: 'release notes' }),
+      ]));
+      store.configureTitleQueryScheduler(module.createEyesOnAgentsTitleQueryScheduler(
+        (revision) => store.commitTitleQuery(revision),
+      ));
+      store.openThreadSearch();
+
+      const leadingRaw = '  ReLeAsE  ';
+      const trailingRaw = '\tＯＰＳ / GiT : 中文　';
+      store.setTitleDraft(leadingRaw);
+      assert.equal(store.titleQuery, leadingRaw);
+      assert.deepEqual(searchIds(), ['release']);
+      store.setTitleDraft('  replaced intermediate  ');
+      store.setTitleDraft(trailingRaw);
+      assert.equal(store.titleDraft, trailingRaw);
+      subtest.mock.timers.tick(119);
+      assert.equal(store.titleQuery, leadingRaw, 'the trailing publication remains throttled');
+      assert.equal(store.titleDraft, trailingRaw);
+      subtest.mock.timers.tick(1);
+      assert.equal(store.titleQuery, trailingRaw);
+      assert.deepEqual(searchIds(), ['ops']);
+      assert.equal(store.hasThreadSearchQueryTokens, true);
+      assert.equal(store.titleDraft, trailingRaw);
+      store.closeThreadSearch();
+    });
+
+    await context.test('background snapshots preserve raw committed and pending Search input', async () => {
+      const ops = createThread({ threadId: 'ops', title: 'ops-git 中文' });
+      const release = createThread({ threadId: 'release', title: 'release notes' });
+      resetStore(createSnapshot([ops, release]));
+      store.openThreadSearch();
+      const committedRaw = '  ＯＰＳ / 中文　';
+      const pendingRaw = '\tReLeAsE : NoTeS  ';
+      store.setTitleDraft(committedRaw);
+      assert.deepEqual(searchIds(), ['ops']);
+
+      const publications = [];
+      store.configureTitleQueryScheduler((revision) => publications.push(revision));
+      store.setTitleDraft(pendingRaw);
+      currentSnapshot = createSnapshot([
+        { ...ops, title: 'renamed task' },
+        { ...release, runtimeState: 'working' },
+      ]);
+      await store.loadSnapshot(true);
+      assert.equal(store.titleDraft, pendingRaw, 'a fresh snapshot cannot replace the pending draft');
+      assert.equal(store.titleQuery, committedRaw, 'a snapshot does not publish pending typing');
+      assert.deepEqual(searchIds(), [], 'search reacts to changed snapshot titles');
+      assert.equal(store.hasThreadSearchQueryTokens, true);
+      assert.equal(store.titleDraft, pendingRaw, 'reading rerender projections keeps raw input');
+
+      store.commitTitleQuery(publications.at(-1));
+      assert.equal(store.titleQuery, pendingRaw);
+      assert.deepEqual(searchIds(), ['release']);
+      currentSnapshot = createSnapshot([ops, { ...release, isUnread: true }]);
+      await store.loadSnapshot(true);
+      assert.deepEqual(searchIds(), ['release']);
+      assert.equal(store.titleDraft, pendingRaw, 'later snapshots keep committed raw text too');
+      assert.equal(store.titleQuery, pendingRaw);
     });
 
     await context.test('closing Search invalidates pending query publications', () => {
@@ -1003,6 +1139,75 @@ test('Focus board store contract', async (context) => {
       assert.deepEqual(threadIds(store.threads), []);
       assert.equal(store.busyAction, null);
     });
+
+    await context.test('local deletion is provider-independent, idempotent, and retains failure state', async () => {
+      const codex = createThread({ threadId: 'local-delete', title: 'Codex zombie' });
+      const claude = createThread({
+        threadId: 'local-delete', title: 'Claude zombie', provider: 'claude',
+        desktopSessionId: null, runtimeState: 'unknown',
+      });
+      resetStore(createSnapshot([codex, claude]));
+      await store.deleteThreadFromBitterless(codex.sessionKey);
+      assert.deepEqual(store.threads.map((thread) => thread.sessionKey), [claude.sessionKey]);
+      await store.deleteThreadFromBitterless(claude.sessionKey);
+      await store.deleteThreadFromBitterless(claude.sessionKey);
+      assert.deepEqual(deletedSessionKeys, [codex.sessionKey, claude.sessionKey, claude.sessionKey]);
+      assert.deepEqual(store.threads, []);
+
+      resetStore(createSnapshot([claude]));
+      deleteThread = async () => { throw new Error('local write failed'); };
+      await assert.rejects(store.deleteThreadFromBitterless(claude.sessionKey), /local write failed/);
+      assert.deepEqual(store.threads.map((thread) => thread.sessionKey), [claude.sessionKey]);
+      assert.equal(store.actionError, 'local write failed');
+      assert.equal(store.busyAction, null);
+
+      resetStore(createSnapshot([codex]));
+      let finishDelete;
+      deleteThread = ({ sessionKey }) => {
+        deletedSessionKeys.push(sessionKey);
+        return new Promise((resolvePromise) => {
+          finishDelete = () => resolvePromise(createSnapshot([]));
+        });
+      };
+      const deletion = store.deleteThreadFromBitterless(codex.sessionKey);
+      await store.deleteThreadFromBitterless(codex.sessionKey);
+      assert.deepEqual(deletedSessionKeys, [codex.sessionKey]);
+      assert.equal(store.busyAction, `thread-delete:${codex.sessionKey}`);
+      finishDelete();
+      await deletion;
+      assert.deepEqual(store.threads, []);
+    });
+
+    for (const readPath of ['load', 'background', 'open']) {
+      await context.test(`local delete rejects an earlier ${readPath} snapshot but accepts rediscovery`, async () => {
+        const thread = createThread({ threadId: 'delete-race', title: 'Delete race' });
+        const stale = createSnapshot([thread]);
+        resetStore(stale);
+        let releaseRead;
+        let readStarted;
+        const started = new Promise((resolvePromise) => { readStarted = resolvePromise; });
+        const oldSnapshot = new Promise((resolvePromise) => { releaseRead = resolvePromise; });
+        getSnapshot = () => { readStarted(); return oldSnapshot; };
+        openThread = () => { readStarted(); return oldSnapshot.then((snapshot) => ({ snapshot })); };
+        const pendingRead = readPath === 'load'
+          ? store.loadSnapshot(true)
+          : readPath === 'background'
+            ? store.performBackgroundThreadPagesRefresh()
+            : store.openThread(thread.sessionKey);
+        await started;
+        await store.deleteThreadFromBitterless(thread.sessionKey);
+        assert.deepEqual(store.threads, []);
+        releaseRead(stale);
+        await pendingRead;
+        assert.deepEqual(store.threads, [], 'late response must not restore the removed card');
+
+        currentSnapshot = createSnapshot([{ ...thread, title: 'Fresh discovery' }]);
+        getSnapshot = defaultGetSnapshot;
+        await store.loadSnapshot(true);
+        assert.deepEqual(threadIds(store.threads), ['delete-race']);
+        assert.equal(store.threads[0].title, 'Fresh discovery');
+      });
+    }
 
     // Task 088 (review 1): direct coverage for the store's own matching/normalization logic. The
     // ThreadCard test stubs resolveClaudeEnvironmentLabel out through createStore overrides, so it

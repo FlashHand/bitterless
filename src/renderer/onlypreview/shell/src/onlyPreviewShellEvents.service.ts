@@ -7,6 +7,7 @@ import {
   ONLY_PREVIEW_FIND_STATE_EVENT,
   ONLY_PREVIEW_FOCUS_PROJECT_EVENT,
   ONLY_PREVIEW_GLOBAL_SEARCH_REVEAL_DIRECTORY_EVENT,
+  ONLY_PREVIEW_HOST_TOGGLE_CHANGED_EVENT,
   ONLY_PREVIEW_PREVIEW_PRESENTATION_EVENT,
   ONLY_PREVIEW_REFRESH_EVENT,
   ONLY_PREVIEW_SELECTION_CHANGED_EVENT,
@@ -40,6 +41,7 @@ interface OnlyPreviewShellEventHandlers {
   searchProgress: (progress: OnlyPreviewSearchBuildProgress) => void;
   searchSnapshot: (snapshot: OnlyPreviewSearchSnapshot) => void;
   settingsChanged: () => void;
+  hostToggleChanged: () => void;
   focusProject: () => void;
   revealGlobalSearchDirectory: (action: OnlyPreviewGlobalSearchDirectoryRevealAction) => void;
   findState: () => void;
@@ -152,6 +154,9 @@ export const subscribeOnlyPreviewShellEvents = (
     }
   });
   xpcRenderer.subscribe(ONLY_PREVIEW_SETTINGS_CHANGED_EVENT, handlers.settingsChanged);
+  xpcRenderer.subscribe(ONLY_PREVIEW_HOST_TOGGLE_CHANGED_EVENT, ({ params }) => {
+    if (isHostEvent(params) && isCurrentHost(params)) handlers.hostToggleChanged();
+  });
   xpcRenderer.subscribe(ONLY_PREVIEW_FOCUS_PROJECT_EVENT, ({ params }) => {
     if (isHostEvent(params) && isCurrentHost(params)) handlers.focusProject();
   });

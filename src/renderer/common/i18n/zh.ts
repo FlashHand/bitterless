@@ -829,6 +829,7 @@ export const zh: typeof en = {
       markUnread: '标为未读',
       copySessionPath: '复制会话路径',
       archive: '归档',
+      deleteFromBitterless: '从 Bitterless 删除',
       more: '更多操作',
       searchTitles: '搜索任务标题',
       searchTitlesMac: '搜索标题（⌘F）',

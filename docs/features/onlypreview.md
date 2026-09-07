@@ -212,8 +212,11 @@ Required properties:
   Project-relative path.
 - A file target outside the current Project creates a separate transient external-preview
   capability rooted privately at its canonical parent. The current Project remains visible, its
-  selected item is cleared, and the external file is presented without becoming a Project tree
+  selected item/current directory and tree state are preserved, and the external file is presented without becoming a Project tree
   item. With no current Project, the Project surface remains empty and unselected.
+- Task 150's [current Recents contract](onlypreview-browse-history.md) overrides the former
+  external-selection-clear behavior: restoring Shell state must not replace a live external
+  preview with the Project's retained selected file. External files never join its index.
 - An external-preview capability authorizes exactly its one original canonical basename. Preview,
   Office, Project, and native-action lanes reject a forged sibling relative path even when it uses
   the same opaque workspace ID and host.
@@ -417,13 +420,21 @@ or selected-Preview refresh. Disk footprint is not RAM and is never summed into 
 | Search SQLite encryption              | none; persistent Contents index is completely unencrypted, disposable, and rebuilt from workspace files                                                  |
 | Global Search hidden policy           | every result below any dot-prefixed directory is physically absent; root dotfiles remain eligible unless separately excluded                             |
 | Global Search fixed exclusions        | `.git`, `node_modules`, `dist`, `build`, `out`, `output`, `.next`, `coverage`, `.cache`, `.turbo` at any depth; immutable against `!`                    |
+| Python/Go index exclusions            | `__pycache__`, `__pypackages__`, `venv`, `site-packages`, `htmlcov`, `vendor`, `go-build`; directory suffixes `.egg-info` / `.dist-info`; consecutive directory components `pkg/mod` / `pkg/sumdb`; inherited and immutable against `!` |
 | Workspace config                      | flat version-1 ordered `exclude` globs in `.bitterless/preview-config.yml`                                                                               |
 | Symlink policy                        | leaf only, never recurse or index target content                                                                                                         |
 | Project tree/directory-preview sort   | directories first, then natural case-insensitive name order                                                                                              |
 | Global Search Files sort              | stable global partition: all matching folders first, then matching files; cap after partition                                                            |
 | Search normalization                  | NFKC plus established case policy, followed by original-text literal verification                                                                        |
-| Watch reconcile                       | 400ms trailing per changed path; overflow/error/missing filename triggers full reconcile                                                                 |
+| Watch reconcile                       | ordinary content: 400ms trailing per changed path; overflow/error/missing filename triggers full reconcile using applied config                            |
+| Workspace config adoption             | last relevant config edit + 60 seconds quiet; coalesced latest intent on the existing serial index queue; reopen compares disk policy immediately           |
 | Runtime memory                        | strictly above 1GiB advisory; strictly above 2GiB sets `performanceAccepted=false` and `stop=false` without invalidating the recorded artifact or method |
+
+The hard-directory policy participates in persisted-index identity. A policy change replaces the old
+index once through the existing atomic candidate path; subsequent opens reuse the new index. Excluded
+paths remain browseable/previewable with inherited exclusion markers. Ordinary `pkg`, `src`, `bin`,
+`env`, `mod`, `sumdb` directories and same-named regular files are not globally excluded.
+See [Python/Go exclusions 147](../plan/tasks/onlypreview-python-go-index-exclusions-147.md).
 
 Traversal starts in the dedicated hidden `fileSearch` preload on first open and advances in bounded elapsed-time
 slices, yielding between batches. It emits metadata into the directory-name tier independently of
@@ -569,7 +580,7 @@ second whole-project traversal. Neither section queries an incomplete candidate 
 false negatives. First-build terminal results remain pending until the complete candidate is
 promoted and must never publish a false empty Files result merely because indexing is in progress.
 
-`fs.watch` updates are hints, not authority. After the 400ms trailing edge, the hidden file-search preload
+`fs.watch` updates are hints, not authority. After the ordinary-file 400ms trailing edge, the hidden file-search preload
 revalidates the changed relative path once, updates tree metadata regardless of Global Search
 excludes, and upserts or deletes the SQLite file according to current eligibility. Before a bounded
 watch mutation it clears the persisted Search-tree ready marker; only a successful file/tree commit
@@ -582,6 +593,29 @@ any partial failure leaves tree readiness invalid and forces the next event thro
 Create, update, delete, delete/recreate, and exclusion transitions converge at that commit. Rename,
 directory/type changes, lost/ambiguous events, and watch errors request a cooperative full dual
 reconcile. Manual refresh uses the same path; it does not reintroduce a Main directory walk.
+
+Workspace configuration changes have a separate **60-second trailing quiet period**. Each relevant
+`.bitterless/preview-config.yml` or config-parent create/change/delete/atomic-replace hint resets
+the pending revision and deadline. Ordinary watch/full/manual content refreshes use the already
+applied configuration and cannot accidentally adopt disk edits before their quiet period.
+
+```text
+config edit(s) → reset last-edit + 60s → existing serial index queue
+  newer edit while queued → discard stale intent, wait for latest deadline
+  valid latest intent → parse/compare policy → changed: reconcile and commit
+                                           → unchanged: no index work
+```
+
+An active adjustment completes safely; only the latest subsequent intent remains pending. Jobs
+check freshness both at queue entry and after reading config. Invalid live config preserves the
+last applied policy/index and reports a fixed safe background diagnostic; another edit can recover. Deletion
+adopts the existing default config after the same quiet period. Semantic-equal comments/format
+changes do not reindex. Close disposes timers; actual project reopen reads disk immediately and
+compares persisted config identity, so exiting before the timer cannot lose a saved change. An
+unchanged project still reuses its index. See [config quiet reconciliation 148](../plan/tasks/onlypreview-config-quiet-reconcile-148.md).
+
+Task 148 changes config identity from raw text to ordered-rule semantics. Legacy raw-hash indexes
+rebuild once on the first upgraded open; the reuse guarantee applies after that transition.
 
 The committed trailing update also publishes a bounded host/workspace/relative-path/watch-revision
 signal through the private capability-bound XPC event channel. Main validates the event, binds it to
@@ -1001,7 +1035,7 @@ a package when any of those four required files is missing, empty, non-regular, 
   file-argument parsing.
 - Queue entries are consumed only after the GUI/XPC runtime is ready.
 - Opening another file focuses the singleton. A contained file updates the current Project
-  selection; an external file preserves the Project and clears its selection. After the folder
+  selection; an external file preserves the Project and its selection. After the folder
   chooser returns, its target mutation joins OS, MCP, and internal requests on one FIFO
   serialization boundary; the dialog itself does not occupy the queue. Each caller settles only
   with its own Main operation, one failure does not poison the queue, and the latest completed
@@ -1072,8 +1106,11 @@ Shift+Cmd/Ctrl+F:
   EyesOnAgents-private components, stores, connection state, Domain actions, or always-on-top state.
 - The non-interactive MenuBar surface is the drag region. Every action is `no-drag`; double-clicking
   the remaining drag surface toggles maximize. macOS keeps native traffic lights at `{ x: 12, y: 8 }`
-  and a 78px left gutter. Windows renders MenuBar minimize, maximize/restore, and close controls.
-- `Open Folder` is the only visible picker action. Settings remains icon-only with a localized
+  and a 78px left gutter in a standalone window only. A Maestro/Cowork tab has no traffic lights
+  and uses the ordinary 10px gutter. Windows renders MenuBar minimize, maximize/restore, and close controls.
+- `Open Folder` is the only visible picker action and is icon-only in both hosts, with a localized
+  tooltip/accessibility label and the same 27px square target as its neighbours. Its icon wrapper
+  and SVG are centered without text-baseline space. Settings remains icon-only with a localized
   tooltip/accessibility label. There is no visible Open File or Refresh action. Native refresh
   shortcuts remain available for changed content without adding chrome. Hover, active, and
   keyboard-focus states use the same translucent-light treatment as EyesOnAgents; disabled actions
@@ -1081,6 +1118,11 @@ Shift+Cmd/Ctrl+F:
 - The icon-only Tabler Robot action sits immediately before Settings and uses the localized direct
   label `Copy the skill to your agent`. It opens/focuses the parented Guide; it does not mount a
   DOM modal inside Shell, where the sibling native Preview view would cover it.
+- Immediately right of Settings, a 27px two-state Tabler button moves OnlyPreview between its
+  Maestro/Cowork tab and a standalone window. The icon, tooltip and selected tint derive from the
+  actual mount. The destination browser must already exist; availability and transition state
+  disable the action when necessary. Task 139 owns serialized relocation and current-target
+  continuity without transferring live views or file bytes.
 - Project headers and the status rail never display index status, phase labels, percentages,
   indexed file/item totals, partial-index explanations, or other index copy. The interface does
   not repeat a visible `READ ONLY` badge or status label; the actual editor and content authority
@@ -1095,6 +1137,11 @@ Shift+Cmd/Ctrl+F:
 - The Project header has a Tabler crosshair action. It is disabled when no previewed file exists;
   otherwise it clears search, expands the selected file's ancestors, scrolls the corresponding tree
   row to the center, and focuses it without reloading the preview.
+- Immediately left of the crosshair, a vertical-collapse icon folds every descendant directory
+  while leaving the root expanded. It changes expansion state only: current preview, current
+  directory, single-selection anchor and loaded listings remain intact, with no IPC or reindex;
+  hidden multi-selected rows follow existing pruning. A later explicit
+  Locate can expand the path again. See [collapse directories 146](../plan/tasks/onlypreview-collapse-directories-146.md).
 - The Project pane has no search/filter input. Its first row is the case-preserving workspace root,
   initially expanded; descendants retain demand-loaded vertical and horizontal tree behavior.
 - `Shift+Cmd/Ctrl+F` opens Global Search in the right workspace without replacing the Project tree.
@@ -1115,6 +1162,8 @@ Shift+Cmd/Ctrl+F:
   `#6F7487`, and canonical Bitterless Royal Blue `#4E5882` for focus/selection/Index Rail.
 - UI uses platform system fonts at compact 12-13px sizing. Code uses `JetBrains Mono`, then
   `SFMono-Regular`, `Consolas`, and generic monospace fallbacks.
+- Project-tree names use 14px type in uniform 22px rows; the synthetic root is `600` Medium Bold,
+  while other files/directories remain `500` (task151). Other UI and document typography is unchanged.
 - Markdown uses the same system body family in a centered reading column no wider than 860px, with
   restrained heading rhythm, Royal Blue blockquote/link accents, bordered tables, and monospace
   code blocks. It is a document-reading surface inside the existing white Preview canvas, not a

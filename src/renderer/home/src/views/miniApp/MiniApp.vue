@@ -46,6 +46,7 @@ import { coinWindowEmitter } from '@/emitter/coinWindow.emitter';
 import { eyesOnAgentsWindowEmitter } from '@/emitter/eyesOnAgentsWindow.emitter';
 import { submodulesWindowEmitter } from '@/emitter/submodulesWindow.emitter';
 import { onlyPreviewEmitter } from '@/emitter/onlyPreview.emitter';
+import { coworkTabEmitter } from '@/emitter/coworkTab.emitter';
 import { unwrapOnlyPreviewResult } from '@shared/onlypreview/onlyPreview.contract';
 import { createMiniApps, type MiniApp } from './miniApps.constant';
 
@@ -75,7 +76,23 @@ const openEyesOnAgents = async () => {
   await eyesOnAgentsWindowEmitter.openEyesOnAgentsWindow();
 };
 
+/**
+ * Which host this grid is rendered in.
+ *
+ * The same component serves the Bitterless Home window and Maestro's bundled Home tab. Only the
+ * Cowork host has a tab strip to open a mini app into, and it is the router that knows — see
+ * `localHome.router.ts`, which passes this the same way it already passes `showChatMenuControl`.
+ */
+const props = withDefaults(defineProps<{ host?: 'window' | 'cowork' }>(), { host: 'window' });
+
 const openOnlyPreview = async () => {
+  // Inside Cowork, OnlyPreview is a mini app in a tab; outside it, it owns a window. Only one
+  // OnlyPreview content surface is live at a time, so either entry point brings the live one
+  // forward rather than building a second.
+  if (props.host === 'cowork') {
+    await coworkTabEmitter.openCompositeTab({ id: 'onlypreview' });
+    return;
+  }
   unwrapOnlyPreviewResult(await onlyPreviewEmitter.openOnlyPreviewWindow());
 };
 

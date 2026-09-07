@@ -121,11 +121,17 @@
   font-weight: 700;
 }
 
-.onlypreview-markdown__document a {
+.onlypreview-markdown__document a[role='link'] {
   color: var(--onlypreview-royal, #4e5882);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.onlypreview-markdown__document a[role='link']:focus-visible {
+  outline: 2px solid var(--onlypreview-focus, #737ea8);
+  outline-offset: 2px;
 }
 
 .onlypreview-markdown__document hr {
@@ -147,6 +153,12 @@
   padding: 32px;
   color: var(--onlypreview-muted, #6f7487);
   text-align: center;
+}
+
+.onlypreview-markdown__link-error {
+  padding: 8px 16px;
+  color: var(--onlypreview-danger, #a13d3d);
+  font-size: 12px;
 }
 
 @media (max-width: 700px) {

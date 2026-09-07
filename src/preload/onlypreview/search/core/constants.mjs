@@ -6,6 +6,7 @@ export const MAX_RESULTS = 500;
 export const MAX_BATCH_RESULTS = 50;
 export const MAX_BATCH_DELAY_MS = 16;
 export const WATCH_TRAILING_MS = 400;
+export const CONFIG_QUIET_MS = 60_000;
 export const MAX_WATCH_CHANGE_PATHS = 512;
 export const BACKGROUND_WORK_SLICE_MS = 8;
 export const BACKGROUND_WORK_PAUSE_MS = 4;
@@ -25,7 +26,20 @@ export const CORE_EXCLUDED_DIRECTORY_NAMES = Object.freeze(new Set([
   'coverage',
   '.cache',
   '.turbo',
+  '__pycache__',
+  '__pypackages__',
+  'venv',
+  'site-packages',
+  'htmlcov',
+  'vendor',
+  'go-build',
 ]));
+
+export const CORE_EXCLUDED_DIRECTORY_SUFFIXES = Object.freeze(['.egg-info', '.dist-info']);
+export const CORE_EXCLUDED_DIRECTORY_SEQUENCES = Object.freeze([
+  Object.freeze(['pkg', 'mod']),
+  Object.freeze(['pkg', 'sumdb']),
+]);
 
 export const SENSITIVE_FILE_PATTERNS = Object.freeze([
   /^\.env(?:\..+)?$/iu,

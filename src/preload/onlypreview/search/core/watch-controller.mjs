@@ -1,6 +1,7 @@
 import { watch } from 'node:fs';
 
 import { WATCH_TRAILING_MS } from './constants.mjs';
+import { isWorkspaceConfigWatchPath } from './workspace-config.mjs';
 
 const MAX_RECONCILE_RETRY_MS = 30_000;
 
@@ -8,6 +9,8 @@ export const createWorkspaceWatchController = ({
   rootPath,
   onReconcile,
   onError,
+  onConfigChange,
+  onConfigProbe,
   watchFactory = watch,
   fallbackIntervalMs = 30_000,
   retryBaseMs = 1_000,
@@ -71,6 +74,10 @@ export const createWorkspaceWatchController = ({
     }
   };
 
+  const probeConfig = () => {
+    Promise.resolve().then(() => onConfigProbe?.()).catch(reportError);
+  };
+
   const schedule = () => {
     if (closed || retryFullReconcile) return;
     clearTrailingTimer();
@@ -102,6 +109,7 @@ export const createWorkspaceWatchController = ({
         return;
       }
       fallbackEligible = false;
+      probeConfig();
       fullReconcile = true;
       flush();
     }, normalizedFallbackIntervalMs);
@@ -172,6 +180,7 @@ export const createWorkspaceWatchController = ({
       failedWatcher.close?.();
     }
     reportError(error);
+    probeConfig();
     fallbackEligible = true;
     recoveryReconcileNeeded = true;
     scheduleFallback();
@@ -184,10 +193,15 @@ export const createWorkspaceWatchController = ({
     try {
       attachedWatcher = watchFactory(rootPath, { recursive: true }, (eventType, filename) => {
         if (closed || (attachedWatcher && watcher !== attachedWatcher)) return;
-        if (filename === null) {
+        if (filename === null || filename === undefined) {
+          probeConfig();
           fullReconcile = true;
         } else {
           const relativePath = String(filename).replaceAll('\\', '/');
+          if (isWorkspaceConfigWatchPath(relativePath)) {
+            onConfigChange?.();
+            return;
+          }
           pendingPaths.add(relativePath);
           if (eventType === 'rename') pendingRenamePaths.add(relativePath);
         }
@@ -217,6 +231,7 @@ export const createWorkspaceWatchController = ({
 
   return {
     requestFullReconcile() {
+      probeConfig();
       fullReconcile = true;
       schedule();
     },

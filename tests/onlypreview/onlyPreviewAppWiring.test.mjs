@@ -153,6 +153,13 @@ test('recent-directory wiring stays Main-owned, value-free, and renderer-contrac
 
 test('OnlyPreview XPC prototype exposes the exact renderer allowlist and capability-gates Office chunks', () => {
   assert.deepEqual(classMethodNames('src/main/xpc/onlyPreview.handler.ts', 'OnlyPreviewHandler'), [
+    'getRecents',
+    'openRecent',
+    'navigateRecent',
+    'reloadPreview',
+    'openMarkdownLink',
+    'getHostToggleState',
+    'toggleHost',
     'openOnlyPreviewWindow',
     'reportShellMounted',
     'chooseFolder',
@@ -200,6 +207,14 @@ test('OnlyPreview XPC prototype exposes the exact renderer allowlist and capabil
   ]);
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
   const explicitOpen = source('src/main/onlypreview/onlyPreviewExplicitOpen.service.ts');
+  assert.match(explicitOpen, /await recordOnlyPreviewRecentFile/);
+  assert.doesNotMatch(
+    explicitOpen.slice(
+      explicitOpen.indexOf('export const presentOnlyPreviewExplicitFile'),
+      explicitOpen.indexOf('const performOpenOnlyPreviewAbsoluteTarget')
+    ),
+    /recordOnlyPreviewRecentFile\(/
+  );
   const classBody = handler.slice(
     handler.indexOf('class OnlyPreviewHandler'),
     handler.indexOf('export const onlyPreviewHandler')
@@ -260,12 +275,46 @@ test('OnlyPreview window commands stay host-capability scoped and Shell-owned', 
   assert.match(shellStyle, /\.arco-btn:focus-visible[\s\S]*outline:\s*2px solid/);
 });
 
+test('Open folder is icon-only, accessible, and centered inside the compact MenuBar', () => {
+  const app = source('src/renderer/onlypreview/shell/src/App.vue');
+  const style = source('src/renderer/onlypreview/shell/src/App.less');
+  const openFolder = app.match(/<a-button\s+name="onlypreview__openFolder"[\s\S]*?<\/a-button>/);
+  assert.ok(openFolder, 'the existing Open folder command must remain available');
+  assert.match(openFolder[0], /class="onlypreview-shell__icon-command"/);
+  assert.match(openFolder[0], /:title="onlyPreviewI18n\.topbar\.openFolder"/);
+  assert.match(openFolder[0], /:aria-label="onlyPreviewI18n\.topbar\.openFolder"/);
+  assert.match(openFolder[0], /:disabled="onlyPreviewShellStore\.targetLoading"/);
+  assert.match(openFolder[0], /@click="onlyPreviewShellStore\.chooseFolder\(\)"/);
+  assert.match(
+    openFolder[0],
+    />\s*<template #icon><IconFolderPlus :size="15" aria-hidden="true" \/><\/template>\s*<\/a-button>/
+  );
+
+  const menuBar = style.match(/\.onlypreview-shell__menu-bar \{([^}]+)\}/);
+  assert.ok(menuBar);
+  assert.match(menuBar[1], /height:\s*32px;/);
+  assert.match(menuBar[1], /padding:\s*0 10px;/);
+  const iconCommand = style.match(
+    /\.onlypreview-shell__menu-actions \.onlypreview-shell__icon-command \{([^}]+)\}/
+  );
+  assert.ok(iconCommand);
+  assert.match(iconCommand[1], /width:\s*27px;/);
+  assert.match(iconCommand[1], /padding:\s*0;/);
+  const iconWrapper = style.match(/\.onlypreview-shell__icon-command \.arco-btn-icon \{([^}]+)\}/);
+  assert.ok(iconWrapper, 'the Arco icon wrapper must not retain text-baseline alignment');
+  assert.match(iconWrapper[1], /display:\s*inline-flex;/);
+  assert.match(iconWrapper[1], /align-items:\s*center;/);
+  assert.match(iconWrapper[1], /justify-content:\s*center;/);
+  assert.match(iconWrapper[1], /line-height:\s*1;/);
+  assert.match(
+    style,
+    /\.onlypreview-shell__icon-command \.arco-btn-icon svg \{\s*display:\s*block;/
+  );
+});
+
 test('workspace updates have one authoritative event path and stale search snapshots are discarded', () => {
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
-  const broadcastWorkspaceBody = handler.slice(
-    handler.indexOf('const broadcastWorkspace'),
-    handler.indexOf('const recentDirectoryStorage')
-  );
+  const broadcastWorkspaceBody = source('src/main/windows/onlyPreviewChooseFolder.service.ts');
   assert.equal(
     (
       broadcastWorkspaceBody.match(/xpcMain\.broadcast\(ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT/g) ??
@@ -275,10 +324,12 @@ test('workspace updates have one authoritative event path and stale search snaps
   );
   assert.doesNotMatch(broadcastWorkspaceBody, /ONLY_PREVIEW_SELECTION_CHANGED_EVENT/);
 
-  const selectStandaloneBody = handler.slice(
+  const selectStandaloneHandler = handler.slice(
     handler.indexOf('async selectStandaloneFile('),
     handler.indexOf('async updatePreviewBounds(')
   );
+  assert.match(selectStandaloneHandler, /selectOnlyPreviewFile\(params\?\.hostToken/);
+  const selectStandaloneBody = source('src/main/onlypreview/onlyPreviewSelectFile.service.ts');
   assert.match(
     handler,
     /onlyPreviewHostRegistry\.onRevoke[\s\S]*onlyPreviewSelectionCoordinator\.revoke/
@@ -288,6 +339,9 @@ test('workspace updates have one authoritative event path and stale search snaps
     /onlyPreviewSelectionCoordinator\.beginSelection\(host\.hostToken, fileRef\)/
   );
   assert.match(selectStandaloneBody, /await fileSearchWindowService\.authorizeProjectItem/);
+  assert.match(selectStandaloneBody, /await onlyPreviewTargetMutations\.run/);
+  assert.match(selectStandaloneBody, /await recordOnlyPreviewRecentFile/);
+  assert.match(handler, /if \(!hasLiveExternalPresentation && workspace\?\.selectedRelativePath\)/);
   assert.match(
     selectStandaloneBody,
     /if \(!onlyPreviewSelectionCoordinator\.isCurrent\(host\.hostToken, generation\)\) return;[\s\S]*onlyPreviewWorkspaceRegistry\.select[\s\S]*ONLY_PREVIEW_SELECTION_CHANGED_EVENT[\s\S]*finally[\s\S]*onlyPreviewSelectionCoordinator\.finishSelection\(host\.hostToken, generation\)/
@@ -340,7 +394,7 @@ test('workspace updates have one authoritative event path and stale search snaps
 
   const selectFileBody = shellStore.slice(
     shellStore.indexOf('private async selectFile('),
-    shellStore.indexOf('private expandSelectedParents()')
+    shellStore.indexOf('private async syncPreviewPresentation()')
   );
   assert.match(selectFileBody, /const generation = \+\+this\.selectionGeneration/);
   assert.match(
@@ -571,7 +625,10 @@ test('OnlyPreview folder-first chrome, current-file locator, and native file men
   assert.doesNotMatch(types, /OnlyPreviewTargetKind|chooseTarget/);
   assert.doesNotMatch(handler, /parseTargetKind|chooseTarget/);
   assert.doesNotMatch(shellStore, /chooseTarget|chooseFile/);
-  assert.match(handler, /properties:\s*\['openDirectory'\]/);
+  assert.match(
+    source('src/main/windows/onlyPreviewChooseFolder.service.ts'),
+    /properties:\s*\['openDirectory'\]/
+  );
   assert.match(windowHelper, /if \(key === 'o'\) return 'choose-folder'/);
   assert.match(
     explicitOpen,
@@ -587,10 +644,14 @@ test('OnlyPreview folder-first chrome, current-file locator, and native file men
 
   assert.match(shellApp, /IconCrosshair/);
   assert.match(shellApp, /name="onlypreview__locateCurrentFile"/);
-  assert.match(shellApp, /:disabled="!onlyPreviewShellStore\.selectedEntry"/);
+  assert.match(shellApp, /:disabled="!canLocateCurrentPreview"/);
   assert.match(
     shellStore,
-    /async locateSelectedFile\(\): Promise<string> \{[\s\S]*this\.expandSelectedParents\(\)[\s\S]*await this\.loadSelectedParentListings\(\)[\s\S]*this\.focusedRelativePath = this\.selectedEntry\.relativePath/
+    /async locateSelectedFile\(\): Promise<string> \{[\s\S]*this\.treeExpansion\.locate\(this, \(\) => this\.loadSelectedParentListings\(\)\)/
+  );
+  assert.match(
+    source('src/renderer/onlypreview/shell/src/onlyPreviewTreeExpansion.store.ts'),
+    /this\.expandSelectedParents\(owner, true\)[\s\S]*await loadParents\(\)[\s\S]*owner\.focusedRelativePath = owner\.selectedEntry\.relativePath/
   );
   assert.match(shellApp, /scrollIntoView\(\{ block: 'center', inline: 'nearest' \}\)/);
   assert.match(shellApp, /item\.focus\(center \? \{ preventScroll: true \} : undefined\)/);

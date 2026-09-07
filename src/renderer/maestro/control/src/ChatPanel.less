@@ -333,13 +333,11 @@
 
 .chat-panel__workspace {
   display: flex;
-  width: min(220px, 42vw);
   min-width: 0;
-  max-width: 220px;
-  height: 32px;
-  flex: 1 1 160px;
+  max-width: 100%;
+  min-height: 32px;
+  flex: 0 1 auto;
   align-items: center;
-  overflow: hidden;
   color: var(--color-text-2);
   border: 1px solid #e2e4eb;
   border-radius: 6px;
@@ -349,12 +347,15 @@
 
 .chat-panel__workspace-select.arco-btn {
   min-width: 0;
-  height: 30px;
+  min-height: 30px;
+  height: auto;
   flex: 1 1 auto;
   justify-content: flex-start;
-  padding: 0 7px !important;
+  padding: 6px 7px !important;
   color: var(--color-text-2);
-  overflow: hidden;
+  line-height: 18px;
+  white-space: normal;
+  text-align: left;
   border-radius: 0;
 }
 
@@ -365,7 +366,7 @@
 
 .chat-panel__workspace-select .arco-btn-content {
   min-width: 0;
-  overflow: hidden;
+  flex: 1 1 auto;
 }
 
 .chat-panel__workspace-icon {
@@ -377,16 +378,15 @@
 .chat-panel__workspace-label {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .chat-panel__workspace-action.icon-btn.arco-btn {
   width: 28px;
   min-width: 28px;
   height: 30px;
-  flex-basis: 28px;
+  flex: 0 0 28px;
   color: var(--color-text-3);
   border-left: 1px solid var(--color-border-1);
   border-radius: 0;
@@ -485,14 +485,6 @@
 
 .chat-panel__file-input {
   display: none;
-}
-
-@container (max-width: 520px) {
-  .chat-panel__workspace {
-    width: min(140px, 32vw);
-    max-width: 140px;
-    flex-basis: 120px;
-  }
 }
 
 @container (max-width: 480px) {

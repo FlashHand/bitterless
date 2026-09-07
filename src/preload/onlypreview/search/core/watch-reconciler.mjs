@@ -8,7 +8,7 @@ import {
 } from './tree-entries.mjs';
 import { isWorkspaceSearchPathWithinDepth } from './traversal.mjs';
 import {
-  WORKSPACE_CONFIG_RELATIVE_PATH,
+  isWorkspaceConfigWatchPath,
   pathIsWithin
 } from './workspace-config.mjs';
 
@@ -46,9 +46,23 @@ const pathHasAncestorIn = (relativePath, ancestors) => {
   return false;
 };
 
-const pathIsDefinitelyPhysicallyExcluded = (searchPolicy, relativePath) =>
-  searchPolicy.isPhysicallyExcludedPath(relativePath) &&
-  searchPolicy.canTraverseExcludedDirectoryPath?.(relativePath) !== true;
+const pathIsDefinitelyPhysicallyExcluded = async (context, relativePath) => {
+  const { searchPolicy, rootPath } = context;
+  if (
+    !searchPolicy.isPhysicallyExcludedPath(relativePath) ||
+    searchPolicy.canTraverseExcludedDirectoryPath?.(relativePath) === true
+  ) return false;
+  if (searchPolicy.isExcludedFilePath(relativePath)) return true;
+  // An excluded leaf name can also be a regular file; ancestors remain a metadata-free prune.
+  const absolutePath = resolve(rootPath, ...relativePath.split('/'));
+  if (!pathIsWithin(rootPath, absolutePath)) return false;
+  try {
+    if (await realpath(absolutePath) !== absolutePath) return false;
+    return (await lstat(absolutePath)).isDirectory();
+  } catch (error) {
+    return error?.code === 'ENOENT';
+  }
+};
 
 const toTreeFileEntry = (entry) => ({
   relativePath: entry.relativePath,
@@ -124,6 +138,7 @@ class OnlyPreviewSearchWatchReconciler {
 
   async apply({ full, paths, renamePaths = [] }) {
     const context = this.resolveContext();
+    if (full) await context.configReconciler?.probe();
     // Queries do not serialize against this reconcile: engine.search() holds a reader lease while
     // acquireSearchSnapshotWriter() below waits for readers to drain, so a query can begin, issue
     // its tokens and finish inside the window this commit is already open in. Mark the session we
@@ -136,11 +151,16 @@ class OnlyPreviewSearchWatchReconciler {
     let requiresFullReconcile = full === true;
     for (const pathValue of paths) {
       const relativePath = normalizedWatchRelativePath(pathValue);
-      if (!relativePath || relativePath === WORKSPACE_CONFIG_RELATIVE_PATH) {
+      if (!relativePath) {
+        await context.configReconciler?.probe();
         requiresFullReconcile = true;
         continue;
       }
-      if (pathIsDefinitelyPhysicallyExcluded(context.searchPolicy, relativePath)) {
+      if (isWorkspaceConfigWatchPath(relativePath)) {
+        context.configReconciler?.markChanged();
+        continue;
+      }
+      if (await pathIsDefinitelyPhysicallyExcluded(context, relativePath)) {
         physicallyExcludedPaths.push(relativePath);
         continue;
       }

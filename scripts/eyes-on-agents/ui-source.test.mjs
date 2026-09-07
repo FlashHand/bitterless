@@ -203,7 +203,17 @@ test('silent tiered All polling owns one non-overlapping refresh interval', () =
   assert.ok(backgroundRefresh, 'Missing silent tiered All refresh helper');
   assert.match(
     backgroundRefresh[0],
-    /try \{\s*await eyesOnAgentsEmitter\.refreshThreadPages\(\);\s*this\.applySnapshot\(await eyesOnAgentsEmitter\.getSnapshot\(\)\);\s*\} catch/
+    /try \{\s*await eyesOnAgentsEmitter\.refreshThreadPages\(\);\s*await this\.readSnapshot\(\);\s*\} catch/
+  );
+  assert.match(
+    store,
+    /private async readSnapshot\(\): Promise<void> \{\s*const generation = this\.snapshotGeneration;\s*this\.applySnapshot\(await eyesOnAgentsEmitter\.getSnapshot\(\), generation\);\s*\}/,
+    'background snapshots retain their starting generation across the read',
+  );
+  assert.match(
+    store,
+    /private applySnapshot\(snapshot: EyesOnAgentsSnapshot, generation: number\): void \{\s*if \(generation !== this\.snapshotGeneration\) return;/,
+    'a stale snapshot cannot restore a locally deleted card',
   );
   assert.match(backgroundRefresh[0], /catch \{[\s\S]*\}/);
   assert.doesNotMatch(backgroundRefresh[0], /actionError|loadError|throw/);
@@ -832,6 +842,7 @@ test('thread cards share one viewport-fitted menu across More and right-click', 
     'handleCopySessionPath',
     'handleToggleReadState',
     'handleArchive',
+    'handleDeleteFromBitterless',
   ]) {
     assert.match(component, new RegExp(`const ${handlerName}[\\s\\S]*?closeMenus\\(\\)`));
   }
@@ -853,6 +864,40 @@ test('thread cards share one viewport-fitted menu across More and right-click', 
   assert.match(sharedTypes, /archiveThread\(params: \{[\s\S]*sessionKey: EyesOnAgentsSessionKey;[\s\S]*Promise<EyesOnAgentsSnapshot>/);
   assert.match(english, /archive: 'Archive'/);
   assert.match(chinese, /archive: '归档'/);
+});
+
+test('local-delete menus are provider-independent and route separately from Archive', () => {
+  const component = read('src/renderer/eyesOnAgents/src/components/ThreadCard/ThreadCard.vue');
+  const menu = read('src/renderer/eyesOnAgents/src/components/ThreadCard/ThreadCardMenu.vue');
+  const store = read('src/renderer/eyesOnAgents/src/store/eyesOnAgents.store.ts');
+  const english = read('src/renderer/common/i18n/en.ts');
+  const chinese = read('src/renderer/common/i18n/zh.ts');
+  const deleteOption = [...menu.matchAll(/<a-doption\b[\s\S]*?<\/a-doption>/g)]
+    .find(([option]) => option.includes('name="eyesOnAgents__threadCardMenu__deleteFromBitterless"'))?.[0];
+
+  assert.ok(deleteOption, 'every shared menu owns a distinct local-delete option');
+  assert.doesNotMatch(deleteOption, /\bv-if=|\bv-else-if=/, 'local delete is not gated on provider or capability');
+  assert.match(deleteOption, /:disabled="eyesOnAgentsStore\.busyAction !== null"/);
+  assert.match(deleteOption, /@click="emit\('deleteFromBitterless'\)"/);
+  assert.match(deleteOption, /<IconTrash :size="13" aria-hidden="true" \/>/);
+  assert.match(deleteOption, /i18nHelper\.eyesOnAgents\.actions\.deleteFromBitterless/);
+  assert.equal(
+    (component.match(/@delete-from-bitterless="handleDeleteFromBitterless"/g) ?? []).length,
+    2,
+    'More and right-click bind the identical local-delete handler',
+  );
+  assert.match(
+    component,
+    /const handleDeleteFromBitterless = async \(\): Promise<void> => \{\s*closeMenus\(\);\s*await eyesOnAgentsStore\.deleteThreadFromBitterless\(props\.thread\.sessionKey\)\.catch\(\(\) => undefined\);\s*\};/,
+    'the menu closes before the store action, whose existing error UI owns failures',
+  );
+  assert.match(
+    store,
+    /async deleteThreadFromBitterless\(sessionKey: EyesOnAgentsSessionKey\): Promise<void> \{\s*await this\.runSnapshotAction\(`thread-delete:\$\{sessionKey\}`, \(\) =>\s*eyesOnAgentsEmitter\.deleteThreadFromBitterless\(\{ sessionKey \}\),\s*\);\s*\}/,
+    'local deletion has no provider, runtime, capability, or present-row guard',
+  );
+  assert.match(english, /deleteFromBitterless: 'Delete from Bitterless'/);
+  assert.match(chinese, /deleteFromBitterless: '从 Bitterless 删除'/);
 });
 
 test('Claude UI stays provider-qualified, compact, and content-boundary safe', () => {
@@ -1420,11 +1465,11 @@ test('Cmd/Ctrl+F toggles one card-result search modal contained by EyesOnAgents'
     'shortcut and button opens share the reactive focus path'
   );
   assert.match(search, /@clear="handleQueryClear"/);
-  assert.match(search, /@update:model-value="handleTitleInput"/);
-  assert.doesNotMatch(search, /@update:model-value="eyesOnAgentsStore\./);
+  assert.match(search, /v-model="titleDraft"/);
+  assert.doesNotMatch(search, /@update:model-value|:model-value=|handleTitleInput/);
   assert.match(
     search,
-    /const handleTitleInput = \(value: string\): void => \{\s*eyesOnAgentsStore\.setTitleDraft\(value\);\s*\};/,
+    /const titleDraft = computed\(\{\s*get: \(\) => eyesOnAgentsStore\.titleDraft,\s*set: \(value: string\) => \{\s*eyesOnAgentsStore\.setTitleDraft\(value\);\s*\},?\s*\}\);/,
   );
   assert.match(search, /handleQueryClear[\s\S]*eyesOnAgentsStore\.clearTitleQuery\(\)/);
   assert.match(search, /role: 'combobox'/);
@@ -1479,7 +1524,7 @@ test('modal search is query-gated, token-based, reconciled, and stale-draft safe
     /  get threadSearchResults\(\): EyesOnAgentsThread\[\] \{[\s\S]*?\n  \}/
   );
   assert.ok(results, 'Missing modal search projection');
-  assert.match(results[0], /tokenizeThreadTitle\(this\.titleQuery\)/);
+  assert.match(results[0], /const queryTokens = titleQueryTokens\.value;/);
   assert.match(results[0], /queryTokens\.length === 0\) return \[\]/);
   assert.match(results[0], /if \(thread\.title === null\) return false/);
   assert.match(
@@ -1498,7 +1543,11 @@ test('modal search is query-gated, token-based, reconciled, and stale-draft safe
   assert.match(store, /const THREAD_TITLE_SEPARATOR_PATTERN = \/\[\\s\\-_\.\\\/\\\\:\|\]\+\/u;/);
   assert.match(
     store,
-    /  get hasThreadSearchQueryTokens\(\): boolean \{\s*return tokenizeThreadTitle\(this\.titleQuery\)\.length > 0;/
+    /const titleQueryTokens = computed\(\(\) => tokenizeThreadTitle\(eyesOnAgentsStore\.titleQuery\)\);/,
+  );
+  assert.match(
+    store,
+    /  get hasThreadSearchQueryTokens\(\): boolean \{\s*return titleQueryTokens\.value\.length > 0;/
   );
 
   assert.match(store, /import \{ useThrottleFn \} from '@vueuse\/core';/);

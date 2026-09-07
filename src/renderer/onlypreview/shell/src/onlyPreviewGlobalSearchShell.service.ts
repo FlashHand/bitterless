@@ -14,6 +14,7 @@ interface GlobalSearchDirectoryRevealOptions {
   projection: OnlyPreviewBrowseProjectionService;
   browseContext: OnlyPreviewBrowseProjectionContext | null;
   expandedPaths: Set<string>;
+  isCurrent?: () => boolean;
   applyResult: (result: OnlyPreviewBrowseProjectionResult) => void;
   onRevealed: (relativePath: string) => void;
 }
@@ -31,11 +32,13 @@ export const handleOnlyPreviewGlobalSearchDirectoryReveal = async (
           projection: options.projection,
           context: options.browseContext,
           expandedPaths: options.expandedPaths,
-          applyResult: options.applyResult
+          applyResult: options.applyResult,
+          isCurrent: options.isCurrent
         })
       : false;
-  if (succeeded) options.onRevealed(action.relativePath);
+  const accepted = succeeded && options.isCurrent?.() !== false;
+  if (accepted) options.onRevealed(action.relativePath);
   await onlyPreviewGlobalSearchShellClient
-    .completeDirectoryReveal(action, succeeded)
+    .completeDirectoryReveal(action, accepted)
     .catch(() => undefined);
 };

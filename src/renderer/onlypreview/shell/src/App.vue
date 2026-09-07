@@ -9,8 +9,8 @@
       name="onlypreview__menuBar"
       class="onlypreview-shell__menu-bar"
       :class="{
-        'onlypreview-shell__menu-bar--mac': isMac,
-        'onlypreview-shell__menu-bar--windows': isWindows
+        'onlypreview-shell__menu-bar--mac': isMac && ownsWindow,
+        'onlypreview-shell__menu-bar--windows': isWindows && ownsWindow
       }"
       @dblclick="handleMenuBarDoubleClick"
     >
@@ -30,14 +30,15 @@
       <div name="onlypreview__menuActions" class="onlypreview-shell__menu-actions">
         <a-button
           name="onlypreview__openFolder"
-          class="onlypreview-shell__command"
+          class="onlypreview-shell__icon-command"
           type="text"
           size="mini"
+          :title="onlyPreviewI18n.topbar.openFolder"
+          :aria-label="onlyPreviewI18n.topbar.openFolder"
           :disabled="onlyPreviewShellStore.targetLoading"
           @click="onlyPreviewShellStore.chooseFolder()"
         >
           <template #icon><IconFolderPlus :size="15" aria-hidden="true" /></template>
-          {{ onlyPreviewI18n.topbar.openFolder }}
         </a-button>
         <a-button
           name="onlypreview__agentSkillGuide"
@@ -61,8 +62,25 @@
         >
           <template #icon><IconSettings :size="16" aria-hidden="true" /></template>
         </a-button>
+        <a-button
+          name="onlypreview__host-toggle"
+          class="onlypreview-shell__icon-command"
+          :class="{ 'onlypreview-shell__icon-command--window': ownsWindow }"
+          type="text"
+          size="mini"
+          :title="hostToggleLabel"
+          :aria-label="hostToggleLabel"
+          :aria-pressed="ownsWindow"
+          :disabled="onlyPreviewShellStore.hostToggle.disabled"
+          @click="onlyPreviewShellStore.hostToggle.toggle(onlyPreviewShellStore)"
+        >
+          <template #icon>
+            <IconBrowser v-if="ownsWindow" :size="16" aria-hidden="true" />
+            <IconExternalLink v-else :size="16" aria-hidden="true" />
+          </template>
+        </a-button>
 
-        <template v-if="isWindows">
+        <template v-if="isWindows && ownsWindow">
           <a-button
             name="onlypreview__minimize"
             class="onlypreview-shell__icon-command"
@@ -103,13 +121,22 @@
     <main name="onlypreview__workspace" class="onlypreview-shell__workspace">
       <aside name="onlypreview__project" class="onlypreview-shell__project">
         <div name="onlypreview__projectHeader" class="onlypreview-shell__project-header">
-          <span
-            name="onlypreview__projectTitle"
-            class="onlypreview-shell__project-title"
+          <ProjectPanelTabs
+            v-model="onlyPreviewRecentsStore.activePanel"
             :title="onlyPreviewShellStore.workspace?.displayPath || onlyPreviewI18n.project.label"
+          />
+          <a-button
+            name="onlypreview__collapseDirectories"
+            class="onlypreview-shell__project-action"
+            type="text"
+            size="mini"
+            :title="onlyPreviewI18n.project.collapseDirectories"
+            :aria-label="onlyPreviewI18n.project.collapseDirectories"
+            :disabled="!onlyPreviewShellStore.workspace || !onlyPreviewShellStore.index"
+            @click="onlyPreviewShellStore.treeExpansion.collapse(onlyPreviewShellStore)"
           >
-            {{ onlyPreviewI18n.project.label }}
-          </span>
+            <template #icon><IconFold :size="15" aria-hidden="true" /></template>
+          </a-button>
           <a-button
             name="onlypreview__locateCurrentFile"
             class="onlypreview-shell__project-action"
@@ -117,13 +144,21 @@
             size="mini"
             :title="onlyPreviewI18n.project.locateCurrentFile"
             :aria-label="onlyPreviewI18n.project.locateCurrentFile"
-            :disabled="!onlyPreviewShellStore.selectedEntry"
+            :disabled="!canLocateCurrentPreview"
             @click="locateCurrentFile"
           >
             <template #icon><IconCrosshair :size="15" aria-hidden="true" /></template>
           </a-button>
         </div>
 
+        <div
+          v-show="onlyPreviewRecentsStore.activePanel === 'project'"
+          id="onlypreview-panel-project"
+          name="onlypreview__projectPanel"
+          class="onlypreview-project-panel"
+          role="tabpanel"
+          aria-labelledby="onlypreview-tab-project"
+        >
         <div
           v-if="onlyPreviewShellStore.errorMessage"
           name="onlypreview__indexError"
@@ -192,6 +227,7 @@
             name="onlypreview__treeRow"
             class="onlypreview-shell__tree-row"
             :class="{
+              'onlypreview-shell__tree-row--root': row.entry.relativePath === '',
               'onlypreview-shell__tree-row--selected':
                 onlyPreviewTreeSelection.isSelected(row.entry.relativePath),
               'onlypreview-shell__tree-row--symlink': row.entry.nodeKind === 'symlink',
@@ -308,6 +344,8 @@
             aria-hidden="true"
           ></span>
         </div>
+        </div>
+        <RecentsPanel v-show="onlyPreviewRecentsStore.activePanel === 'recents'" />
       </aside>
 
       <div
@@ -377,10 +415,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   IconAlertTriangle,
+  IconBrowser,
   IconChevronRight,
   IconCrosshair,
+  IconExternalLink,
   IconFile,
   IconFiles,
+  IconFold,
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
@@ -395,6 +436,9 @@ import { formatOnlyPreviewBytes, interpolateOnlyPreview } from '../../common/onl
 import { onlyPreviewEnv } from '../../common/contextBridge/onlyPreviewEnv.bridge';
 import { onlyPreviewI18n } from '../../common/onlyPreviewI18n';
 import PreviewToolbar from './components/PreviewToolbar/PreviewToolbar.vue';
+import ProjectPanelTabs from './components/Recents/ProjectPanelTabs.vue';
+import RecentsPanel from './components/Recents/RecentsPanel.vue';
+import { onlyPreviewRecentsStore } from './onlyPreviewRecents.store';
 import { onlyPreviewProjectWidthPersistence } from './onlyPreviewProjectWidthPersistence.service';
 import type { OnlyPreviewIndexEntry } from '@shared/onlypreview/onlyPreview.types';
 import { onlyPreviewShellStore } from './onlyPreviewShell.store';
@@ -415,6 +459,23 @@ let resizeObserver: ResizeObserver | null = null;
 let resizeFrame = 0;
 const isMac = onlyPreviewEnv.platform === 'darwin';
 const isWindows = onlyPreviewEnv.platform === 'win32';
+/**
+ * Whether this surface owns a window.
+ *
+ * A Cowork tab has no traffic lights and no window of its own to minimize or maximize, so those
+ * controls are not merely useless there — they are buttons whose only possible behaviour is to do
+ * nothing. Close stays available in both hosts: the mount maps it to closing the window or the tab.
+ */
+const ownsWindow = onlyPreviewEnv.host !== 'cowork';
+const hostToggleLabel = computed(() => {
+  if (!ownsWindow) return onlyPreviewI18n.topbar.openInWindow;
+  return onlyPreviewShellStore.hostToggle.state.canDock
+    ? onlyPreviewI18n.topbar.moveToTab
+    : onlyPreviewI18n.topbar.dockUnavailable;
+});
+const refreshHostToggleState = (): void => {
+  void onlyPreviewShellStore.refreshHostToggleState();
+};
 
 const treeFocusRelativePath = computed(() => onlyPreviewShellStore.treeFocusRelativePath);
 const indexProgressStyle = computed(() =>
@@ -488,6 +549,7 @@ const focusTreePath = async (relativePath: string, center = false): Promise<bool
 };
 
 const focusProjectTree = (): void => {
+  onlyPreviewRecentsStore.activePanel = 'project';
   void focusTreePath(onlyPreviewShellStore.focusTree());
 };
 
@@ -497,8 +559,18 @@ const focusProjectTree = (): void => {
 // located row lands with no highlight. That is exactly what happens after opening a file from
 // global search, where the previewed file was never clicked in the tree at all.
 const locateCurrentFile = async (): Promise<void> => {
-  await focusTreePath(await onlyPreviewShellStore.locateSelectedFile(), true);
+  if (!canLocateCurrentPreview.value) return;
+  onlyPreviewRecentsStore.activePanel = 'project';
+  const relativePath = await onlyPreviewShellStore.locateSelectedFile();
+  if (relativePath) await focusTreePath(relativePath, true);
 };
+
+const canLocateCurrentPreview = computed(() => {
+  const fileRef = onlyPreviewShellStore.previewFileRef;
+  return Boolean(fileRef && fileRef.workspaceId === onlyPreviewShellStore.workspace?.workspaceId
+    && fileRef.relativePath === onlyPreviewShellStore.selectedRelativePath
+    && onlyPreviewShellStore.selectedEntry);
+});
 
 const handleTreeKeydown = (event: KeyboardEvent): void => {
   const primary = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
@@ -633,7 +705,10 @@ const handleShellKeydown = (event: KeyboardEvent): void => {
 // an external change removes some of them.
 watch(
   () => onlyPreviewShellStore.workspace?.workspaceId ?? '',
-  () => onlyPreviewTreeSelection.clear()
+  () => {
+    onlyPreviewTreeSelection.clear();
+    onlyPreviewRecentsStore.resetWorkspace();
+  }
 );
 watch(
   () => onlyPreviewShellStore.visibleRows.length,
@@ -643,14 +718,19 @@ watch(
 onMounted(() => {
   subscribeOnlyPreviewProjectIntents();
   window.addEventListener('pagehide', flushProjectWidth);
+  window.addEventListener('focus', refreshHostToggleState);
   void onlyPreviewShellStore.initialize();
+  void onlyPreviewRecentsStore.initialize();
 });
 
 watch(() => onlyPreviewShellStore.focusProjectRevision, focusProjectTree);
 
 watch(
   () => onlyPreviewShellStore.centerProjectRevision,
-  () => void focusTreePath(onlyPreviewShellStore.centerProjectRelativePath, true)
+  () => {
+    onlyPreviewRecentsStore.activePanel = 'project';
+    void focusTreePath(onlyPreviewShellStore.centerProjectRelativePath, true);
+  }
 );
 
 watch(
@@ -666,7 +746,9 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  onlyPreviewRecentsStore.dispose();
   window.removeEventListener('pagehide', flushProjectWidth);
+  window.removeEventListener('focus', refreshHostToggleState);
   flushProjectWidth();
   resizeObserver?.disconnect();
   if (resizeFrame) cancelAnimationFrame(resizeFrame);

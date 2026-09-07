@@ -88,6 +88,14 @@ export class FileSearchWindowService {
   private readonly officeReader: FileSearchOfficeReadClientService;
   private readonly previewReader: FileSearchPreviewReadClientService;
   private runtimeInstanceId: string | null = null;
+  // Kept so a host transition can RE-ATTACH this runtime instead of restarting it. The hidden
+  // search window is project-scoped, not window-scoped: tying its lifetime to one host is what made
+  // every toggle throw away an in-flight index build (copy-then-promote means everything since the
+  // last promote is lost) and what let a dying host tear down the runtime its successor had just
+  // built. See docs/issues/onlypreview-host-toggle-tears-down-the-new-runtime.md.
+  private runtimeCapability: string | null = null;
+  private runtimeClient: FileSearchRuntimePrivateApi | null = null;
+  private runtimeBroadcast: ((eventName: string, value: unknown) => void) | null = null;
   private privilegedRuntimeFatal: (() => void) | null = null;
   private lifecycleId = 0;
 
@@ -183,7 +191,15 @@ export class FileSearchWindowService {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', fenceNavigation);
     window.webContents.on('will-redirect', fenceNavigation);
-    window.webContents.once('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
+    window.webContents.once('did-fail-load', (_event, code, description, url, isMainFrame) => {
+      // Log the Chromium code before collapsing it into one message. ERR_ABORTED (-3) means
+      // something tore this window down mid-load and is a completely different bug from
+      // ERR_CONNECTION_REFUSED (-102) or a 404 — and the collapsed message told them apart not at all.
+      console.info(
+        `[onlypreview-search] event=runtime-load-failed code=${code} url=${url}` +
+          ` mainFrame=${isMainFrame} lifecycle=${lifecycleId} current=${this.lifecycleId}` +
+          ` sameWindow=${this.window === window} description=${description}`
+      );
       if (isMainFrame) lifecycleFence.fail('File-search renderer failed to load.');
     });
     window.webContents.once('render-process-gone', () => {
@@ -244,6 +260,9 @@ export class FileSearchWindowService {
       if (this.window !== window || this.lifecycleId !== lifecycleId || window.isDestroyed()) {
         throw new Error('File-search renderer startup was superseded.');
       }
+      this.runtimeCapability = capability;
+      this.runtimeClient = runtimeClient;
+      this.runtimeBroadcast = params.broadcast;
       fileSearchRuntimeRelayService.attach({
         hostToken: params.host.hostToken,
         hostId: params.host.hostId,
@@ -275,6 +294,12 @@ export class FileSearchWindowService {
   }
 
   stop(): void {
+    // Who tore the runtime down, and from where. The transition bug looks like "the load failed",
+    // but the load is aborted BY a teardown — so the caller matters more than the symptom.
+    console.info(
+      `[onlypreview-search] event=runtime-stop lifecycle=${this.lifecycleId} hadWindow=${Boolean(this.window)}` +
+        ` by=${new Error().stack?.split('\n')[2]?.trim().slice(0, 120) ?? 'unknown'}`
+    );
     this.lifecycleId += 1;
     const window = this.window;
     this.window = null;
@@ -283,9 +308,59 @@ export class FileSearchWindowService {
     this.officeReader.stop();
     this.previewReader.stop();
     this.runtimeInstanceId = null;
+    this.runtimeCapability = null;
+    this.runtimeClient = null;
+    this.runtimeBroadcast = null;
     this.privilegedRuntimeFatal = null;
     fileSearchRuntimeRelayService.detach();
     if (window && !window.isDestroyed()) window.destroy();
+  }
+
+  /** Is there a live search runtime a new host could adopt instead of starting its own? */
+  hasLiveRuntime(): boolean {
+    return Boolean(
+      this.window && !this.window.isDestroyed() && this.runtimeCapability && this.runtimeClient
+    );
+  }
+
+  /**
+   * Hand the LIVE runtime to a new host, without restarting it.
+   *
+   * This is the whole point of keeping `runtimeCapability` / `runtimeClient`: the index build in
+   * flight inside that renderer keeps going, and there is no dying runtime left to send a late
+   * message that tears down the new host. `relay.attach` already detaches the previous host first,
+   * so re-attaching is the supported operation rather than a trick.
+   *
+   * Returns false when there is nothing to adopt, so the caller falls back to `start()`.
+   */
+  rebindHost(params: {
+    host: OnlyPreviewHostCapability;
+    bootstrapToken: string;
+    broadcast?(eventName: string, value: unknown): void;
+  }): boolean {
+    if (!this.hasLiveRuntime()) return false;
+    const broadcast = params.broadcast ?? this.runtimeBroadcast;
+    if (!broadcast) return false;
+    this.runtimeBroadcast = broadcast;
+    fileSearchRuntimeRelayService.attach({
+      hostToken: params.host.hostToken,
+      hostId: params.host.hostId,
+      bootstrapToken: params.bootstrapToken,
+      capability: this.runtimeCapability as string,
+      client: this.runtimeClient as FileSearchRuntimePrivateApi,
+      broadcast,
+      // The index in that renderer never stopped, so its workspace binding must survive with it.
+      preserveWorkspace: true
+    });
+    this.diagnostics.emit('runtime-window', {
+      tag: this.diagnostics.nextTag('w'),
+      phase: 'relay-attached',
+      elapsedMs: 0
+    });
+    console.info(
+      `[onlypreview-search] event=runtime-rebound hostId=${params.host.hostId} lifecycle=${this.lifecycleId}`
+    );
+    return true;
   }
 
   async inspectTarget(absoluteTarget: string): Promise<OnlyPreviewValidatedTarget> {

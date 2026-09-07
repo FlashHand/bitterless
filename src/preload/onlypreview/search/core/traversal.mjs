@@ -2,7 +2,12 @@ import { constants as fsConstants } from 'node:fs';
 import { lstat, open, opendir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { CORE_EXCLUDED_DIRECTORY_NAMES, MAX_INDEX_DEPTH } from './constants.mjs';
+import {
+  CORE_EXCLUDED_DIRECTORY_NAMES,
+  CORE_EXCLUDED_DIRECTORY_SEQUENCES,
+  CORE_EXCLUDED_DIRECTORY_SUFFIXES,
+  MAX_INDEX_DEPTH
+} from './constants.mjs';
 import {
   classifySearchMediaType,
   mediaTypeToPreviewHint,
@@ -53,7 +58,13 @@ export const isWorkspaceSearchPathWithinDepth = (
 export const createTraversalPolicy = ({ rules = [] } = {}) => {
   const isCoreExcluded = (relativePath, isDirectory) =>
     searchDirectorySegments(relativePath, isDirectory).some(
-      (segment) => segment.startsWith('.') || CORE_EXCLUDED_DIRECTORY_NAMES.has(segment)
+      (segment, index, segments) =>
+        segment.startsWith('.') ||
+        CORE_EXCLUDED_DIRECTORY_NAMES.has(segment) ||
+        CORE_EXCLUDED_DIRECTORY_SUFFIXES.some((suffix) => segment.endsWith(suffix)) ||
+        CORE_EXCLUDED_DIRECTORY_SEQUENCES.some((sequence) =>
+          sequence.every((part, offset) => segments[index + offset] === part)
+        )
     );
   const isExcludedPath = (relativePath, isDirectory) =>
     isCoreExcluded(relativePath, isDirectory) || isExcludedByOrderedGlobs(relativePath, rules);

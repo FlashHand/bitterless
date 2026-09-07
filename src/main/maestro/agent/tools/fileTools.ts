@@ -143,7 +143,7 @@ export const buildFileTools = (host: FileToolHost, sessionKey: string): AgentToo
   {
     name: 'open_workspace_folder',
     description:
-      'Open a folder in Finder or File Explorer. Empty path opens this chat’s workspace root; with no selected workspace, Maestro creates the chat’s default workspace. ' +
+      'Open a folder in OnlyPreview, the local file preview app (Finder or File Explorer when it is unavailable). Empty path opens this chat’s workspace root; with no selected workspace, Maestro creates the chat’s default workspace. ' +
       'A relative subfolder opens directly, while a relative file is revealed. This reads no content and changes no file.',
     params: [
       {

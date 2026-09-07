@@ -36,7 +36,7 @@ test('Markdown rendering and selection counts stay renderer-only, inert, and hos
   assert.match(markdownService, /html\(\{ text \}[\s\S]*escapeHtml\(text\)/);
   assert.match(markdownService, /image\(\{ text \}[\s\S]*\[Image:/);
   assert.match(markdownService, /purifier\.sanitize\(parsed/);
-  assert.match(markdownService, /ALLOWED_ATTR:\s*\[\]/);
+  assert.match(markdownService, /ALLOWED_ATTR: interactiveLinks/);
   assert.match(markdownService, /ALLOW_ARIA_ATTR:\s*false/);
   assert.match(markdownService, /ALLOW_DATA_ATTR:\s*false/);
   assert.match(markdownService, /ALLOWED_NAMESPACES:\s*\['http:\/\/www\.w3\.org\/1999\/xhtml'\]/);
@@ -162,7 +162,7 @@ test('Markdown rendering and selection counts stay renderer-only, inert, and hos
   assert.match(shellEvents, /ONLY_PREVIEW_SELECTION_CHANGED_EVENT/);
   const selectFile = shellStore.slice(
     shellStore.indexOf('private async selectFile('),
-    shellStore.indexOf('private expandSelectedParents()')
+    shellStore.indexOf('private async syncPreviewPresentation()')
   );
   assert.match(
     selectFile,
@@ -364,7 +364,7 @@ test('deep Project rows stay complete while HTML routes to the isolated Chrome s
   );
   assert.match(treeRow, /width:\s*max-content/);
   assert.match(treeRow, /min-width:\s*100%/);
-  assert.match(treeRow, /height:\s*27px/);
+  assert.match(treeRow, /height:\s*22px/);
   assert.match(treeRow, /overflow:\s*visible/);
   assert.match(treeRow, /var\(--onlypreview-tree-depth\) \* 14px/);
   const treeName = shellStyle.slice(
@@ -451,15 +451,15 @@ test('OnlyPreview shell keeps folder identity in the title and synthetic Project
     shellApp.indexOf('name="onlypreview__projectHeader"'),
     shellApp.indexOf('name="onlypreview__search"')
   );
-  assert.match(projectHeader, /name="onlypreview__projectTitle"/);
-  assert.match(projectHeader, /class="onlypreview-shell__project-title"/);
+  assert.match(projectHeader, /<ProjectPanelTabs/);
+  assert.match(projectHeader, /v-model="onlyPreviewRecentsStore\.activePanel"/);
   assert.match(
     projectHeader,
     /:title="[\s\S]*onlyPreviewShellStore\.workspace\?\.displayPath \|\| onlyPreviewI18n\.project\.label[\s\S]*"/
   );
   assert.match(
-    projectHeader,
-    /\{\{ onlyPreviewI18n\.project\.label \}\}/
+    source('src/renderer/onlypreview/shell/src/components/Recents/ProjectPanelTabs.vue'),
+    /label: onlyPreviewI18n\.project\.label/
   );
   assert.match(projectHeader, /\{\{ row\.entry\.name \}\}/);
 

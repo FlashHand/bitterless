@@ -5,6 +5,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { splitContentDefinedChunks } from './chunking.mjs';
 import {
   BACKGROUND_BUILD_TRANSACTION_FILES,
+  CORE_EXCLUDED_DIRECTORY_NAMES,
+  CORE_EXCLUDED_DIRECTORY_SEQUENCES,
+  CORE_EXCLUDED_DIRECTORY_SUFFIXES,
   MAX_RESULTS,
   SEARCH_STATE_SCHEMA_VERSION,
   SEARCH_WORK_SLICE_MS
@@ -29,7 +32,13 @@ import { searchOnlyPreviewIndexedContents } from './sqlite-content-search.mjs';
 import { createBackgroundWorkSlicer } from './work-slicer.mjs';
 
 export const SEARCH_ENGINE_IDENTITY =
-  'onlypreview-contentless-full-v8:short-nonascii:grouped-global-search:tolerant-extension-size';
+  'onlypreview-contentless-full-v8:short-nonascii:grouped-global-search:tolerant-extension-size:' +
+  JSON.stringify({
+    hiddenDirectories: true,
+    directoryNames: [...CORE_EXCLUDED_DIRECTORY_NAMES].sort(),
+    directorySuffixes: [...CORE_EXCLUDED_DIRECTORY_SUFFIXES].sort(),
+    directorySequences: CORE_EXCLUDED_DIRECTORY_SEQUENCES.map((parts) => parts.join('/')).sort()
+  });
 
 const ftsPhrase = (query) => `"${query.replaceAll('"', '""')}"`;
 

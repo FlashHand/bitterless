@@ -96,7 +96,6 @@ export interface MessageSession {
   title: string
   intent: MessageIntent
   placeholder: string
-  welcome: string
   allowFiles: boolean
   messages: ChatMessage[]
   detail: MaestroChatDetail

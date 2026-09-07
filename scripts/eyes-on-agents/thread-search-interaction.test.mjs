@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -26,6 +27,7 @@ for (const key of [
   'Event',
   'MouseEvent',
   'KeyboardEvent',
+  'CompositionEvent',
   'CustomEvent',
 ]) {
   Object.defineProperty(globalThis, key, {
@@ -46,6 +48,7 @@ class ObserverStub {
 }
 globalThis.ResizeObserver = ObserverStub;
 browserWindow.ResizeObserver = ObserverStub;
+browserWindow.HTMLElement.prototype.scrollIntoView = () => undefined;
 browserWindow.matchMedia = () => ({
   matches: false,
   addEventListener() {},
@@ -89,6 +92,10 @@ const stubsPlugin = {
     buildApi.onResolve(
       { filter: /eyesOnAgents\.store$/ },
       () => ({ path: 'store', namespace: 'eyes-thread-search-test' }),
+    );
+    buildApi.onResolve(
+      { filter: /eyesOnAgents\.emitter$/ },
+      () => ({ path: 'emitter', namespace: 'eyes-thread-search-test' }),
     );
     buildApi.onResolve(
       { filter: /ThreadCard\/ThreadCard\.vue$/ },
@@ -135,6 +142,18 @@ const stubsPlugin = {
                   return true;
                 }
               });
+            `,
+            loader: 'js',
+          };
+        }
+        if (args.path === 'emitter') {
+          return {
+            contents: `
+              export const eyesOnAgentsEmitter = {
+                getSnapshot: async () => globalThis.__eyesOnAgentsThreadSearchHarness.snapshot,
+                openThread: async () => ({ snapshot: globalThis.__eyesOnAgentsThreadSearchHarness.store.snapshot })
+              };
+              export const subscribeEyesOnAgentsChanges = () => undefined;
             `,
             loader: 'js',
           };
@@ -238,7 +257,7 @@ const TooltipStub = defineComponent({
   setup: (_props, { slots }) => () => h('div', { class: 'arco-tooltip-stub' }, slots.default?.()),
 });
 
-const mountComponent = async (component, store) => {
+const mountComponent = async (component, store, { realModal = false } = {}) => {
   document.body.innerHTML = '<main class="eyes-on-agents__main"><div id="root"></div></main>';
   globalThis.__eyesOnAgentsThreadSearchHarness = { store };
   const errors = [];
@@ -247,16 +266,30 @@ const mountComponent = async (component, store) => {
   app.config.errorHandler = (error) => errors.push(error);
   app.component('AInput', ArcoModule.Input);
   app.component('AButton', ArcoModule.Button);
-  app.component('AModal', ModalStub);
+  app.component('AModal', realModal ? ArcoModule.Modal : ModalStub);
   app.component('ATooltip', TooltipStub);
   app.mount(host);
   await nextTick();
-  return { app, errors, host };
+  return { app, errors, host, container: host.parentElement };
+};
+
+const settleModalTransition = async () => {
+  await nextTick();
+  await new Promise((resolve) => browserWindow.requestAnimationFrame(() => {
+    browserWindow.requestAnimationFrame(resolve);
+  }));
+  await nextTick();
+};
+
+const settleTitleQuery = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 160));
+  await nextTick();
 };
 
 try {
   const threadSearchOutfile = join(buildRoot, 'ThreadSearch.mjs');
   const domainColumnOutfile = join(buildRoot, 'DomainColumn.mjs');
+  const storeOutfile = join(buildRoot, 'eyesOnAgents.store.mjs');
   const commonBuildOptions = {
     bundle: true,
     platform: 'node',
@@ -283,12 +316,32 @@ try {
       )],
       outfile: domainColumnOutfile,
     }),
+    build({
+      ...commonBuildOptions,
+      entryPoints: [join(projectRoot, 'src/renderer/eyesOnAgents/src/store/eyesOnAgents.store.ts')],
+      outfile: storeOutfile,
+    }),
   ]);
 
-  const [{ default: ThreadSearch }, { default: DomainColumn }] = await Promise.all([
+  const [{ default: ThreadSearch }, { default: DomainColumn }, actualStoreModule] = await Promise.all([
     import(`${pathToFileURL(threadSearchOutfile).href}?v=${Date.now()}`),
     import(`${pathToFileURL(domainColumnOutfile).href}?v=${Date.now()}`),
+    import(`${pathToFileURL(storeOutfile).href}?v=${Date.now()}`),
   ]);
+  const actualStore = () => {
+    const store = actualStoreModule.eyesOnAgentsStore;
+    store.closeThreadSearch();
+    store.snapshot = {
+      threads: [
+        { sessionKey: 'claude:match', title: 'Claude search match', runtimeState: 'idle' },
+        { sessionKey: 'codex:other', title: 'Codex unrelated thread', runtimeState: 'idle' },
+      ],
+    };
+    store.configureTitleQueryScheduler(actualStoreModule.createEyesOnAgentsTitleQueryScheduler(
+      (revision) => store.commitTitleQuery(revision),
+    ));
+    return store;
+  };
 
   await test('Arco Input model update keeps the store receiver and commits the query', async () => {
     const store = reactive(new ReceiverSensitiveStore());
@@ -400,7 +453,11 @@ try {
 
       globalThis.__eyesOnAgentsThreadSearchHarness.modal.open();
       await nextTick();
-      assert.equal(document.activeElement, input, 'the current modal lifecycle can focus');
+      assert.equal(
+        document.activeElement,
+        mounted.host.querySelector('input.arco-input'),
+        'the current modal lifecycle can focus its current input',
+      );
 
       outsideButton.focus();
       globalThis.__eyesOnAgentsThreadSearchHarness.modal.open();
@@ -413,6 +470,188 @@ try {
       );
       assert.deepEqual(mounted.errors, []);
     } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  await test('real retained Modal resets interrupted Input composition on every Search lifecycle', async () => {
+    const store = actualStore();
+    const mounted = await mountComponent(ThreadSearch, store, { realModal: true });
+    try {
+      for (const query of ['claude', 'codex', 'claude']) {
+        store.openThreadSearch();
+        await settleModalTransition();
+        const modal = mounted.container.querySelector('.thread-search-modal');
+        const previousInput = mounted.container.querySelector('input.arco-input');
+        assert.ok(modal, 'the real Modal must render inside the Search container');
+        assert.ok(previousInput);
+        assert.equal(document.activeElement, previousInput);
+        previousInput.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+        previousInput.value = 'unfinished';
+        previousInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await nextTick();
+        assert.equal(store.titleDraft, '', 'unfinished composition must not publish');
+
+        modal.querySelector('.arco-modal-close-btn').click();
+        await nextTick();
+        assert.equal(store.threadSearchVisible, false);
+        store.openThreadSearch();
+        await settleModalTransition();
+        const input = mounted.container.querySelector('input.arco-input');
+        assert.equal(mounted.container.querySelector('.thread-search-modal'), modal, 'the Modal stays retained');
+        assert.equal(document.activeElement, input);
+        assert.equal(input.value, '');
+        input.value = query;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await settleTitleQuery();
+        assert.equal(store.titleDraft, query);
+        assert.equal(store.titleQuery, query);
+        assert.equal(input.value, query);
+        assert.notEqual(input, previousInput, 'reopen replaces the Input without waiting for the leave transition');
+        assert.equal(mounted.container.querySelectorAll('.thread-search__result').length, 1);
+        assert.equal(
+          mounted.container.querySelector('.thread-search__result .thread-card-stub').textContent,
+          store.threadSearchResults[0].title,
+        );
+        assert.deepEqual(mounted.errors, []);
+        store.closeThreadSearch();
+        await settleModalTransition();
+      }
+    } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  await test('real Modal Input publishes completed composition and leaves composing keys to the IME', async () => {
+    const store = actualStore();
+    store.threads[0].title = '中文搜索';
+    const mounted = await mountComponent(ThreadSearch, store, { realModal: true });
+    try {
+      store.openThreadSearch();
+      await settleModalTransition();
+      const input = mounted.container.querySelector('input.arco-input');
+      assert.equal(document.activeElement, input);
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      input.value = '中文';
+      input.dispatchEvent(new CompositionEvent('compositionupdate', { bubbles: true, data: '中文' }));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      for (const key of ['ArrowDown', 'ArrowUp', 'Enter']) {
+        const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, isComposing: true });
+        input.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, false, `${key} belongs to the active IME`);
+      }
+      await nextTick();
+      assert.equal(store.threadSearchVisible, true);
+      assert.equal(store.titleDraft, '');
+      assert.equal(store.threadSearchSelectedSessionKey, null);
+
+      input.value = '中文';
+      input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中文' }));
+      await nextTick();
+      await nextTick();
+      assert.equal(store.titleDraft, '中文');
+      assert.equal(store.titleQuery, '中文');
+      assert.equal(mounted.container.querySelectorAll('.thread-search__result').length, 1);
+      assert.equal(store.threadSearchSelectedSessionKey, 'claude:match');
+      input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+      await nextTick();
+      assert.equal(store.threadSearchVisible, false, 'Enter resumes Search behavior after composition ends');
+      assert.deepEqual(mounted.errors, []);
+    } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  await test('real Modal and store preserve raw input through rapid replacement, matching and snapshot renders', async () => {
+    const store = actualStore();
+    store.threads[0].title = 'Claude 中文 / release';
+    const mounted = await mountComponent(ThreadSearch, store, { realModal: true });
+    try {
+      store.openThreadSearch();
+      await settleModalTransition();
+      const input = mounted.container.querySelector('input.arco-input');
+      const type = async (value) => {
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await nextTick();
+        assert.equal(store.titleDraft, value);
+        assert.equal(input.value, value);
+      };
+
+      await type('  ClAuDe  ');
+      assert.equal(store.titleQuery, '  ClAuDe  ', 'leading search commits raw text');
+      await type('  CODEX  ');
+      const latest = '  ｃＬａＵｄｅ / 中文  ';
+      await type(latest);
+      assert.equal(store.titleQuery, '  ClAuDe  ', 'rapid replacement remains a trailing update');
+
+      globalThis.__eyesOnAgentsThreadSearchHarness.snapshot = {
+        threads: store.threads.map((thread) => ({ ...thread, isUnread: true })),
+      };
+      await store.loadSnapshot(true);
+      await nextTick();
+      assert.equal(input.value, latest, 'a snapshot rerender cannot replace raw text');
+      assert.equal(store.titleDraft, latest);
+      await settleTitleQuery();
+      assert.equal(store.titleQuery, latest);
+      assert.equal(input.value, latest);
+      assert.equal(store.hasThreadSearchQueryTokens, true);
+      assert.deepEqual(store.threadSearchResults.map((thread) => thread.sessionKey), ['claude:match']);
+      assert.equal(mounted.container.querySelectorAll('.thread-search__result').length, 1);
+      assert.equal(store.focusThreads.length, 2, 'search never filters the Focus board');
+
+      await type('  - _ / ： |  ');
+      await settleTitleQuery();
+      assert.equal(store.hasThreadSearchQueryTokens, false);
+      assert.equal(input.value, '  - _ / ： |  ', 'separator normalization does not rewrite the field');
+      assert.equal(store.threadSearchResults.length, 0);
+      const clearButton = mounted.container.querySelector('.arco-input-clear-btn');
+      assert.ok(clearButton);
+      clearButton.click();
+      await nextTick();
+      await settleTitleQuery();
+      assert.equal(input.value, '');
+      assert.equal(store.titleDraft, '');
+      assert.equal(store.titleQuery, '');
+      assert.deepEqual(mounted.errors, []);
+    } finally {
+      store.closeThreadSearch();
+      mounted.app.unmount();
+    }
+  });
+
+  await test('actual store trailing callbacks cannot overwrite a new raw draft after close and reopen', async () => {
+    const store = actualStore();
+    const mounted = await mountComponent(ThreadSearch, store, { realModal: true });
+    try {
+      store.openThreadSearch();
+      await settleModalTransition();
+      let input = mounted.container.querySelector('input.arco-input');
+      for (const value of ['claude', 'old pending query']) {
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const previousRevision = store.threadSearchRevision;
+      store.closeThreadSearch();
+      store.openThreadSearch();
+      await settleModalTransition();
+      input = mounted.container.querySelector('input.arco-input');
+      input.value = '  CoDeX  ';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      store.commitTitleQuery(previousRevision);
+      await settleTitleQuery();
+      assert.equal(input.value, '  CoDeX  ');
+      assert.equal(store.titleDraft, '  CoDeX  ');
+      assert.equal(store.titleQuery, '  CoDeX  ');
+      assert.deepEqual(store.threadSearchResults.map((thread) => thread.sessionKey), ['codex:other']);
+      store.closeThreadSearch();
+      await settleTitleQuery();
+      assert.equal(store.threadSearchVisible, false);
+      assert.equal(store.titleDraft, '');
+      assert.equal(store.titleQuery, '');
+      assert.deepEqual(mounted.errors, []);
+    } finally {
+      store.closeThreadSearch();
       mounted.app.unmount();
     }
   });

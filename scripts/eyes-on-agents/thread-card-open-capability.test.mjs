@@ -155,7 +155,7 @@ const stubsPlugin = {
 };
 
 const createStore = (overrides = {}) => {
-  const calls = { open: [], readState: [], copyPath: [], archive: [] };
+  const calls = { open: [], readState: [], copyPath: [], archive: [], localDelete: [] };
   return {
     calls,
     busyAction: null,
@@ -167,6 +167,7 @@ const createStore = (overrides = {}) => {
     setThreadUnread: async (sessionKey, isUnread) => calls.readState.push([sessionKey, isUnread]),
     copySessionPath: async (sessionKey) => calls.copyPath.push(sessionKey),
     archiveThread: async (sessionKey) => calls.archive.push(sessionKey),
+    deleteThreadFromBitterless: async (sessionKey) => calls.localDelete.push(sessionKey),
     ...overrides,
   };
 };
@@ -217,9 +218,9 @@ try {
     const html = await renderToString(app);
     return new JSDOM(html).window.document;
   };
-  const mount = async (thread) => {
+  const mount = async (thread, storeOverrides = {}) => {
     document.body.innerHTML = '<div id="thread-card-root"></div>';
-    const store = createStore();
+    const store = createStore(storeOverrides);
     globalThis.__eyesOnAgentsThreadCardHarness = { store };
     const host = document.getElementById('thread-card-root');
     const app = createApp({ render: () => h(ThreadCard, { thread }) });
@@ -241,7 +242,7 @@ try {
     .find((element) => {
       const wrapper = element.closest('.arco-trigger-popup-wrapper');
       return wrapper?.style.display !== 'none'
-        && /Archive|Copy session path|Mark as (read|unread)|Open in/.test(
+        && /Archive|Delete from Bitterless|Copy session path|Mark as (read|unread)|Open in/.test(
           element.textContent ?? '',
         );
     });
@@ -252,7 +253,7 @@ try {
     .find((element) => {
       const wrapper = element.closest('.arco-trigger-popup-wrapper');
       return wrapper?.style.display !== 'none'
-        && /Archive|Copy session path|Mark as (read|unread)|Open in/.test(
+        && /Archive|Delete from Bitterless|Copy session path|Mark as (read|unread)|Open in/.test(
           element.textContent ?? '',
         );
     });
@@ -263,6 +264,34 @@ try {
       .find((element) => pattern.test(element.textContent ?? ''));
     assert.ok(option, `Missing dropdown option matching ${pattern}`);
     option.click();
+    await nextTick();
+  };
+  const openCardMenu = async (host, menuKind) => {
+    if (menuKind === 'more') {
+      await openMore(host);
+      return activeDropdown();
+    }
+    // Let mounted capture and bubble listeners share a settled event timestamp before dispatch.
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    const card = host.querySelector('[name="eyesOnAgents__threadCard"]');
+    assert.ok(card);
+    const event = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 120,
+      clientY: 80,
+    });
+    card.dispatchEvent(event);
+    await nextTick();
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+    await nextTick();
+    assert.equal(event.defaultPrevented, true);
+    return activeContextDropdown();
+  };
+  const settleMenuTransition = async () => {
+    await new Promise((resolvePromise) => requestAnimationFrame(() =>
+      requestAnimationFrame(resolvePromise),
+    ));
     await nextTick();
   };
 
@@ -356,7 +385,7 @@ try {
       await openMore(mounted.host);
       const dropdown = activeDropdown();
       assert.ok(dropdown, 'a card with no Open and no Preview still opens its menu');
-      assert.deepEqual(optionTexts(dropdown), ['Mark as read']);
+      assert.deepEqual(optionTexts(dropdown), ['Mark as read', 'Delete from Bitterless']);
       await clickOption(dropdown, /Mark as read/);
       assert.deepEqual(
         mounted.store.calls.readState,
@@ -375,7 +404,7 @@ try {
       await openMore(mounted.host);
       const dropdown = activeDropdown();
       assert.ok(dropdown);
-      assert.deepEqual(optionTexts(dropdown), ['Mark as unread']);
+      assert.deepEqual(optionTexts(dropdown), ['Mark as unread', 'Delete from Bitterless']);
       await clickOption(dropdown, /Mark as unread/);
       assert.deepEqual(
         mounted.store.calls.readState,
@@ -399,7 +428,7 @@ try {
       assert.ok(dropdown);
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Mark as read'],
+        ['Mark as read', 'Delete from Bitterless'],
         'the label follows the stored flag even while no dot is visible',
       );
       assert.equal(
@@ -422,7 +451,7 @@ try {
       assert.ok(dropdown, 'CLI-only More must open its Arco Dropdown');
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Mark as read', 'Copy session path'],
+        ['Mark as read', 'Copy session path', 'Delete from Bitterless'],
         'a routeless Claude row offers no open item',
       );
       assert.deepEqual(mounted.store.calls.open, [], 'More must not bubble into card Open');
@@ -443,7 +472,7 @@ try {
       assert.ok(dropdown);
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Open in Claude (double click)', 'Mark as unread', 'Copy session path'],
+        ['Open in Claude (double click)', 'Mark as unread', 'Copy session path', 'Delete from Bitterless'],
         'the open item leads, names Claude, and discloses the gesture',
       );
       await clickOption(dropdown, /Open in Claude/);
@@ -466,8 +495,8 @@ try {
       assert.ok(dropdown, 'a Codex card owns a menu too');
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Open in Codex (double click)', 'Mark as unread', 'Archive'],
-        'a Codex row names Codex, exposes no session file path, and ends with Archive',
+        ['Open in Codex (double click)', 'Mark as unread', 'Archive', 'Delete from Bitterless'],
+        'a Codex row keeps Archive separate from the final local-delete action',
       );
       await clickOption(dropdown, /Open in Codex/);
       assert.deepEqual(mounted.store.calls.open, [codexThread.sessionKey]);
@@ -505,7 +534,7 @@ try {
       assert.ok(dropdown, 'right-click opens the pointer-aligned shared menu');
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Open in Codex (double click)', 'Mark as unread', 'Archive'],
+        ['Open in Codex (double click)', 'Mark as unread', 'Archive', 'Delete from Bitterless'],
       );
       const firstPopup = dropdown.closest('.arco-trigger-popup');
       assert.ok(firstPopup, 'the pointer menu owns an Arco positioning element');
@@ -561,12 +590,121 @@ try {
       assert.ok(dropdown);
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Open in Claude (double click)', 'Mark as unread', 'Copy session path'],
+        ['Open in Claude (double click)', 'Mark as unread', 'Copy session path', 'Delete from Bitterless'],
       );
       assert.deepEqual(mounted.store.calls.archive, []);
     } finally {
       mounted.app.unmount();
       document.body.innerHTML = '';
+    }
+  });
+
+  await test('both menus delete Codex and unroutable Claude zombies only from Bitterless', async () => {
+    for (const provider of ['codex', 'claude']) {
+      for (const menuKind of ['more', 'context']) {
+        const thread = createThread({
+          sessionKey: `${provider}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+          provider,
+          runtimeState: 'unknown',
+          desktopSessionId: null,
+          canCopySessionPath: false,
+        });
+        const mounted = await mount(thread);
+        try {
+          const dropdown = await openCardMenu(mounted.host, menuKind);
+          assert.ok(dropdown, `${provider} zombie opens its ${menuKind} menu`);
+          assert.equal(optionTexts(dropdown).at(-1), 'Delete from Bitterless');
+          if (provider === 'claude') {
+            assert.deepEqual(optionTexts(dropdown), ['Mark as unread', 'Delete from Bitterless']);
+          }
+          await clickOption(dropdown, /^Delete from Bitterless$/);
+          assert.deepEqual(mounted.store.calls, {
+            open: [],
+            readState: [],
+            copyPath: [],
+            archive: [],
+            localDelete: [thread.sessionKey],
+          }, `${provider} ${menuKind} forwards only the exact local-delete session key`);
+          assert.equal(
+            mounted.host.querySelector('button.thread-card__more-control').getAttribute('aria-expanded'),
+            'false',
+          );
+          await settleMenuTransition();
+          assert.equal(activeDropdown(), undefined, 'the action closes the shared menu');
+        } finally {
+          mounted.app.unmount();
+          document.body.innerHTML = '';
+        }
+      }
+    }
+  });
+
+  await test('local delete remains visible but cannot dispatch while another action is busy', async () => {
+    for (const provider of ['codex', 'claude']) {
+      for (const menuKind of ['more', 'context']) {
+        const thread = createThread({
+          sessionKey: `${provider}:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`,
+          provider,
+          runtimeState: 'unknown',
+          canCopySessionPath: false,
+        });
+        const mounted = await mount(thread, { busyAction: 'sync' });
+        try {
+          const dropdown = await openCardMenu(mounted.host, menuKind);
+          assert.ok(dropdown);
+          const option = dropdown.querySelector('[name="eyesOnAgents__threadCardMenu__deleteFromBitterless"]');
+          assert.ok(option, 'busy state disables local delete instead of hiding it');
+          assert.ok(option.classList.contains('arco-dropdown-option-disabled'));
+          await clickOption(dropdown, /^Delete from Bitterless$/);
+          assert.deepEqual(mounted.store.calls.localDelete, []);
+          assert.deepEqual(mounted.store.calls.archive, []);
+          assert.ok(mounted.host.querySelector('[name="eyesOnAgents__threadCard"]'));
+        } finally {
+          mounted.app.unmount();
+          document.body.innerHTML = '';
+        }
+      }
+    }
+  });
+
+  await test('both delete menu handlers close before awaiting failure and leave the card retryable', async () => {
+    for (const menuKind of ['more', 'context']) {
+      const thread = createThread({ runtimeState: 'unknown', canCopySessionPath: false });
+      const calls = [];
+      let rejectDeletion;
+      const deletion = new Promise((_resolve, reject) => { rejectDeletion = reject; });
+      const mounted = await mount(thread, {
+        deleteThreadFromBitterless: async (sessionKey) => {
+          calls.push(sessionKey);
+          await deletion;
+        },
+      });
+      const componentErrors = [];
+      mounted.app.config.errorHandler = (error) => componentErrors.push(error);
+      try {
+        let dropdown = await openCardMenu(mounted.host, menuKind);
+        assert.ok(dropdown);
+        await clickOption(dropdown, /^Delete from Bitterless$/);
+        assert.deepEqual(calls, [thread.sessionKey]);
+        await settleMenuTransition();
+        assert.equal(activeDropdown(), undefined, 'the menu closes while deletion is still pending');
+        assert.ok(mounted.host.querySelector('[name="eyesOnAgents__threadCard"]'));
+
+        rejectDeletion(new Error('Local session removal failed'));
+        await nextTick();
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+        assert.deepEqual(componentErrors, [], 'the store owns the action error presentation');
+        assert.ok(mounted.host.querySelector('[name="eyesOnAgents__threadCard"]'), 'failure does not remove the card');
+
+        dropdown = await openCardMenu(mounted.host, menuKind);
+        assert.ok(dropdown, 'the failed card menu can be reopened');
+        await clickOption(dropdown, /^Delete from Bitterless$/);
+        assert.deepEqual(calls, [thread.sessionKey, thread.sessionKey], 'the same action can be retried');
+        assert.deepEqual(mounted.store.calls.archive, []);
+      } finally {
+        mounted.app.unmount();
+        document.body.innerHTML = '';
+      }
     }
   });
 
@@ -599,7 +737,7 @@ try {
       assert.ok(dropdown);
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Mark as unread', 'Copy session path'],
+        ['Mark as unread', 'Copy session path', 'Delete from Bitterless'],
         'the retired terminal identity does not expose an open action',
       );
       assert.deepEqual(mounted.store.calls.open, []);
@@ -629,7 +767,7 @@ try {
       assert.ok(dropdown);
       assert.deepEqual(
         optionTexts(dropdown),
-        ['Open in Claude (double click)', 'Mark as unread', 'Copy session path'],
+        ['Open in Claude (double click)', 'Mark as unread', 'Copy session path', 'Delete from Bitterless'],
         'only the trusted Desktop route is exposed',
       );
     } finally {

@@ -30,7 +30,10 @@ import {
 import { resolveOnlyPreviewSettingsBounds } from '@main/onlypreview/onlyPreviewWindowBounds.service';
 import { clampOnlyPreviewSurfaceLayout } from '@main/onlypreview/onlyPreviewSurfaceLayout';
 import { OnlyPreviewStandaloneMount } from '@main/windows/onlyPreviewStandaloneMount';
-import type { OnlyPreviewMount } from '@main/onlypreview/onlyPreviewSurface.mount';
+import type {
+  OnlyPreviewMount,
+  OnlyPreviewMountKind
+} from '@main/onlypreview/onlyPreviewSurface.mount';
 import { onlyPreviewSearchBootstrapRegistry } from '@main/onlypreview/onlyPreviewSearchBootstrap.registry';
 import { onlyPreviewProjectIndexStateService } from '@main/onlypreview/onlyPreviewProjectIndexState.service';
 import { onlyPreviewViewLayerService } from '@main/onlypreview/views/onlyPreviewViewLayer.service';
@@ -207,6 +210,15 @@ const settingsBoundsForParent = (
 
 export class OnlyPreviewWindowHelper {
   baseWindow: BaseWindow | null = null;
+  /**
+   * A host transition is in progress, so the search runtime must OUTLIVE this teardown.
+   *
+   * The hidden search window is project-scoped, not window-scoped. Tearing it down on every toggle
+   * discarded any in-flight index build (copy-then-promote loses everything since the last promote)
+   * and left a dying runtime alive just long enough to tear down its successor. Ral 2026-09-07:
+   * 「来回切换的时候要不能影响索引的创建节奏,索引要能继续创建」.
+   */
+  private preserveSearchRuntime = false;
   // The composite's own parent. Every OnlyPreview layer is a child of this container rather than of
   // the window, so the four views move as one native object and the layer order inside them is
   // independent of whatever else a host window stacks. In this mount it simply fills the window's
@@ -390,6 +402,17 @@ export class OnlyPreviewWindowHelper {
     return this.requireStandaloneWindow(hostToken);
   }
 
+  getMountKind(hostToken: string): OnlyPreviewMountKind {
+    this.requireStandaloneWindow(hostToken);
+    if (!this.standaloneMount?.isAlive()) {
+      throw new OnlyPreviewContractError(
+        'HOST_NOT_FOUND',
+        'OnlyPreview host is no longer available.'
+      );
+    }
+    return this.standaloneMount.kind;
+  }
+
   async ensureStandalone(route: 'api' | 'explicit' = 'api'): Promise<OnlyPreviewHostCapability> {
     const currentWindow = this.baseWindow;
     const currentHost = this.getStandaloneHost();
@@ -471,6 +494,26 @@ export class OnlyPreviewWindowHelper {
       this.destroyStandalone();
       throw error;
     }
+  }
+
+  /** Stop the search runtime, unless a host transition asked to keep it. */
+  private stopSearchRuntimeUnlessPreserved(): void {
+    if (this.preserveSearchRuntime) return;
+    fileSearchWindowService.stop();
+  }
+
+  /**
+   * Mark the start/end of a host transition.
+   *
+   * Between these two calls the search runtime survives `destroyStandalone()` and the mount's
+   * `onHostGone`, and the next `attachSurface` adopts it instead of starting a new one.
+   */
+  beginHostTransition(): void {
+    this.preserveSearchRuntime = true;
+  }
+
+  endHostTransition(): void {
+    this.preserveSearchRuntime = false;
   }
 
   show(): void {
@@ -768,7 +811,7 @@ export class OnlyPreviewWindowHelper {
     this.standaloneMount = null;
     this.shellView = null;
     this.baseWindowState = null;
-    fileSearchWindowService.stop();
+    this.stopSearchRuntimeUnlessPreserved();
     onlyPreviewViewLayerService.stop();
     mount?.detach();
     closeView(shellView);
@@ -910,7 +953,11 @@ export class OnlyPreviewWindowHelper {
     this.standaloneMount = mount;
     const searchBootstrap = onlyPreviewSearchBootstrapRegistry.issue(host.hostToken);
     this.searchBootstrapToken = searchBootstrap.searchToken;
-    await fileSearchWindowService.start({
+    // Adopt the live runtime when a transition preserved it — its index build keeps going.
+    const rebound =
+      this.preserveSearchRuntime &&
+      fileSearchWindowService.rebindHost({ host, bootstrapToken: searchBootstrap.searchToken });
+    if (!rebound) await fileSearchWindowService.start({
       host,
       bootstrapToken: searchBootstrap.searchToken,
       broadcast: (eventName, params) => {
@@ -1049,6 +1096,9 @@ export class OnlyPreviewWindowHelper {
       bindChromeShortcuts: (webContents) => {
         this.bindNativeShortcuts(webContents, host, 'chrome');
         bindOnlyPreviewDevToolsShortcut(webContents);
+        // The raw Chromium surface is not built by `createView`, so it needs the same offer to the
+        // host — otherwise Cmd+W with a PDF focused would still take the Cowork window.
+        this.standaloneMount?.registerSurfaceView(webContents);
       }
     });
     // Every overlay owner is now listening, so layouts may fan out to them. Seeded immediately
@@ -1104,7 +1154,7 @@ export class OnlyPreviewWindowHelper {
       this.baseWindow = null;
       this.shellView = null;
       this.baseWindowState = null;
-      fileSearchWindowService.stop();
+      this.stopSearchRuntimeUnlessPreserved();
       onlyPreviewAlertWindowService.destroy();
     onlyPreviewGlobalSearchWindowService.destroy();
       onlyPreviewPreviewRegionService.destroy();
@@ -1178,7 +1228,9 @@ export class OnlyPreviewWindowHelper {
           previewRuntimeToken,
           officeBrokerCapability,
           previewReadBrokerCapability,
-          openTag
+          openTag,
+          // The Shell renders the window controls this host can honour, and nothing else.
+          this.standaloneMount?.kind === 'cowork' ? 'cowork' : 'window'
         )
       }
     });
@@ -1196,6 +1248,10 @@ export class OnlyPreviewWindowHelper {
       );
     }
     bindOnlyPreviewDevToolsShortcut(view.webContents);
+    // Every view the composite creates is offered to the host, which is how a Cowork tab gets its
+    // own chords (Cmd+W closing the tab rather than the window) over views that are not in its
+    // session. The standalone host wants nothing and ignores it.
+    this.standaloneMount?.registerSurfaceView(view.webContents);
     return view;
   }
 

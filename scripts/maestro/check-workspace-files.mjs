@@ -160,7 +160,8 @@ assert(chatPanel.includes('name="maestro__composer__workspace"'), 'composer shou
 assert(chatPanel.includes('@paste="onComposerPaste"'), 'composer should support pasted screenshots as path attachments')
 assert(chatPanel.includes('title="Set workspace"'), 'composer should allow setting workspace')
 assert(chatPanel.includes('title="Switch workspace"'), 'composer should allow switching workspace')
-assert(chatPanel.includes('title="Refresh workspace"'), 'composer should allow refreshing workspace')
+assert(!chatPanel.includes('title="Refresh workspace"') && !chatPanel.includes('@click="refreshWorkspace"'), 'composer should not render workspace Refresh')
+assert(messageStore.includes('async refreshWorkspace(sessionId: string)'), 'workspace refresh store API should remain available')
 assert(chatPanel.includes('title="Clear workspace"'), 'composer should allow clearing workspace')
 assert(chatPanel.includes('@keydown="onComposerKeydown"'), 'composer keyboard handling should stay attached')
 

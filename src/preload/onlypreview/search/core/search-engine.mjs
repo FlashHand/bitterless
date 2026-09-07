@@ -19,8 +19,13 @@ import { createOnlyPreviewSearchDiagnostics } from '../../../../shared/onlyprevi
 import { executeOnlyPreviewGlobalSearch } from './global-search-executor.mjs';
 import { previewOnlyPreviewGlobalSearchResult } from './global-search-preview.mjs';
 import { reclaimInterruptedSqliteArtifacts } from './sqlite-artifacts.mjs';
-import { loadOnlyPreviewWorkspaceConfig, pathIsWithin } from './workspace-config.mjs';
+import {
+  loadOnlyPreviewWorkspaceConfig,
+  readOnlyPreviewWorkspaceConfigSignature,
+  pathIsWithin
+} from './workspace-config.mjs';
 import { createWorkspaceWatchController } from './watch-controller.mjs';
+import { createWorkspaceConfigReconciler } from './config-reconciler.mjs';
 import {
   createOnlyPreviewSearchWatchReconciler,
   sortOnlyPreviewTreeEntries
@@ -92,6 +97,12 @@ export class OnlyPreviewSearchEngine {
     onWatchCommit,
     prepareOfficePreview,
     readWorkspaceFile = readSingleWorkspaceFile,
+    readWorkspaceConfig = loadOnlyPreviewWorkspaceConfig,
+    configClock,
+    watchFactory,
+    onConfigError = () => console.warn(
+      '[onlypreview-search] Workspace configuration could not be applied; keeping the previous policy.'
+    ),
     diagnostics = createOnlyPreviewSearchDiagnostics()
   } = {}) {
     this.onBrowseListing = onBrowseListing;
@@ -100,6 +111,10 @@ export class OnlyPreviewSearchEngine {
     this.onWatchCommit = onWatchCommit;
     this.prepareOfficePreview = prepareOfficePreview;
     this.diagnostics = diagnostics;
+    this.readWorkspaceConfig = readWorkspaceConfig;
+    this.configClock = configClock;
+    this.watchFactory = watchFactory;
+    this.onConfigError = onConfigError;
     this.selectedFilePriority = createOnlyPreviewSelectedFilePriorityLane({
       readWorkspaceFile,
       resolveContext: () => this
@@ -223,6 +238,7 @@ export class OnlyPreviewSearchEngine {
   }
 
   async initialize({ workspaceId, generation, rootPath, databasePath }) {
+    this.configReconciler?.close();
     const diagnostic = { tag: this.diagnostics.nextTag('i'), startedAt: this.diagnostics.now() };
     this.diagnostics.emit('initialize-start', { tag: diagnostic.tag, generation });
     this.globalSearchSession.revoke();
@@ -274,7 +290,7 @@ export class OnlyPreviewSearchEngine {
     this.watchCommitRevision = 0;
     this.rootPath = rootRealPath;
     this.databasePath = databaseRealPath;
-    this.config = await loadOnlyPreviewWorkspaceConfig(rootRealPath);
+    this.config = await this.readWorkspaceConfig(rootRealPath);
     this.searchPolicy = createTraversalPolicy(this.config);
     this.browseIndex = createOnlyPreviewBrowseIndex(this.rootPath, {
       searchPolicy: this.searchPolicy
@@ -301,8 +317,24 @@ export class OnlyPreviewSearchEngine {
       ? seedIndex.readTreeSnapshot({ searchPolicy: this.searchPolicy })
       : { entries: [], maxDepthReached: false, treeMetadataReady: false };
     const watchRevision = ++this.watchRevision;
+    const configReconciler = createWorkspaceConfigReconciler({
+      enqueue: (operation) => this.enqueue(operation),
+      readConfig: () => this.readWorkspaceConfig(rootRealPath),
+      readSignature: () => readOnlyPreviewWorkspaceConfigSignature(rootRealPath),
+      initialSignature: await readOnlyPreviewWorkspaceConfigSignature(rootRealPath),
+      applyConfig: async (config) => {
+        if (config.hash !== this.config.hash) await this.refreshFromWatchInternal(config);
+      },
+      isCurrent: () => this.watchRevision === watchRevision,
+      onError: this.onConfigError,
+      clock: this.configClock
+    });
+    this.configReconciler = configReconciler;
     this.watchController = createWorkspaceWatchController({
       rootPath: this.rootPath,
+      watchFactory: this.watchFactory,
+      onConfigChange: () => configReconciler.markChanged(),
+      onConfigProbe: () => configReconciler.probe(),
       onReconcile: (change) =>
         this.enqueue(async () => {
           if (this.watchRevision !== watchRevision) return;
@@ -569,11 +601,10 @@ export class OnlyPreviewSearchEngine {
     return await this.refreshPromise;
   }
 
-  async refreshInternal() {
+  async refreshInternal(nextConfig = this.config) {
     const previousConfig = this.config;
     const previousSearchPolicy = this.searchPolicy;
     const previousIdentity = this.identity;
-    const nextConfig = await loadOnlyPreviewWorkspaceConfig(this.rootPath);
     const configChanged = nextConfig.hash !== this.config.hash;
     this.config = nextConfig;
     this.searchPolicy = createTraversalPolicy(nextConfig);
@@ -626,8 +657,8 @@ export class OnlyPreviewSearchEngine {
     }
   }
 
-  async refreshFromWatchInternal() {
-    const build = this.refreshInternal();
+  async refreshFromWatchInternal(nextConfig = this.config) {
+    const build = this.refreshInternal(nextConfig);
     this.currentBuildPromise = build;
     try {
       return await build;
@@ -805,11 +836,14 @@ export class OnlyPreviewSearchEngine {
   }
 
   async shutdown() {
+    this.configReconciler?.close();
     this.cancelBuild();
     return await this.enqueue(async () => await this.shutdownInternal());
   }
 
   async shutdownInternal() {
+    this.configReconciler?.close();
+    this.configReconciler = undefined;
     this.buildEpoch += 1;
     this.selectedFilePriority.revoke();
     this.globalSearchSession.revoke();

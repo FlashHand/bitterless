@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { IconFolder, IconFolderOpen, IconListDetails, IconLoader2, IconMicrophone, IconPaperclip, IconPlayerPause, IconPlayerStop, IconPlus, IconRefresh, IconSend2, IconX } from '@tabler/icons-vue'
+import { IconFolder, IconFolderOpen, IconFolderSearch, IconListDetails, IconLoader2, IconMicrophone, IconPaperclip, IconPlayerPause, IconPlayerStop, IconPlus, IconSend2, IconX } from '@tabler/icons-vue'
 import AttachmentCard from './AttachmentCard.vue'
 import { Button, Drawer, Message, Modal, Tooltip } from '@arco-design/web-vue'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
@@ -430,6 +430,20 @@ function onComposerKeydown(event: KeyboardEvent): void {
   void send()
 }
 
+/**
+ * 芯片左段:打开**这个目录本身**,在 OnlyPreview 里(Ral 2026-09-07)。
+ *
+ * 原来这里挂的是 `chooseWorkspace` —— 点一个写着「你在哪个目录」的控件,弹出来的是「你想去哪个
+ * 目录」。名实不符,而控件骗人比没有控件更糟;切换挪到旁边自己的按钮上去了。
+ */
+async function revealWorkspace(): Promise<void> {
+  if (turnLocked.value || props.session.archivedAt) return
+  const path = workspace.value?.path
+  if (!path) return
+  const result = await coach.openWorkspaceInPreview({ path }).catch(() => null)
+  if (!result?.ok) Message.error(`Cannot open ${path}`)
+}
+
 async function chooseWorkspace(): Promise<void> {
   if (turnLocked.value || props.session.archivedAt) return
   await messageStore.chooseWorkspace(props.session.id)
@@ -438,11 +452,6 @@ async function chooseWorkspace(): Promise<void> {
 async function clearWorkspace(): Promise<void> {
   if (turnLocked.value || props.session.archivedAt) return
   await messageStore.clearWorkspace(props.session.id)
-}
-
-async function refreshWorkspace(): Promise<void> {
-  if (turnLocked.value || props.session.archivedAt) return
-  await messageStore.refreshWorkspace(props.session.id)
 }
 
 function setHistoryContainer(el: HTMLElement | null): void {
@@ -622,8 +631,8 @@ function setHistoryContainer(el: HTMLElement | null): void {
                 type="text"
                 size="mini"
                 :disabled="turnLocked || Boolean(session.archivedAt)"
-                title="Switch workspace"
-                @click="chooseWorkspace"
+                title="Open workspace in OnlyPreview"
+                @click="revealWorkspace"
               >
                 <template #icon>
                   <IconFolderOpen class="chat-panel__workspace-icon" :size="16" stroke="1.8" />
@@ -633,11 +642,11 @@ function setHistoryContainer(el: HTMLElement | null): void {
               <IconBtn
                 class="chat-panel__workspace-action"
                 :disabled="turnLocked || Boolean(session.archivedAt)"
-                title="Refresh workspace"
-                aria-label="Refresh workspace"
-                @click="refreshWorkspace"
+                title="Switch workspace"
+                aria-label="Switch workspace"
+                @click="chooseWorkspace"
               >
-                <IconRefresh class="chat-panel__button-icon" :size="13" stroke="2" />
+                <IconFolderSearch class="chat-panel__button-icon" :size="13" stroke="2" />
               </IconBtn>
               <IconBtn
                 class="chat-panel__workspace-action chat-panel__workspace-action--danger"

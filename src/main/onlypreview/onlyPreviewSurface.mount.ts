@@ -1,4 +1,4 @@
-import type { BaseWindow, View } from 'electron';
+import type { BaseWindow, View, WebContents } from 'electron';
 import type { OnlyPreviewSurfaceSize } from './onlyPreviewSurfaceLayout';
 
 export type OnlyPreviewMountKind = 'standalone' | 'cowork';
@@ -98,6 +98,15 @@ export interface OnlyPreviewMount {
    * tab. Distinct from `requestClose()`, which is the owner asking; this is the composite finishing.
    */
   destroyHost(): void;
+
+  /**
+   * Hand the host one of the composite's views, as it is created.
+   *
+   * A host may need to know a view is part of this mini app even though the view is not in the
+   * host's own session — a Cowork tab enrolls it with Maestro's tab chords so Cmd+W closes the tab
+   * rather than the window. The standalone host needs nothing: its window already owns its chords.
+   */
+  registerSurfaceView(webContents: WebContents): void;
 
   reportTitle(title: string): void;
 

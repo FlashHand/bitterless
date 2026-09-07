@@ -62,6 +62,18 @@ const toSnapshot = (workspace: OnlyPreviewWorkspaceRecord): OnlyPreviewWorkspace
     : {})
 });
 
+/**
+ * Where a target sits relative to the bound project.
+ *
+ * `unsettled` is deliberately NOT merged into `outside`: the caller reacts to "outside" by
+ * clearing project state, and doing that on a transient answer is the bug this type exists to
+ * prevent.
+ */
+export type OnlyPreviewProjectTargetClassification =
+  | { kind: 'project'; fileRef: OnlyPreviewFileRef }
+  | { kind: 'outside' }
+  | { kind: 'unsettled' };
+
 export class OnlyPreviewWorkspaceRegistry {
   private readonly workspaces = new Map<string, OnlyPreviewWorkspaceRecord>();
   private readonly projectWorkspaceByHost = new Map<string, string>();
@@ -140,19 +152,34 @@ export class OnlyPreviewWorkspaceRegistry {
     return { workspaceId: record.workspaceId, relativePath: selectedRelativePath };
   }
 
-  resolveProjectFileRef(
+  /**
+   * Is this target a file inside the bound project, outside it, or not yet knowable?
+   *
+   * The three answers used to be one: `resolveProjectFileRef` returned `null` for all of them. That
+   * conflation is the defect behind
+   * `docs/issues/onlypreview-external-preview-clears-project-selection.md` — the caller treats
+   * "no" as "external" and clears the project's tree selection, so a target that IS inside the
+   * project loses its selection whenever the answer happened to be `unsettled` rather than
+   * `outside`. `unsettled` is a moment in time; `outside` is a fact about the path. Only the second
+   * one justifies clearing anything.
+   */
+  classifyProjectTarget(
     hostToken: unknown,
     target: OnlyPreviewValidatedTarget
-  ): OnlyPreviewFileRef | null {
+  ): OnlyPreviewProjectTargetClassification {
     const host = this.hosts.require(hostToken, ['content']);
     const selectedRelativePath = this.validateTarget(target);
-    if (!selectedRelativePath) return null;
+    // Not a regular file at all — nothing about the project can make it one.
+    if (!selectedRelativePath) return { kind: 'outside' };
     const workspaceId = this.projectWorkspaceByHost.get(host.hostToken);
-    if (!workspaceId) return null;
+    // No project bound: there is no selection to preserve, so this is settled rather than unknown.
+    if (!workspaceId) return { kind: 'outside' };
     const workspace = this.workspaces.get(workspaceId);
-    if (!workspace || workspace.kind !== 'project' || workspace.projectAuthorityPending) {
-      return null;
-    }
+    if (!workspace || workspace.kind !== 'project') return { kind: 'outside' };
+    // THE transient case. The project is bound but its authority has not settled, so containment
+    // cannot be decided yet — and answering "outside" here is what clears a selection that should
+    // have survived.
+    if (workspace.projectAuthorityPending) return { kind: 'unsettled' };
     const absoluteTarget = resolve(target.rootRealPath, selectedRelativePath);
     const projectRelativePath = relative(workspace.rootRealPath, absoluteTarget);
     if (
@@ -161,12 +188,29 @@ export class OnlyPreviewWorkspaceRegistry {
       projectRelativePath === '..' ||
       projectRelativePath.startsWith(`..${sep}`)
     ) {
-      return null;
+      return { kind: 'outside' };
     }
     return {
-      workspaceId: workspace.workspaceId,
-      relativePath: normalizeOnlyPreviewRelativePath(projectRelativePath.split(sep).join('/'))
+      kind: 'project',
+      fileRef: {
+        workspaceId: workspace.workspaceId,
+        relativePath: normalizeOnlyPreviewRelativePath(projectRelativePath.split(sep).join('/'))
+      }
     };
+  }
+
+  /**
+   * The two-answer form, kept for callers that only need "is it in the project".
+   *
+   * Anything that also decides whether to CLEAR project state must use `classifyProjectTarget`
+   * instead — this signature cannot express the difference that matters there.
+   */
+  resolveProjectFileRef(
+    hostToken: unknown,
+    target: OnlyPreviewValidatedTarget
+  ): OnlyPreviewFileRef | null {
+    const classification = this.classifyProjectTarget(hostToken, target);
+    return classification.kind === 'project' ? classification.fileRef : null;
   }
 
   getPreviewAuthorityItemRef(hostToken: unknown, value: unknown): OnlyPreviewPreviewAuthorityRef {
@@ -255,6 +299,29 @@ export class OnlyPreviewWorkspaceRegistry {
     return workspace?.kind === 'project' && !workspace.projectAuthorityPending
       ? toSnapshot(workspace)
       : null;
+  }
+
+  /**
+   * Is `rootRealPath` already this host's bound, settled project root?
+   *
+   * A predicate rather than a `rootRealPath` getter on purpose. `toSnapshot` deliberately keeps the
+   * real path out of `OnlyPreviewWorkspace` — that path is what file authority is built on, so
+   * handing it out to answer a comparison would widen the surface to save a line.
+   *
+   * Returns false while the authority is still pending, matching `restore()`. "Not settled yet" is
+   * not "already open": short-circuiting on a half-bound workspace would skip the bind that is
+   * still needed.
+   */
+  isActiveProjectRoot(hostToken: unknown, rootRealPath: string): boolean {
+    const host = this.hosts.require(hostToken, ['content']);
+    if (typeof rootRealPath !== 'string' || !rootRealPath) return false;
+    const workspaceId = this.projectWorkspaceByHost.get(host.hostToken);
+    if (!workspaceId) return false;
+    const workspace = this.workspaces.get(workspaceId);
+    if (!workspace || workspace.kind !== 'project' || workspace.projectAuthorityPending) {
+      return false;
+    }
+    return workspace.rootRealPath === rootRealPath;
   }
 
   requireWorkspace(hostToken: unknown, workspaceId: unknown): OnlyPreviewWorkspaceRecord {

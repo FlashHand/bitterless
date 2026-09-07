@@ -61,6 +61,11 @@ controller exposes only the narrow XPC and tool facades required by existing cal
 
 ## Behavior invariants
 
+- The Shell's measured operation/Control bounds remain authoritative after its first report.
+  Deferred Workbench creation and window resize must preserve the current sidebar layout until
+  the Shell reports updated measurements. Native Control is hidden when its drawable bounds are
+  empty. Bounds suppression must agree with the actual native geometry, and window reset clears
+  remembered layout. See [Chat overlap regression](../issues/maestro-chat-overlays-tab-content.md).
 - XPC methods, parameter/return shapes, and broadcast channel names remain unchanged.
 - Startup order remains: create the top-level window, attach all child views, load the pinned
   bundled Home tab and first-party renderers, then reveal the window after the readiness fence.

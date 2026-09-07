@@ -854,6 +854,72 @@ try {
     'lifecycle cancellation before acknowledgement must not write local archive state'
   );
 
+  const localDeleteCalls = [];
+  let localDeleteBroadcasts = 0;
+  let localDeleteFailure = null;
+  let localDeleteThreads = [{
+    sessionKey: SESSION_KEY, provider: 'codex', threadId: THREAD_ID,
+    runtimeState: 'unknown', statusSource: 'discovery', statusObservedAt: null,
+    isUnread: false
+  }, {
+    sessionKey: `claude:${CLAUDE_ARCHIVE_ID}`, provider: 'claude', threadId: CLAUDE_ARCHIVE_ID,
+    desktopSessionId: null, runtimeState: 'unknown', statusSource: 'discovery',
+    statusObservedAt: null, isUnread: false
+  }];
+  const rejectProviderOperation = () => {
+    throw new Error('local deletion must not invoke a provider');
+  };
+  const localDeleteService = new EyesOnAgentsService({
+    repository: {
+      ...repository,
+      getSnapshot: async () => ({ domains: [], threads: localDeleteThreads }),
+      deleteThreadFromBitterless: async ({ sessionKey }) => {
+        if (localDeleteFailure) throw localDeleteFailure;
+        localDeleteCalls.push(sessionKey);
+        localDeleteThreads = localDeleteThreads.filter((thread) => thread.sessionKey !== sessionKey);
+      },
+      setThreadArchived: rejectProviderOperation,
+      upsertDiscoveredThreads: rejectProviderOperation,
+      upsertThreadSnapshots: rejectProviderOperation,
+      upsertClaudeInventory: rejectProviderOperation
+    },
+    settings,
+    appServer: {
+      ...appServer,
+      isConnected: () => false,
+      connect: rejectProviderOperation,
+      archiveThread: rejectProviderOperation,
+      listThreads: rejectProviderOperation,
+      listArchivedThreads: rejectProviderOperation
+    },
+    desktopBridge,
+    bridgeListener,
+    openExternal: rejectProviderOperation,
+    broadcastChanged: () => { localDeleteBroadcasts += 1; }
+  });
+  localDeleteService.claudeProviderPreferenceEnabled = false;
+  localDeleteFailure = new Error('local transaction rejected');
+  await assert.rejects(
+    localDeleteService.deleteThreadFromBitterless({ sessionKey: SESSION_KEY }),
+    /local transaction rejected/
+  );
+  assert.equal(localDeleteThreads.length, 2, 'write failure preserves the local mirror');
+  assert.equal(localDeleteBroadcasts, 0);
+  localDeleteFailure = null;
+  const localDeletedSnapshot = await localDeleteService.deleteThreadFromBitterless({
+    sessionKey: SESSION_KEY
+  });
+  assert.equal(localDeletedSnapshot.threads.some((thread) => thread.sessionKey === SESSION_KEY), false);
+  await localDeleteService.deleteThreadFromBitterless({ sessionKey: `claude:${CLAUDE_ARCHIVE_ID}` });
+  await localDeleteService.deleteThreadFromBitterless({ sessionKey: SESSION_KEY });
+  assert.deepEqual(localDeleteCalls, [SESSION_KEY, `claude:${CLAUDE_ARCHIVE_ID}`, SESSION_KEY]);
+  assert.equal(localDeleteThreads.length, 0, 'disabled-provider zombies are removable too');
+  assert.equal(localDeleteBroadcasts, 3, 'successful and idempotent deletes broadcast');
+  await assert.rejects(
+    localDeleteService.deleteThreadFromBitterless({ sessionKey: 'codex:not-a-uuid' }), /UUID/
+  );
+  assert.equal(localDeleteCalls.length, 3, 'invalid keys never reach persistence');
+
   const markAllReadCalls = [];
   let markAllReadChanged = false;
   let readSnapshotRevision = 0;

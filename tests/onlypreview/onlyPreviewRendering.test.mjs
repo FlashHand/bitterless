@@ -199,9 +199,9 @@ test('the Markdown component and renderer expose no front-matter presentation mo
   assert.doesNotMatch(i18n, /frontMatterTitle|frontMatterTruncated/);
   assert.doesNotMatch(service, /parseYaml|stringifyYaml|OnlyPreviewMarkdownFrontMatter/);
   assert.match(service, /stripOnlyPreviewFrontMatter/);
-  assert.match(service, /\| \{ ok: true; html: string \}/);
-  assert.match(service, /ALLOWED_ATTR: \[\]/);
-  assert.doesNotMatch(service, /ALLOWED_ATTR: \['/);
+  assert.match(service, /\| \{ ok: true; html: string; links: string\[\] \}/);
+  assert.match(service, /ALLOWED_ATTR: interactiveLinks/);
+  assert.match(service, /ALLOW_DATA_ATTR: false/);
 });
 
 test('Markdown admits by the original file-byte size without re-encoding tolerant text', () => {

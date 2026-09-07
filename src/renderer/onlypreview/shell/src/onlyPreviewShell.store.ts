@@ -55,7 +55,6 @@ import {
 } from '@shared/onlypreview/onlyPreviewSearchDiagnostics.mjs';
 import {
   buildOnlyPreviewRootedTreeRows,
-  getOnlyPreviewParentPath,
   moveOnlyPreviewTreeFocus,
   resolveOnlyPreviewCurrentDirectory,
   resolveOnlyPreviewTreeFocusPath,
@@ -63,6 +62,8 @@ import {
 } from './onlyPreviewTree.service';
 import { onlyPreviewProjectWidthPersistence as projectWidthPersistence } from './onlyPreviewProjectWidthPersistence.service';
 import { OnlyPreviewDeferredIndexService } from './onlyPreviewDeferredIndex.service';
+import { OnlyPreviewHostToggleStore } from './onlyPreviewHostToggle.store';
+import { OnlyPreviewTreeExpansionStore } from './onlyPreviewTreeExpansion.store';
 
 export class OnlyPreviewShellStore {
   private readonly deferredIndex: OnlyPreviewDeferredIndexService;
@@ -72,6 +73,7 @@ export class OnlyPreviewShellStore {
   workspace: OnlyPreviewWorkspace | null = null;
   index: OnlyPreviewIndex | null = null;
   settings: OnlyPreviewSettings | null = null;
+  readonly hostToggle = new OnlyPreviewHostToggleStore();
   selectedRelativePath = '';
   treeSelectedRelativePath: string | null = null;
   /** Set by `onlyPreviewTreeSelection.store.ts`, which documents why. */
@@ -81,6 +83,7 @@ export class OnlyPreviewShellStore {
   previewActionError = '';
   focusedRelativePath = '';
   expandedPaths = new Set<string>();
+  readonly treeExpansion = new OnlyPreviewTreeExpansionStore();
   projectWidth = projectWidthPersistence.restore(window.innerWidth);
   indexLoading = false;
   targetLoading = false;
@@ -146,6 +149,7 @@ export class OnlyPreviewShellStore {
       }
       await Promise.all([
         this.refreshSettings(),
+        this.refreshHostToggleState(),
         this.restoreWorkspace(true),
         this.syncPreviewPresentation(),
         onlyPreviewFindStore.initialize()
@@ -187,20 +191,15 @@ export class OnlyPreviewShellStore {
   async openSettings(): Promise<void> {
     const hostToken = onlyPreviewEnv.hostToken;
     if (!hostToken) return;
-    try {
-      unwrapOnlyPreviewResult(await onlyPreviewClient.openSettings({ hostToken }));
-    } catch (error) {
-      this.errorMessage = describeOnlyPreviewError(error);
-    }
+    await this.runWindowCommand(() => onlyPreviewClient.openSettings({ hostToken }));
+  }
+  refreshHostToggleState(): Promise<void> {
+    return this.hostToggle.refresh(this);
   }
   async openAgentSkillGuide(): Promise<void> {
     const hostToken = onlyPreviewEnv.hostToken;
     if (!hostToken) return;
-    try {
-      unwrapOnlyPreviewResult(await onlyPreviewClient.openAgentSkillGuide({ hostToken }));
-    } catch (error) {
-      this.errorMessage = describeOnlyPreviewError(error);
-    }
+    await this.runWindowCommand(() => onlyPreviewClient.openAgentSkillGuide({ hostToken }));
   }
   async minimizeWindow(): Promise<void> {
     const hostToken = onlyPreviewEnv.hostToken;
@@ -233,14 +232,7 @@ export class OnlyPreviewShellStore {
     return relativePath;
   }
   async locateSelectedFile(): Promise<string> {
-    if (!this.selectedRelativePath) return '';
-    this.collapseTreeSelection();
-    this.treeSelectedRelativePath = this.selectedRelativePath;
-    this.expandSelectedParents();
-    await this.loadSelectedParentListings();
-    if (!this.selectedEntry) return '';
-    this.focusedRelativePath = this.selectedEntry.relativePath;
-    return this.focusedRelativePath;
+    return await this.treeExpansion.locate(this, () => this.loadSelectedParentListings());
   }
   async showFileContextMenu(entry: OnlyPreviewIndexEntry | string): Promise<void> {
     if (typeof entry !== 'string' && entry.nodeKind === 'symlink') return;
@@ -361,6 +353,7 @@ export class OnlyPreviewShellStore {
       searchProgress: (progress) => this.applySearchProgress(progress),
       searchSnapshot: (snapshot) => void this.applySearchSnapshot(snapshot),
       settingsChanged: () => void this.refreshSettings(),
+      hostToggleChanged: () => void this.refreshHostToggleState(),
       focusProject: () => {
         this.focusProjectRevision += 1;
       },
@@ -465,7 +458,7 @@ export class OnlyPreviewShellStore {
     this.selectedRelativePath = workspace.selectedRelativePath || '';
     this.treeSelectedRelativePath = this.selectedRelativePath || null;
     this.focusedRelativePath = this.selectedRelativePath;
-    this.expandSelectedParents();
+    this.treeExpansion.expandSelectedParents(this);
     this.reportGlobalSearchContext();
     await this.deferredIndex.run(deferInitialIndex, () => generation === this.workspaceGeneration, () => this.initializeIndex());
     if (
@@ -494,7 +487,7 @@ export class OnlyPreviewShellStore {
       this.selectedRelativePath = workspace.selectedRelativePath || '';
       this.treeSelectedRelativePath = this.selectedRelativePath || null;
       this.focusedRelativePath = this.selectedRelativePath;
-      this.expandSelectedParents();
+      this.treeExpansion.expandSelectedParents(this);
       await this.loadSelectedParentListings();
       this.reportGlobalSearchContext();
     } catch (error) {
@@ -571,7 +564,7 @@ export class OnlyPreviewShellStore {
     if (snapshot.state !== 'ready') return;
     this.indexProgressState = settleOnlyPreviewSearchProgress(this.indexProgressState);
     this.reportGlobalSearchContext();
-    this.expandSelectedParents();
+    this.treeExpansion.expandSelectedParents(this);
     await this.loadSelectedParentListings();
   }
 
@@ -632,7 +625,7 @@ export class OnlyPreviewShellStore {
     this.index = result.index;
     if (result.rootReplaced) {
       this.expandedPaths.add('');
-      this.expandSelectedParents();
+      this.treeExpansion.expandSelectedParents(this);
     }
     if (commit.inheritedSelection === null) this.reportGlobalSearchContext();
     else this.centerTreeRow(commit.inheritedSelection);
@@ -649,6 +642,7 @@ export class OnlyPreviewShellStore {
   }
 
   private clearBrowseProjection(): void {
+    this.treeExpansion.reset();
     this.browseProjection.clear(this.expandedPaths);
     this.index = null;
   }
@@ -680,9 +674,11 @@ export class OnlyPreviewShellStore {
   ): Promise<void> {
     const context = this.getGlobalSearchContext();
     const browseContext = this.browseProjectionContext();
+    const revealRevision = this.treeExpansion.revision;
     await handleOnlyPreviewGlobalSearchDirectoryReveal({
       action, workspaceId: context?.workspaceId ?? null, generation: context?.generation ?? null,
       projection: this.browseProjection, browseContext, expandedPaths: this.expandedPaths,
+      isCurrent: () => revealRevision === this.treeExpansion.revision,
       applyResult: (result) => {
         if (browseContext) this.commitBrowseProjectionResult(result, browseContext);
       },
@@ -700,7 +696,7 @@ export class OnlyPreviewShellStore {
     this.treeSelectedRelativePath = relativePath;
     this.focusedRelativePath = relativePath;
     this.selectedRelativePath = relativePath;
-    this.expandSelectedParents();
+    this.treeExpansion.expandSelectedParents(this, true);
     this.reportGlobalSearchContext();
     try {
       unwrapOnlyPreviewResult(
@@ -719,14 +715,6 @@ export class OnlyPreviewShellStore {
       await this.syncSelection();
       if (generation !== this.selectionGeneration) return;
       this.errorMessage = describeOnlyPreviewError(error);
-    }
-  }
-
-  private expandSelectedParents(): void {
-    let current = getOnlyPreviewParentPath(this.selectedRelativePath);
-    while (current) {
-      this.expandedPaths.add(current);
-      current = getOnlyPreviewParentPath(current);
     }
   }
 

@@ -24,6 +24,51 @@
   overflow: hidden;
 }
 
+.onlypreview-preview-toolbar__navigation {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.onlypreview-preview-toolbar__navigation .onlypreview-preview-toolbar__navigation-button {
+  width: 27px;
+  min-width: 27px;
+  height: 27px;
+  flex-basis: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--onlypreview-muted);
+}
+
+.onlypreview-preview-toolbar__navigation .onlypreview-preview-toolbar__navigation-button:hover:not(:disabled) {
+  color: var(--onlypreview-royal);
+  background: var(--onlypreview-royal-soft);
+}
+
+.onlypreview-preview-toolbar__navigation .onlypreview-preview-toolbar__navigation-button[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+.onlypreview-preview-toolbar__navigation .onlypreview-preview-toolbar__navigation-button:focus-visible {
+  outline: 2px solid var(--onlypreview-focus);
+  outline-offset: -2px;
+}
+.onlypreview-preview-toolbar__navigation .onlypreview-preview-toolbar__navigation-button svg {
+  display: block;
+}
+.onlypreview-preview-toolbar__navigation-error {
+  display: inline-flex;
+  color: var(--onlypreview-danger);
+}
+
 .onlypreview-preview-toolbar__file-name,
 .onlypreview-preview-toolbar__file-path {
   min-width: 0;

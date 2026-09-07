@@ -62,7 +62,20 @@ if (env.mode === 'preview' && env.hostToken && env.previewRuntimeToken) {
   ) {
     throw new Error('Preview Read broker is unavailable.');
   }
-  const broker = createXpcPreloadEmitter<OnlyPreviewOfficeReadBrokerApi>('OnlyPreviewHandler');
+  // Annotated with the broker API, not left to inference, because `XpcEmitterOf<T>` erases every
+  // method's return type to `Promise<any>` (electron-xpc `dist/preload/index.d.ts`). The erased
+  // `any` then flows into `unwrapOnlyPreviewResult<T>(value: OnlyPreviewResult<T> | null): T`,
+  // where inference from `any` to a UNION yields no candidate for `T`, so `T` falls back to
+  // `unknown` — and every subsequent property read on the unwrapped value is an error. That is
+  // the whole of the 67 `TS18046` in this file under `strictNullChecks` (invisible here only
+  // because this repo sets `strict: false`; micromeet-cowork does not, mini-016 decision 1).
+  //
+  // No cast: `XpcEmitterOf<T>` is genuinely assignable to `T` when every method is async —
+  // parameters are preserved and `Promise<any>` is assignable to `Promise<Real>` — so tsc still
+  // checks that the handler really exposes these methods with these parameters. The declared
+  // returns are honest across IPC because every one is plain `OnlyPreviewResult<…>` data.
+  const broker: OnlyPreviewOfficeReadBrokerApi =
+    createXpcPreloadEmitter<OnlyPreviewOfficeReadBrokerApi>('OnlyPreviewHandler');
   const bridge: OnlyPreviewOfficeReadBridgeApi = Object.freeze({
     async readCurrentOfficeBytes(request) {
       let grantId: string | null = null;
@@ -145,7 +158,8 @@ if (env.mode === 'preview' && env.hostToken && env.previewRuntimeToken) {
   });
   contextBridge.exposeInMainWorld('onlyPreviewOfficeRead', bridge);
 
-  const previewBroker =
+  // Annotated for the same reason as `broker` above — see that comment.
+  const previewBroker: OnlyPreviewPreviewTextBrokerApi =
     createXpcPreloadEmitter<OnlyPreviewPreviewTextBrokerApi>('OnlyPreviewHandler');
   const previewBridge: OnlyPreviewPreviewTextBridgeApi = Object.freeze({
     async readCurrentText(request) {
@@ -161,7 +175,12 @@ if (env.mode === 'preview' && env.hostToken && env.previewRuntimeToken) {
           brokerCapability: previewReadBrokerCapability,
           hostToken: env.hostToken!,
           previewRuntimeToken: env.previewRuntimeToken!,
-          selectionRevision
+          // From `request`, not from the `let` above — matching `readCurrentOfficeBytes`, which
+          // does the same. The `let` is declared `number | null` because it exists for the
+          // cleanup at the end of this function, and reading it here makes `identity` carry that
+          // `null` into the two broker requests, neither of which accepts it. Same value either
+          // way; only the sibling path's spelling type-checks under `strictNullChecks`.
+          selectionRevision: request.selectionRevision
         };
         const opened = unwrapOnlyPreviewResult(
           await previewBroker.openCurrentPreviewText(identity)

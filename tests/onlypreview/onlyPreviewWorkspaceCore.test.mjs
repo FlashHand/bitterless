@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import assert from 'node:assert/strict';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
@@ -343,4 +343,152 @@ test('classifier keeps extension routing pure and defaults unrecognized small fi
   ]) {
     assert.equal(runtime.classifyOnlyPreviewExtension(relativePath), kind, relativePath);
   }
+});
+
+// `isActiveProjectRoot` — the predicate behind "re-opening the workspace that is already open is a
+// no-op" (docs/issues/onlypreview-reopening-same-workspace-reloads.md). Deliberately a predicate
+// rather than a `rootRealPath` getter: that path is what file authority is built on, so it stays
+// inside the registry.
+test('isActiveProjectRoot recognizes the bound project root and nothing else', async () => {
+  await withTempDirectory('onlypreview-active-root-', async (root) => {
+    const projectRoot = join(root, 'project');
+    const otherRoot = join(root, 'other');
+    mkdirSync(projectRoot);
+    mkdirSync(otherRoot);
+    const { hosts, workspaces } = createRegistries();
+    const host = hosts.issue('standalone', 'content');
+
+    // Nothing bound yet.
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, realpathSync(projectRoot)), false);
+
+    registerWorkspace(workspaces, host.hostToken, projectRoot);
+
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, realpathSync(projectRoot)), true);
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, realpathSync(otherRoot)), false);
+    // A descendant is not the root — re-opening a child directory is a real open, not a no-op.
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, join(realpathSync(projectRoot), 'sub')), false);
+    // Guards against a caller handing over something that is not a path at all.
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, ''), false);
+  });
+});
+
+test('isActiveProjectRoot stays false while the project authority is still pending', async () => {
+  await withTempDirectory('onlypreview-pending-root-', async (root) => {
+    const projectRoot = join(root, 'project');
+    mkdirSync(projectRoot);
+    const rootRealPath = realpathSync(projectRoot);
+    const { hosts, workspaces } = createRegistries();
+    const host = hosts.issue('standalone', 'content');
+
+    // Registered but NOT yet bound — this is the window the sibling bug exploits, and answering
+    // "already open" here would skip the bind that is still required.
+    workspaces.registerValidatedTarget(host.hostToken, {
+      rootRealPath,
+      displayPath: rootRealPath,
+      rootName: 'project'
+    });
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, rootRealPath), false);
+  });
+});
+
+test('isActiveProjectRoot requires a REAL path, which is why the caller passes inspected.rootRealPath', async () => {
+  await withTempDirectory('onlypreview-symlink-root-', async (root) => {
+    const projectRoot = join(root, 'project');
+    const linkPath = join(root, 'link');
+    mkdirSync(projectRoot);
+    symlinkSync(projectRoot, linkPath, 'dir');
+    const { hosts, workspaces } = createRegistries();
+    const host = hosts.issue('standalone', 'content');
+    registerWorkspace(workspaces, host.hostToken, projectRoot);
+
+    // Resolved first → the short-circuit hits, which is the reported case (a symlinked spelling, or
+    // macOS's /tmp vs /private/tmp, must not cause a needless re-bind).
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, realpathSync(linkPath)), true);
+    // Unresolved → false. Not a defect: it pins the precondition. `inspectTarget` real-paths the
+    // target before this is reached, so the caller never passes the raw spelling.
+    assert.equal(workspaces.isActiveProjectRoot(host.hostToken, linkPath), false);
+  });
+});
+
+// `classifyProjectTarget` — the three-way answer that replaced a single `null`
+// (docs/issues/onlypreview-external-preview-clears-project-selection.md). The distinction that
+// matters: the caller clears the project's tree selection on `outside` and must NOT on `unsettled`.
+test('classifyProjectTarget separates inside, outside, and not-yet-knowable', async () => {
+  await withTempDirectory('onlypreview-classify-', async (root) => {
+    const projectRoot = join(root, 'project');
+    const outsideRoot = join(root, 'outside');
+    mkdirSync(join(projectRoot, 'nested'), { recursive: true });
+    mkdirSync(outsideRoot);
+    const { hosts, workspaces } = createRegistries();
+    const host = hosts.issue('standalone', 'content');
+    const projectReal = realpathSync(projectRoot);
+    const outsideReal = realpathSync(outsideRoot);
+
+    const targetIn = (relativePath) => ({
+      rootRealPath: projectReal,
+      displayPath: projectReal,
+      rootName: 'project',
+      selectedRelativePath: relativePath
+    });
+
+    // Bound but pending — the window an external preview can arrive in. `restore()` deliberately
+    // returns null here, so the id comes from the registration itself.
+    const registered = workspaces.registerValidatedTarget(host.hostToken, {
+      rootRealPath: projectReal,
+      displayPath: projectReal,
+      rootName: 'project'
+    });
+    assert.equal(workspaces.classifyProjectTarget(host.hostToken, targetIn('a.md')).kind, 'unsettled');
+
+    // Settle that SAME workspace; the identical target becomes decidable.
+    workspaces.bindProjectAuthority(host.hostToken, registered.workspaceId, 1);
+
+    const inside = workspaces.classifyProjectTarget(host.hostToken, targetIn('nested/a.md'));
+    assert.equal(inside.kind, 'project');
+    assert.equal(inside.fileRef.relativePath, 'nested/a.md');
+
+    // A sibling directory's file is genuinely outside — this is the only case that may clear.
+    assert.equal(
+      workspaces.classifyProjectTarget(host.hostToken, {
+        rootRealPath: outsideReal,
+        displayPath: outsideReal,
+        rootName: 'outside',
+        selectedRelativePath: 'b.md'
+      }).kind,
+      'outside'
+    );
+
+    // A directory target (no selected file) is not a preview candidate at all.
+    assert.equal(
+      workspaces.classifyProjectTarget(host.hostToken, {
+        rootRealPath: projectReal,
+        displayPath: projectReal,
+        rootName: 'project'
+      }).kind,
+      'outside'
+    );
+  });
+});
+
+test('resolveProjectFileRef stays the two-answer wrapper over classifyProjectTarget', async () => {
+  await withTempDirectory('onlypreview-classify-wrapper-', async (root) => {
+    const projectRoot = join(root, 'project');
+    mkdirSync(projectRoot);
+    const { hosts, workspaces } = createRegistries();
+    const host = hosts.issue('standalone', 'content');
+    registerWorkspace(workspaces, host.hostToken, projectRoot);
+    const projectReal = realpathSync(projectRoot);
+    const target = {
+      rootRealPath: projectReal,
+      displayPath: projectReal,
+      rootName: 'project',
+      selectedRelativePath: 'a.md'
+    };
+    // Same answer as the classifier for the one case it can express, and null for both others —
+    // which is exactly why anything that clears project state must not use this form.
+    assert.deepEqual(
+      workspaces.resolveProjectFileRef(host.hostToken, target),
+      workspaces.classifyProjectTarget(host.hostToken, target).fileRef
+    );
+  });
 });

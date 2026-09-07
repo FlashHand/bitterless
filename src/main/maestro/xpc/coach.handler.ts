@@ -436,8 +436,24 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     maestroWindowHelper.setViewBounds(params)
   }
 
-  async openOnlyPreviewTab(): Promise<void> {
-    await maestroWindowHelper.openOnlyPreviewTab()
+  async openCompositeTab(params: { id: string }): Promise<void> {
+    await maestroWindowHelper.openCompositeTab(params)
+  }
+
+  /**
+   * Open a workspace directory in OnlyPreview's tab (Ral 2026-09-07).
+   *
+   * The chat workspace chip used to put the folder picker behind its label, so "click the folder you
+   * are already in" answered by asking which folder you wanted — the same mismatch the Cowork port
+   * had, and the same fix: the label opens, a separate control switches.
+   *
+   * Order matters. The composite tab is built FIRST, because `openOnlyPreviewAbsoluteTarget` runs
+   * through `ensureStandalone()`, which returns the existing host when one is already mounted and
+   * otherwise creates a standalone WINDOW — hand it the target first and the button spawns a window
+   * instead of filling the tab.
+   */
+  async openWorkspaceInPreview(params: { path: string }): Promise<{ ok: boolean; error?: string }> {
+    return await maestroWindowHelper.openWorkspaceInPreview(params)
   }
 
   async activateTab(params: { id: string }): Promise<void> {

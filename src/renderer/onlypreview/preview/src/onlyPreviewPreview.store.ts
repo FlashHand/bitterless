@@ -90,6 +90,8 @@ class OnlyPreviewPreviewStore {
     );
   }
 
+  get markdownFragment(): string | undefined { return this.presentation?.fragment; }
+
   get previewMetadata(): OnlyPreviewMetadataViewModel | null {
     return buildOnlyPreviewMetadataViewModel({
       descriptor: this.descriptor,

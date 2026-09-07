@@ -16,6 +16,26 @@ import {
   withFakeTimeouts
 } from './onlyPreviewPreviewRegionTest.helper.mjs';
 
+test('Markdown target fragments survive public and Vue snapshots without reopening same-document anchors', async () => {
+  const { service } = createHarness();
+  service.updateBounds(host.hostToken, bounds);
+  await service.present(host.hostToken, fileRef('notes/linked.md'), undefined, 'target-section');
+  const vue = acknowledgeCurrentVue(service);
+  const before = service.snapshot(host.hostToken);
+  assert.equal(before.fragment, 'target-section');
+  assert.equal(service.snapshotForVue(host.hostToken, vue.previewRuntimeToken).fragment, 'target-section');
+  service.navigateFragment(host.hostToken, vue.previewRuntimeToken, before.selectionRevision, 'next-section');
+  const after = service.snapshot(host.hostToken);
+  assert.equal(after.fragment, 'next-section');
+  assert.equal(after.selectionRevision, before.selectionRevision);
+  assert.deepEqual(after.fileRef, before.fileRef);
+  assert.equal(state.openTraceRecords.length, 1);
+  assert.throws(() => service.navigateFragment(host.hostToken, 'forged-runtime', before.selectionRevision, 'bad'));
+  await service.present(host.hostToken, fileRef('notes/other.md'));
+  assert.equal(service.snapshot(host.hostToken).fragment, undefined);
+  assert.throws(() => service.navigateFragment(host.hostToken, vue.previewRuntimeToken, before.selectionRevision, 'stale'));
+});
+
 test('Preview open diagnostics terminate each revision once and stale revisions cannot finish the new trace', async () => {
   const { service } = createHarness();
   service.updateBounds(host.hostToken, bounds);

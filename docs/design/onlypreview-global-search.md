@@ -106,6 +106,9 @@ The Project tree renders one Shell-owned synthetic root row before the loaded ro
 
 - The root row represents `relativePath: ''` but is not persisted to SQLite and is not inserted
   into the search index. Its children are the existing root browse listing.
+- Project rows use 14px system text (13px + 1px) and a uniform 22px height. Only the synthetic root
+  uses Medium Bold (`600`); all other file/directory rows retain weight `500`. This does not change
+  Search/Recents typography or toolbar/header button metrics (Ral, 2026-09-07; task151).
 - It starts expanded on a newly opened/restored workspace. Collapsing it hides loaded descendants
   without discarding browse tokens or expansion state below it.
 - One click on a directory row outside its arrow selects it as Current directory without changing

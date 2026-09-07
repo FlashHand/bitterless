@@ -60,10 +60,6 @@ const STICK_TO_BOTTOM_THRESHOLD_PX = 120
 const uid = (): string => Math.random().toString(36).slice(2) + Date.now().toString(36)
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-const welcomeFor = (): string => {
-  return 'Hi — how can I help you today?'
-}
-
 const placeholderFor = (): string => {
   return 'Start a Maestro conversation…'
 }
@@ -239,7 +235,6 @@ export class MessageStoreState {
 
   createSession(options: SessionOptions): MessageSession {
     const session = this.createEmptySession(options)
-    session.messages.push(this.welcomeMessage(session))
     this.updateSessionContextUsage(session)
     this.sessions.push(session)
     this.restoreActiveTurn(session)
@@ -296,7 +291,6 @@ export class MessageStoreState {
     session.id = snapshot.sessionId
     session.createdAt = snapshot.startedAt
     session.updatedAt = Date.now()
-    session.messages.push(this.welcomeMessage(session))
     if (snapshot.state !== 'reserved') {
       session.messages.push(
         this.withTokenCount({
@@ -583,7 +577,7 @@ export class MessageStoreState {
     return true
   }
 
-  // Drop a never-used empty draft (welcome-only) so "new chat" doesn't leak it.
+  // Drop a never-used empty draft (including legacy welcome-only drafts).
   // A session with real content is left untouched — NOT archived: it stays sendable
   // and reachable via the history drawer. (Real archive is a later feature.)
   async discardIfEmpty(sessionId: string): Promise<void> {
@@ -819,7 +813,6 @@ export class MessageStoreState {
       title: options.title,
       intent: options.intent,
       placeholder: placeholderFor(),
-      welcome: welcomeFor(),
       // Maestro chats accept file attachments (read by the agent's read_file tool);
       // connector/customer-facing channels do not.
       allowFiles: (options.source || 'cowork') === 'cowork',
@@ -849,10 +842,6 @@ export class MessageStoreState {
     })
   }
 
-  private welcomeMessage(session: MessageSession): ChatMessage {
-    return this.withTokenCount({ id: 'welcome-' + uid(), source: 'cowork', role: 'ai', content: session.welcome, streaming: false, ts: Date.now() })
-  }
-
   finishAssistant(msg: ChatMessage, full: string): void {
     const session = this.sessions.find((item) => item.messages.includes(msg))
     if (session) this.flushStreamBuffer(session.id)
@@ -868,7 +857,7 @@ export class MessageStoreState {
   }
 
   private shouldPersistSession(session: MessageSession): boolean {
-    return session.source === 'cowork' && session.messages.length >= 2
+    return session.source === 'cowork' && session.messages.some((message) => !message.id.startsWith('welcome-'))
   }
 
   async compactSessionIfNeeded(session: MessageSession, options?: { protectMessageIds?: Set<string> }): Promise<boolean> {
@@ -1149,7 +1138,6 @@ export class MessageStoreState {
       title: stored.title || 'Maestro',
       intent: 'chat',
       placeholder: placeholderFor(),
-      welcome: welcomeFor(),
       allowFiles: true,
       messages: stored.messages.map((message: MaestroChatMessage) =>
         this.withTokenCount({

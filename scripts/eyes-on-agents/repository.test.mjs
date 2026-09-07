@@ -4183,6 +4183,97 @@ try {
     sessionKey: claudeKey(deletedCliThread)
   }));
 
+  const localDeleteId = '98989898-9898-4898-8898-989898989898';
+  const localDeleteTables = [
+    'eyes_on_agents_thread_snapshot',
+    'eyes_on_agents_hook_delivery_receipt',
+    'eyes_on_agents_completion_alert_receipt',
+    'eyes_on_agents_thread'
+  ];
+  const domainsBeforeLocalDelete = db.prepare('SELECT * FROM eyes_on_agents_domain').all();
+  const nativeDeletionsBeforeLocalDelete = db.prepare(
+    'SELECT * FROM eyes_on_agents_claude_deletion_tombstone'
+  ).all();
+  for (const [index, provider] of ['codex', 'claude'].entries()) {
+    const key = `${provider}:${localDeleteId}`;
+    await repository.applyRuntimeEvent({ event: {
+      type: 'turn_started', threadId: localDeleteId, turnId: 'local-delete-turn',
+      observedAt: 300_000, source: `${provider}_hook`
+    } });
+    db.prepare(
+      `INSERT INTO eyes_on_agents_thread_snapshot
+       (session_key, provider, thread_id, payload_json, synced_at, created_at, updated_at)
+       VALUES (?, ?, ?, '{}', 300000, 300000, 300000)`
+    ).run(key, provider, localDeleteId);
+    db.prepare(
+      `INSERT INTO eyes_on_agents_hook_delivery_receipt
+       (delivery_id, session_key, provider, thread_id, observed_at, committed_at)
+       VALUES (?, ?, ?, ?, 300000, 300000)`
+    ).run(`9999999${index}-9999-4999-8999-999999999999`, key, provider, localDeleteId);
+    db.prepare(
+      `INSERT INTO eyes_on_agents_completion_alert_receipt
+       (session_key, provider, thread_id, turn_id, completed_at, claimed_at)
+       VALUES (?, ?, ?, 'local-delete-turn', 300000, 300000)`
+    ).run(key, provider, localDeleteId);
+  }
+  const countLocalDeleteRows = (table, provider) => Number(db.prepare(
+    `SELECT COUNT(*) AS count FROM ${table} WHERE session_key = ?`
+  ).get(`${provider}:${localDeleteId}`).count);
+  const unrelatedRowsBeforeLocalDelete = localDeleteTables.map((table) => db.prepare(
+    `SELECT * FROM ${table} WHERE thread_id <> ?`
+  ).all(localDeleteId));
+
+  db.exec(`CREATE TRIGGER reject_local_delete BEFORE DELETE ON eyes_on_agents_thread
+    WHEN OLD.session_key = 'codex:${localDeleteId}'
+    BEGIN SELECT RAISE(ABORT, 'local delete rejected'); END;`);
+  await assert.rejects(
+    repository.deleteThreadFromBitterless({ sessionKey: codexKey(localDeleteId) }),
+    /local delete rejected/
+  );
+  for (const table of localDeleteTables) {
+    assert.equal(countLocalDeleteRows(table, 'codex'), 1, 'failed delete rolls back every child');
+  }
+  db.exec('DROP TRIGGER reject_local_delete');
+
+  for (const provider of ['codex', 'claude']) {
+    const key = `${provider}:${localDeleteId}`;
+    await repository.deleteThreadFromBitterless({ sessionKey: key });
+    await repository.deleteThreadFromBitterless({ sessionKey: key });
+    for (const table of localDeleteTables) {
+      assert.equal(countLocalDeleteRows(table, provider), 0, 'exact session-owned cache is gone');
+      if (provider === 'codex') assert.equal(countLocalDeleteRows(table, 'claude'), 1);
+    }
+  }
+  assert.deepEqual(db.prepare('SELECT * FROM eyes_on_agents_domain').all(), domainsBeforeLocalDelete);
+  assert.deepEqual(db.prepare('SELECT * FROM eyes_on_agents_claude_deletion_tombstone').all(),
+    nativeDeletionsBeforeLocalDelete);
+  assert.deepEqual(localDeleteTables.map((table) => db.prepare(
+    `SELECT * FROM ${table} WHERE thread_id <> ?`
+  ).all(localDeleteId)), unrelatedRowsBeforeLocalDelete);
+  await assert.rejects(
+    repository.deleteThreadFromBitterless({ sessionKey: 'codex:not-a-uuid' }), /UUID/
+  );
+  await repository.upsertDiscoveredThreads({ threads: [{
+    threadId: localDeleteId, title: 'Rediscovered Codex', cwd: null,
+    runtimeState: 'unknown', activeFlags: [], statusSource: 'discovery',
+    statusObservedAt: 301_000, lastActivityAt: 301_000
+  }] });
+  await repository.upsertClaudeInventory({ threads: [{
+    threadId: localDeleteId, desktopSessionId: `local_${localDeleteId}`,
+    transcriptPath: null, title: 'Rediscovered Claude', cwd: null,
+    archiveState: 'active', transcriptActivityAt: null,
+    lastActivityAt: 301_000, observedAt: 301_000
+  }] });
+  for (const provider of ['codex', 'claude']) {
+    assert.equal(countLocalDeleteRows('eyes_on_agents_thread', provider), 1, 'discovery may recreate');
+    await repository.deleteThreadFromBitterless({ sessionKey: `${provider}:${localDeleteId}` });
+    await repository.applyRuntimeEvent({ event: {
+      type: 'turn_started', threadId: localDeleteId, turnId: 'fresh-local-turn',
+      observedAt: 302_000, source: `${provider}_hook`
+    } });
+    assert.equal(countLocalDeleteRows('eyes_on_agents_thread', provider), 1, 'fresh Hook may recreate');
+  }
+
   db.close();
   console.log('EyesOnAgents repository tests passed');
 } finally {

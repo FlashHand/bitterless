@@ -157,10 +157,8 @@ test('all explicit target sources use the serialized boundary and packaged switc
     explicitOpenBody,
     /serializedOpenOnlyPreviewAbsoluteTarget = serializeOnlyPreviewOpenTarget\([\s\S]*performOpenOnlyPreviewAbsoluteTarget,[\s\S]*onlyPreviewTargetMutations[\s\S]*openOnlyPreviewAbsoluteTarget[\s\S]*onlyPreviewOpenDiagnostics\.trace[\s\S]*serializedOpenOnlyPreviewAbsoluteTarget\(target, trace\)[\s\S]*registerOnlyPreviewExplicitTarget\(openOnlyPreviewAbsoluteTarget\)/
   );
-  const chooseFolderBody = handler.slice(
-    handler.indexOf('async chooseFolder('),
-    handler.indexOf('async restoreWorkspace(')
-  );
+  const chooseFolderBody = source('src/main/windows/onlyPreviewChooseFolder.service.ts');
+  assert.match(handler, /chooseOnlyPreviewFolder\(params\?\.hostToken\)/);
   assert.ok(
     chooseFolderBody.indexOf('dialog.showOpenDialog') <
       chooseFolderBody.indexOf('onlyPreviewTargetMutations.run'),

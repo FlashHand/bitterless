@@ -530,6 +530,7 @@ export interface EyesOnAgentsRepositoryApi {
     archived: boolean;
     observedAt: number;
   }): Promise<void>;
+  deleteThreadFromBitterless(params: { sessionKey: EyesOnAgentsSessionKey }): Promise<void>;
   markThreadsArchived(params: { threadIds: string[]; observedAt: number }): Promise<void>;
   applyRuntimeEvent(params: {
     event: EyesOnAgentsRuntimeEvent;
@@ -593,6 +594,9 @@ export interface EyesOnAgentsApi {
     snapshot: EyesOnAgentsSnapshot;
   }>;
   archiveThread(params: {
+    sessionKey: EyesOnAgentsSessionKey;
+  }): Promise<EyesOnAgentsSnapshot>;
+  deleteThreadFromBitterless(params: {
     sessionKey: EyesOnAgentsSessionKey;
   }): Promise<EyesOnAgentsSnapshot>;
   previewThread(params: { sessionKey: EyesOnAgentsSessionKey }): Promise<void>;

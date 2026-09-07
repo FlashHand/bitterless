@@ -92,6 +92,7 @@
                   @toggle-read-state="handleToggleReadState"
                   @copy-session-path="handleCopySessionPath"
                   @archive="handleArchive"
+                  @delete-from-bitterless="handleDeleteFromBitterless"
                 />
               </template>
             </a-dropdown>
@@ -106,6 +107,7 @@
         @toggle-read-state="handleToggleReadState"
         @copy-session-path="handleCopySessionPath"
         @archive="handleArchive"
+        @delete-from-bitterless="handleDeleteFromBitterless"
       />
     </template>
   </a-dropdown>
@@ -284,6 +286,11 @@ const handleToggleReadState = async (): Promise<void> => {
 const handleArchive = async (): Promise<void> => {
   closeMenus();
   await eyesOnAgentsStore.archiveThread(props.thread.sessionKey).catch(() => undefined);
+};
+
+const handleDeleteFromBitterless = async (): Promise<void> => {
+  closeMenus();
+  await eyesOnAgentsStore.deleteThreadFromBitterless(props.thread.sessionKey).catch(() => undefined);
 };
 
 const handleDoubleClick = async (event: MouseEvent): Promise<void> => {

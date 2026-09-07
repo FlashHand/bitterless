@@ -154,12 +154,18 @@ export interface CoachXpcContract {
   // new tab". Empty url → same as newTab().
   openTab(params: { url: string }): Promise<void>
   /**
-   * Open OnlyPreview as a tab in this window, or bring the existing one forward.
+   * Open a registered composite mini app as a tab in this window, or bring the existing one forward.
    *
-   * A composite mini-app tab: its content is OnlyPreview's own container view rather than one web
-   * page, so it carries no URL and is never cooled by the warm cap.
+   * Its content is the mini app's own container view rather than one web page, so it carries no URL
+   * and is never cooled by the warm cap. `id` is the registered spec id, e.g. `'onlypreview'`.
    */
-  openOnlyPreviewTab(): Promise<void>
+  openCompositeTab(params: { id: string }): Promise<void>
+  /**
+   * 在 OnlyPreview 的 tab 里打开一个绝对目录。
+   *
+   * 与「切换工作区」是两件事:那个开选择器,这个显示你已经在的那个目录。
+   */
+  openWorkspaceInPreview(params: { path: string }): Promise<{ ok: boolean; error?: string }>
   activateTab(params: { id: string }): Promise<void>
   // Reorder the visible tab strip by current tab ids. Main validates against the live tab set and
   // keeps pinned tabs fixed; home persists the rebroadcast order.

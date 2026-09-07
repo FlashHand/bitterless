@@ -344,6 +344,14 @@ export class EyesOnAgentsHandler extends XpcMainHandler implements EyesOnAgentsA
     return await eyesOnAgentsService.openThread(parseEyesOnAgentsSessionKeyParams(params));
   }
 
+  async deleteThreadFromBitterless(params: {
+    sessionKey: EyesOnAgentsSessionKey;
+  }): Promise<EyesOnAgentsSnapshot> {
+    return await eyesOnAgentsService.deleteThreadFromBitterless(
+      parseEyesOnAgentsSessionKeyParams(params)
+    );
+  }
+
   async archiveThread(params: {
     sessionKey: EyesOnAgentsSessionKey;
   }): Promise<EyesOnAgentsSnapshot> {

@@ -387,8 +387,8 @@ test('window activation refresh follows connection intent and coalesces overlap'
         state: 'disconnected', autoConnectEnabled: false,
         claudeProviderEnabled: true, claudeProviderRevision: 1,
       });
-      store.applySnapshot(disabled);
-      store.applySnapshot(staleEnabled);
+      store.applySnapshot(disabled, store.snapshotGeneration);
+      store.applySnapshot(staleEnabled, store.snapshotGeneration);
       assert.equal(store.snapshot.claudeProvider.enabled, false);
       assert.equal(store.snapshot.claudeProvider.revision, 2);
     });

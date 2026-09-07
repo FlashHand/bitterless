@@ -399,6 +399,21 @@ Monitor therefore exposes Archive only for Codex. It does not write Claude Deskt
 a deletion tombstone, or locally mark a Claude row archived: all three would misrepresent provider
 state and a later Desktop inventory pass could reverse the result.
 
+### Local session removal
+
+**Delete from Bitterless** is independent of provider archive/delete authority. It accepts the
+provider-qualified `sessionKey` without checking provider availability or source-session existence.
+One local transaction removes that key from `eyes_on_agents_thread_snapshot`,
+`eyes_on_agents_hook_delivery_receipt`, `eyes_on_agents_completion_alert_receipt`, and
+`eyes_on_agents_thread`. Missing rows succeed idempotently. Domains, settings, other sessions, and
+native Claude deletion tombstones are untouched. The service broadcasts and returns the current
+snapshot without invoking discovery, provider mutations, or filesystem writes. A failed transaction
+preserves the mirror and surfaces the normal action error.
+
+These rows are a disposable local session mirror: do not reuse the native `is_deleted` state or
+introduce a suppression list. A subsequent source inventory or Hook may legitimately recreate the
+session. Renderer responses started before local deletion must not overwrite its returned snapshot.
+
 ## Domain model
 
 EyesOnAgents uses dedicated tables rather than Todo's `domain` and `todo` tables. The two products
@@ -773,6 +788,7 @@ EyesOnAgentsHandler (main)
   syncThreads()
   refreshThreadPages() -> { changed }
   openThread({ sessionKey })
+  deleteThreadFromBitterless({ sessionKey }) -> snapshot
   previewClaudeTranscript({ sessionKey })
   markAllRead()
   installCodexBridge()
@@ -795,6 +811,7 @@ EyesOnAgentsRepositoryHandler (SQLite preload)
   invalidateAppServerStatuses({ observedAt })
   upsertDiscoveredThreads({ threads })
   upsertThreadSnapshots({ snapshots })
+  deleteThreadFromBitterless({ sessionKey })
   applyRuntimeEvent({ event })
   markOpened({ sessionKey, openedAt })
   markAllRead() -> { changed }

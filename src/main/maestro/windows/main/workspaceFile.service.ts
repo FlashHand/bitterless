@@ -22,6 +22,7 @@ import {
   type ConfigApi
 } from '@maestro-shared/config.api'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
+import { getMaestroPreviewOpener } from './previewOpener.registry'
 
 const WORKSPACE_TEXT_SCAN_BYTES = 256 * 1024
 const WORKSPACE_SEARCH_MAX_RESULTS = 60
@@ -674,6 +675,16 @@ export class WorkspaceFileService extends CommonService<WorkspaceFileServiceStat
       return `ERROR: "${rel || '.'}" does not exist inside the workspace (${resolved.root}).`
     }
     try {
+      // Showing the owner some files is what this tool is for, and this build has an application
+      // that does that better than the OS file manager. The file manager stays the fallback for a
+      // build with no preview application registered — which is what this tool did before one
+      // existed. A registered opener that *fails* is reported, not silently swapped for Finder:
+      // opening the wrong application is more confusing than an error.
+      const preview = getMaestroPreviewOpener()
+      if (preview) {
+        await preview.open(target)
+        return `Opened ${mdDirLink(target)} in ${preview.displayName}.`
+      }
       if (statSync(target).isDirectory()) {
         const error = await shell.openPath(target)
         if (error) return `ERROR: could not open "${target}": ${error}`

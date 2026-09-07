@@ -121,6 +121,11 @@ export class OnlyPreviewStandaloneMount implements OnlyPreviewMount {
     if (this.isAlive()) this.baseWindow.destroy();
   }
 
+  registerSurfaceView(): void {
+    // Nothing to enroll: this composite's views live inside a window whose chords are already the
+    // application's own.
+  }
+
   reportTitle(title: string): void {
     if (this.isAlive()) this.baseWindow.setTitle(title);
   }

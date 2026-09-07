@@ -9,7 +9,7 @@ const AuthGateRoute = {
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'auth-gate', component: AuthGateRoute },
-  { path: '/mini-app', name: 'mini-app', component: MiniApp },
+  { path: '/mini-app', name: 'mini-app', component: MiniApp, props: { host: 'cowork' } },
   {
     path: '/setting',
     name: 'setting',

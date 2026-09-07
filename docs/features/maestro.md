@@ -107,6 +107,9 @@ tokens, renderer values, and raw errors are forbidden.
   address navigation, history, reload, popup interception, and native context menus.
 - Ordinary-browser per-tab debugger attachment, warm-tab LRU management, browser-tab persistence,
   sidebar collapse, and Workbench overlay.
+- Composite Mini App tabs publish their registered display URL/title through the same navigation
+  updates as ordinary tabs. OnlyPreview activation must not retain `bitterless://home`; see
+  [composite tab address 145](../plan/tasks/onlypreview-composite-tab-address-145.md).
 - Operation pages remain unprivileged and are automated through Chrome DevTools Protocol.
 
 ### Maestro chat and agents
@@ -124,6 +127,14 @@ tokens, renderer values, and raw errors are forbidden.
 - Unified attachment cards and attach/drop/paste for supported files and directories, bounded image
   thumbnails, archive operations, bundled-CLI document conversion, workspace-scoped file
   search/read/write, and artifact open/reveal state.
+- The composer workspace name opens that directory in OnlyPreview via the registered host opener,
+  reusing a live tab/window or opening a tab in the current browser. Switching workspace has its
+  own icon action; Clear and the empty-state Set workspace remain unchanged. The BL-only
+  [composer cleanup 149](../plan/tasks/maestro-composer-cleanup-149.md) removes Refresh and shows
+  the complete workspace name with wrapping when constrained, preserving the full-path tooltip. See
+  [workspace preview 138](../plan/tasks/onlypreview-cowork-workspace-preview-138.md).
+- New/recovered empty BL chats do not insert a synthetic greeting. Real conversation and recovery
+  messages remain intact; the existing composer remains the entry point for an empty chat.
 - Voice recording and AI-CRMS transcription within the upstream five-minute limit.
 - Maestro, Coach, and Delegate agent runtimes with host tool policy and approval history.
 

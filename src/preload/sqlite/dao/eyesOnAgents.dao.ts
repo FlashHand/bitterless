@@ -1701,6 +1701,23 @@ export class EyesOnAgentsRepositoryDao extends BaseDao implements EyesOnAgentsRe
     transaction();
   }
 
+  async deleteThreadFromBitterless(params: {
+    sessionKey: EyesOnAgentsSessionKey;
+  }): Promise<void> {
+    const sessionKey = parseEyesOnAgentsSessionKey(params?.sessionKey);
+    const transaction = sqliteManager.db.transaction(() => {
+      for (const table of [
+        'eyes_on_agents_thread_snapshot',
+        'eyes_on_agents_hook_delivery_receipt',
+        'eyes_on_agents_completion_alert_receipt',
+        'eyes_on_agents_thread'
+      ]) {
+        sqliteManager.db.prepare(`DELETE FROM ${table} WHERE session_key = ?`).run(sessionKey);
+      }
+    });
+    transaction();
+  }
+
   async setThreadArchived(params: {
     threadId: string;
     archived: boolean;

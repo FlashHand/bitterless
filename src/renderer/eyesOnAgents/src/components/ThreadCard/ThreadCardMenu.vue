@@ -47,6 +47,18 @@
       {{ i18nHelper.eyesOnAgents.actions.archive }}
     </span>
   </a-doption>
+  <a-doption
+    name="eyesOnAgents__threadCardMenu__deleteFromBitterless"
+    class="thread-card__option thread-card__option--delete"
+    :class="{ 'thread-card__option--separated': thread.provider !== 'codex' }"
+    :disabled="eyesOnAgentsStore.busyAction !== null"
+    @click="emit('deleteFromBitterless')"
+  >
+    <IconTrash :size="13" aria-hidden="true" />
+    <span class="thread-card__option-label">
+      {{ i18nHelper.eyesOnAgents.actions.deleteFromBitterless }}
+    </span>
+  </a-doption>
 </template>
 
 <script setup lang="ts">
@@ -57,6 +69,7 @@ import {
   IconCircleDot,
   IconClipboardText,
   IconExternalLink,
+  IconTrash,
 } from '@tabler/icons-vue';
 import type { EyesOnAgentsThread } from '@shared/eyesOnAgents/eyesOnAgents.type';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
@@ -68,6 +81,7 @@ const emit = defineEmits<{
   toggleReadState: [];
   copySessionPath: [];
   archive: [];
+  deleteFromBitterless: [];
 }>();
 
 const canOpenThread = computed(() => props.thread.provider === 'codex'

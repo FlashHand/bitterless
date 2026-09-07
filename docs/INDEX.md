@@ -10,6 +10,15 @@ design document.
   live updates for every first-party renderer, and correct locale before recreated windows mount.
 - [Maestro sub-application](features/maestro.md) - the Bitterless Mini App migrated from the
   Micromeet Cowork runtime.
+- [Maestro composer cleanup](plan/tasks/maestro-composer-cleanup-149.md) - implemented; owner verification pending, BL only:
+  full workspace name, no Refresh action, and no synthetic greeting in empty chats.
+- [Maestro workspace name opens OnlyPreview](plan/tasks/onlypreview-cowork-workspace-preview-138.md) -
+  in progress with another agent, as assigned by Ral; workspace-chain edits preserved here.
+- [OnlyPreview tab address](plan/tasks/onlypreview-composite-tab-address-145.md) - implemented; owner verification pending:
+  publish the active composite tab URL/title rather than retaining the previous Home address.
+- [Maestro Chat overlays tab content](issues/maestro-chat-overlays-tab-content.md) - implemented; owner verification pending:
+  preserve reported sidebar geometry through deferred view creation and resize, and hide closed
+  Chat at the native-view layer.
 - [Maestro Control chat behind Cowork](issues/maestro-control-chat-behind-cowork.md) - implemented;
   owner verification pending: migrated the current Turn/status/task and attachment/file-reading
   chat vertical slices from Cowork `67b056b` while preserving Maestro providers, i18n, replay,
@@ -83,6 +92,18 @@ design document.
   passed.
 - [OnlyPreview sub-application](features/onlypreview.md) - capability-scoped local indexing,
   multi-view preview behind a mount, EyesOnAgents-style MenuBar, settings, and OS file-open routing.
+- [OnlyPreview tree density](plan/tasks/onlypreview-tree-density-151.md) - implemented; owner testing pending:
+  14px file/directory names, 600-weight root and uniform 22px rows, mirrored to Cowork.
+- [OnlyPreview collapse directories](plan/tasks/onlypreview-collapse-directories-146.md) - implemented; owner verification pending:
+  vertical-collapse action left of Locate; root stays open and descendant expansion is cleared.
+- [OnlyPreview Python/Go index exclusions](plan/tasks/onlypreview-python-go-index-exclusions-147.md) - implemented; owner verification pending:
+  hard dependency/cache directories and persisted-index policy identity, mirrored to Cowork.
+- [OnlyPreview config quiet reconciliation](plan/tasks/onlypreview-config-quiet-reconcile-148.md) - implemented; owner verification pending:
+  sixty-second trailing config adoption, serialized adjustments and restart-safe policy comparison.
+- [OnlyPreview Tab/window toggle](plan/tasks/onlypreview-host-toggle-139.md) - implemented; owner verification pending:
+  one two-state Tabler control right of Settings, with single-surface relocation and restore.
+- [OnlyPreview Tab MenuBar alignment](plan/tasks/onlypreview-tab-menubar-alignment-144.md) - implemented; owner verification pending:
+  keep traffic-light space in standalone windows only and center the icon-only Open folder action.
 - [OnlyPreview embeddable mount](features/onlypreview-embeddable-mount.md) - proposed: the
   four-layer composite gains its own container `View` and asks a mount for geometry, window services
   and shortcut arbitration, so one OnlyPreview surface can live either in its own window as today or
@@ -93,11 +114,9 @@ design document.
   but Delete announced nothing, so removed rows stayed on screen and every later right-click, copy or
   delete on one failed against a path that was gone; a delete now announces what it removed and the
   tree drops every pointer into a removed folder before re-reading the index.
-- [OnlyPreview browse targets and history](features/onlypreview-browse-history.md) - designed;
-  implementation in progress: a directory becomes a previewable target showing its name, path and
-  children; the Project heading becomes Project/History tabs over a per-workspace persisted visit
-  list; and back/forward controls left of the preview name walk a session visit stack, bringing the
-  tree with them.
+- [OnlyPreview browse targets and history](features/onlypreview-browse-history.md) - task 150 implemented; owner testing pending:
+  external-file previews preserve Project; Project/Recents lists100 files; Back/Forward walk that
+  unchanged order, Reload only reloads preview, and Markdown local-file links use exact authority.
 - [The Project index never latches ready, so the pane stays on "Loading project"](issues/onlypreview-index-never-latches-ready.md) -
   implemented; owner verification pending: `initialize` and `refresh` hand their snapshot back as an
   RPC result, which never passed the only place the index state was observed, so a Project whose
@@ -234,6 +253,9 @@ design document.
 - [EyesOnAgents Search after long uptime](issues/eyes-on-agents-search-after-long-uptime.md) -
   fixed; owner verification pending: the reproduced interrupted-composition state no longer survives
   modal close; each lifecycle gets a fresh Input, while matching remains renderer-local.
+- [EyesOnAgents raw search input](plan/tasks/eyes-on-agents-search-raw-input-100.md) - implemented; owner verification pending:
+  bind raw text with `v-model`, derive normalized tokens through read-only computed state, and
+  preserve input through background rerenders; the installed Preview still lacks task 099's key.
 - [EyesOnAgents Project filter](features/eyes-on-agents-project-filter.md) - Git-worktree-derived
   Project metadata; its renderer filter is retired and only resolution/storage remains.
 - [EyesOnAgents Codex observation](features/eyes-on-agents-codex-observation.md) - global Hook

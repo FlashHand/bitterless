@@ -10,6 +10,9 @@ import { compileOrderedGlobRules } from './glob-config.mjs';
 export const WORKSPACE_CONFIG_RELATIVE_PATH = '.bitterless/preview-config.yml';
 const MAX_CONFIG_BYTES = 256 * 1024;
 
+export const isWorkspaceConfigWatchPath = (relativePath) =>
+  relativePath === WORKSPACE_CONFIG_RELATIVE_PATH || relativePath === '.bitterless';
+
 export const pathIsWithin = (
   rootPath,
   candidatePath,
@@ -54,12 +57,29 @@ export const parseOnlyPreviewWorkspaceConfig = (sourceValue) => {
     version: 1,
     exclude: Object.freeze([...parsed.exclude]),
     rules: Object.freeze(rules),
-    hash: createHash('sha256').update(source).digest('hex')
+    hash: createHash('sha256').update(JSON.stringify({
+      version: 1,
+      rules: rules.map(({ include, regex }) => [include, regex.source])
+    })).digest('hex')
   });
 };
 
 export const defaultOnlyPreviewWorkspaceConfig = () =>
   parseOnlyPreviewWorkspaceConfig('version: 1\nexclude: []\n');
+
+export const readOnlyPreviewWorkspaceConfigSignature = async (rootPath) => {
+  const directoryPath = join(rootPath, '.bitterless');
+  try {
+    const directory = await lstat(directoryPath);
+    if (!directory.isDirectory() || directory.isSymbolicLink()) {
+      return `directory:${directory.mode}:${directory.dev}:${directory.ino}`;
+    }
+    const file = await lstat(join(directoryPath, 'preview-config.yml'));
+    return `${file.mode}:${file.dev}:${file.ino}:${file.size}:${file.mtimeMs}:${file.ctimeMs}`;
+  } catch (error) {
+    return `unavailable:${error?.code ?? 'UNKNOWN'}`;
+  }
+};
 
 export const loadOnlyPreviewWorkspaceConfig = async (rootPath) => {
   const rootRealPath = await realpath(rootPath);

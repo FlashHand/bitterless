@@ -1,25 +1,12 @@
-import type { BaseWindow, View } from 'electron';
+import type { BaseWindow, View, WebContents } from 'electron';
+import { enrollMaestroShortcutContents } from '@maestro-main/common/shortcutsHelper/shortcuts.helper';
+import type { MaestroCompositeTabHostApi } from '@maestro-shared/compositeTab.api';
 import type {
   OnlyPreviewMount,
   OnlyPreviewMountChrome,
   OnlyPreviewMountKind
 } from '@main/onlypreview/onlyPreviewSurface.mount';
 import type { OnlyPreviewSurfaceSize } from '@main/onlypreview/onlyPreviewSurfaceLayout';
-import type { ViewRect } from '@maestro-shared/coach.api';
-
-export interface OnlyPreviewCoworkMountDeps {
-  /** The window carrying the tab. Used for menu arbitration and parented dialogs, never geometry. */
-  window: () => BaseWindow | null;
-  /** The rect Maestro reserves for tab content, measured by the Home renderer. */
-  contentRect: () => ViewRect | null;
-  /** Attach at the tab-view position so the whole composite sits below Maestro's chrome. */
-  attach: (container: View) => void;
-  detach: (container: View) => void;
-  activate: () => void;
-  closeTab: () => void;
-  setTitle: (title: string) => void;
-  isOpen: () => boolean;
-}
 
 /**
  * The OnlyPreview composite carried by a Maestro (Cowork) tab.
@@ -47,7 +34,7 @@ export class OnlyPreviewCoworkMount implements OnlyPreviewMount {
   private readonly activationListeners = new Set<(active: boolean) => void>();
   private readonly hostGoneListeners = new Set<() => void>();
 
-  constructor(private readonly deps: OnlyPreviewCoworkMountDeps) {}
+  constructor(private readonly deps: MaestroCompositeTabHostApi) {}
 
   attach(container: View): void {
     this.container = container;
@@ -114,7 +101,7 @@ export class OnlyPreviewCoworkMount implements OnlyPreviewMount {
   }
 
   requestClose(): void {
-    this.deps.closeTab();
+    this.deps.close();
   }
 
   showSurface(): void {
@@ -122,7 +109,14 @@ export class OnlyPreviewCoworkMount implements OnlyPreviewMount {
   }
 
   destroyHost(): void {
-    this.deps.closeTab();
+    this.deps.close();
+  }
+
+  registerSurfaceView(webContents: WebContents): void {
+    // The composite's views carry no partition, so Maestro's tab chords skip them by default and
+    // Cmd+W would fall through to the menu's `close` role and take the whole window. Enrollment
+    // grants exactly the keystroke, not the session: the composite stays in its own session.
+    enrollMaestroShortcutContents(webContents);
   }
 
   reportTitle(title: string): void {

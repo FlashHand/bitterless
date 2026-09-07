@@ -120,9 +120,22 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
     });
     const result = await runOperation(async () => {
       const request = parseOnlyPreviewSearchInitializeRequest(params);
-      this._bindHost(request.hostToken);
-      const sessionId = ++this.sessionId;
+      // Authorization BEFORE any state change, then adopt the host the authorized call names.
+      //
+      // The old order ran `_bindHost` first, which made a surviving runtime reject the host that
+      // replaced its original one — the `HOST_ROLE_DENIED · does not belong to this file-search
+      // runtime` seen after an OnlyPreview host toggle. The toggle is exactly the case where the
+      // host legitimately changes while the runtime, and the index build inside it, keep running.
+      //
+      // Rebinding here is safe because reaching this method at all is already gated on main: the
+      // preload entry point requires a main-issued capability, and `internalBootstrap` is resolved
+      // in main from a host-scoped bootstrap token. `fileSearchRuntimeRelayService` is the single
+      // authority on which host owns the runtime, and it rejects a stale host itself. This field
+      // was a duplicate of that decision that no one updated — a second source of truth, which is
+      // why it went stale rather than wrong.
       const bootstrap = requireBootstrap(internalBootstrap, request.workspaceId);
+      this._adoptHost(request.hostToken);
+      const sessionId = ++this.sessionId;
       this._requireCurrentSession(sessionId);
       await this._shutdownActive();
       this._requireCurrentSession(sessionId);
@@ -327,10 +340,16 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
     }
   }
 
-  private _bindHost(hostToken: string): void {
-    if (this.hostToken !== null && this.hostToken !== hostToken) {
-      this._requireHost(hostToken);
-    }
+  /**
+   * Records the host named by an already-authorized `initialize`, replacing any earlier one.
+   *
+   * Unconditional on purpose. Every other method still goes through `_requireHost`, so a request
+   * that arrives between two initializes is checked against the host in force at that moment; what
+   * this drops is only the claim that the FIRST host to initialize owns the runtime forever, which
+   * an OnlyPreview host toggle makes false. See the comment at the call site for why the caller is
+   * already trusted.
+   */
+  private _adoptHost(hostToken: string): void {
     this.hostToken = hostToken;
   }
 

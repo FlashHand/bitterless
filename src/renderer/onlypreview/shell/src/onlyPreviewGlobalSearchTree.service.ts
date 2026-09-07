@@ -9,6 +9,7 @@ export const revealOnlyPreviewGlobalSearchDirectory = async (params: {
   projection: OnlyPreviewBrowseProjectionService;
   context: OnlyPreviewBrowseProjectionContext;
   expandedPaths: Set<string>;
+  isCurrent?: () => boolean;
   applyResult: (result: OnlyPreviewBrowseProjectionResult) => void;
 }): Promise<boolean> => {
   const { relativePath, projection, context, expandedPaths, applyResult } = params;
@@ -18,11 +19,12 @@ export const revealOnlyPreviewGlobalSearchDirectory = async (params: {
     expandedPaths
   );
   applyResult(parents);
-  if (!parents.loaded) return false;
+  if (!parents.loaded || params.isCurrent?.() === false) return false;
   const directory = await projection.loadDirectory(relativePath, context, expandedPaths);
   applyResult(directory);
   if (
     !directory.loaded ||
+    params.isCurrent?.() === false ||
     directory.index?.entries.some((entry) => entry.relativePath === relativePath) !== true
   ) {
     return false;

@@ -246,14 +246,13 @@ test('every anchor move without a click collapses the tree selection onto that r
 
   assert.match(store, /collapseTreeSelection: \(\) => void = \(\) => \{\};/);
 
-  const locate = store.slice(
-    store.indexOf('async locateSelectedFile('),
-    store.indexOf('async showFileContextMenu(')
-  );
+  assert.match(store, /this\.treeExpansion\.locate\(this,/);
+  const expansion = source('src/renderer/onlypreview/shell/src/onlyPreviewTreeExpansion.store.ts');
+  const locate = expansion.slice(expansion.indexOf('async locate('));
   // After the guard, so locating nothing cannot wipe a real selection.
   assert.ok(
-    locate.indexOf('if (!this.selectedRelativePath) return') <
-      locate.indexOf('this.collapseTreeSelection()'),
+    locate.indexOf('if (!owner.selectedRelativePath) return') <
+      locate.indexOf('owner.collapseTreeSelection()'),
     'locate collapses only once it has something to locate'
   );
 

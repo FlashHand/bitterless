@@ -155,7 +155,7 @@ export class OnlyPreviewPreviewRegionService {
     this.viewService.updateBounds(bounds);
   }
 
-  async present(hostToken: string, value: unknown, parentOpenTag?: string): Promise<void> {
+  async present(hostToken: string, value: unknown, parentOpenTag?: string, fragment?: string): Promise<void> {
     const runtime = requireOnlyPreviewPreviewRuntime(hostToken, this.runtime);
     const fileRef = parseOnlyPreviewFileRef(value);
     const revision = this.beginTransition(fileRef, parentOpenTag);
@@ -237,6 +237,7 @@ export class OnlyPreviewPreviewRegionService {
         selectionRevision: revision,
         surface: adapter.surface,
         adapterId: adapter.adapterId,
+        ...(fragment ? { fragment } : {}),
         status: 'loading',
         fileRef,
         descriptor,
@@ -353,6 +354,12 @@ export class OnlyPreviewPreviewRegionService {
   snapshotForVue(hostToken: string, previewRuntimeToken: string): OnlyPreviewPreviewPresentation {
     requireOnlyPreviewVueRuntime(hostToken, previewRuntimeToken, this.runtime, this.viewService);
     return this.snapshotInternal(true);
+  }
+
+  navigateFragment(hostToken: string, runtimeToken: string, revision: number, fragment: string): void {
+    this.requireCurrentVueRevision(hostToken, revision, runtimeToken, false);
+    this.presentation = { ...this.presentation, fragment };
+    this.publishPresentation();
   }
 
   findSnapshot(hostToken: string): OnlyPreviewFindSnapshot {

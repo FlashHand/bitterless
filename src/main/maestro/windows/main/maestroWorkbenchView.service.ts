@@ -90,7 +90,7 @@ export class MaestroWorkbenchViewService extends CommonService<MaestroWorkbenchV
   }
 
   layout(bounds: { x: number; y: number; width: number; height: number }): void {
-    this.view?.setBounds(bounds)
+    this.setBounds(bounds)
   }
 
   setBounds(rect: ViewRect): void {

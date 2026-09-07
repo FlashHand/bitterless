@@ -1,5 +1,6 @@
 import { BrowserWindow, WebContentsView, app, shell } from 'electron'
 import { xpcMain } from 'electron-xpc/main'
+import { MAESTRO_ONLY_PREVIEW_TAB_ID } from '@maestro-shared/compositeTab.identity'
 import { join } from 'path'
 import { readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
@@ -233,6 +234,7 @@ class MaestroWindowController
   replayEngine: ReplayEngine | null = null
   // operationView/capture/replayEngine above always point at the ACTIVE tab.
   opBounds: ViewRect | null = null
+  private controlBounds: ViewRect | null = null
   currentUrl = DEFAULT_COACH_START_URL
   private initialReady: Promise<void> = Promise.resolve()
   private backgroundReady: Promise<void> = Promise.resolve()
@@ -312,6 +314,7 @@ class MaestroWindowController
     this.capture = null
     this.replayEngine = null
     this.opBounds = null
+    this.controlBounds = null
     this.tabsOpenedThisTurn = []
   }
 
@@ -1592,26 +1595,36 @@ class MaestroWindowController
 
   layout(): void {
     if (!this.browserWindow) return
+    // Deferred views and native resize reuse the last complete renderer measurement. The next
+    // Shell report supplies updated dimensions; the first-frame fallback must not reopen Chat.
+    if (this.opBounds && this.controlBounds) {
+      this.setViewBounds({ operation: this.opBounds, control: this.controlBounds })
+      return
+    }
     const [w, h] = this.browserWindow.getContentSize()
     const viewH = Math.max(0, h - TOOLBAR_H)
     const webW = Math.max(0, w - SIDEBAR_W)
     this.browserView.layout({ x: 0, y: TOOLBAR_H, width: webW, height: viewH })
     this.workbenchView.layout({ x: 0, y: TOOLBAR_H, width: webW, height: viewH })
     this.controlView.layout({ x: webW, y: TOOLBAR_H, width: SIDEBAR_W, height: viewH })
+    this.browserView.refreshCompositeTabs()
   }
 
   /**
    * Position the native views over the rects the home renderer measured from its
    * operation/control placeholders (Layout.vue). Authoritative once the renderer
-   * has mounted; layout() above only covers the first frame + window resize.
+   * has mounted; layout() reuses this pair until the renderer reports another measurement.
    */
   setViewBounds(params: { operation: ViewRect; control: ViewRect }): void {
-    // Remember the operation rect so a tab activated later (or a new tab) lands in
-    // exactly the same spot without waiting for the next renderer report.
+    // Retain both rects so late-created views and activated tabs use the same measured layout.
     this.opBounds = params.operation
+    this.controlBounds = params.control
     this.browserView.setBounds(params.operation)
     this.workbenchView.setBounds(params.operation)
     this.controlView.setBounds(params.control)
+    // A composite mini-app tab is positioned by its own mount, not by a `WebContentsView` bounds
+    // applier, so it has to be told separately or it keeps a stale rect through every resize.
+    this.browserView.refreshCompositeTabs()
   }
 
   private getActiveTab(): OperationTab | undefined {
@@ -1650,8 +1663,16 @@ class MaestroWindowController
     await this.browserView.openTab(params)
   }
 
-  async openOnlyPreviewTab(): Promise<void> {
-    await this.browserView.openOnlyPreviewTab()
+  async openCompositeTab(params: { id: string }): Promise<void> {
+    await this.browserView.openCompositeTab(params)
+  }
+
+  /** 工作区芯片:开 OnlyPreview 的 tab 并把这个目录设为项目根(mini-016 / Ral 2026-09-07)。 */
+  async openWorkspaceInPreview(params: { path: string }): Promise<{ ok: boolean; error?: string }> {
+    return await this.browserView.openCompositeTabTarget({
+      id: MAESTRO_ONLY_PREVIEW_TAB_ID,
+      path: params?.path || ''
+    })
   }
 
   async activateTab(params: { id: string }): Promise<void> {

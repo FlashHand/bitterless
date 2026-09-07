@@ -14,6 +14,9 @@ const en = {
     openFolder: 'Open folder',
     agentSkillGuide: 'Copy the skill to your agent',
     settings: 'OnlyPreview settings',
+    openInWindow: 'Open in a separate window',
+    moveToTab: 'Move back to a browser tab',
+    dockUnavailable: 'Open a browser window to move OnlyPreview into a tab',
     minimize: 'Minimize OnlyPreview',
     maximize: 'Maximize or restore OnlyPreview',
     close: 'Close OnlyPreview',
@@ -22,6 +25,7 @@ const en = {
   project: {
     label: 'Project',
     locateCurrentFile: 'Locate current preview in project',
+    collapseDirectories: 'Collapse directories',
     dismissError: 'Dismiss Project error',
     copyErrorDetail: 'Copy detail',
     errorDetailCopied: 'Copied',
@@ -35,6 +39,17 @@ const en = {
     editNameLabel: 'Rename item',
     nameInvalid: 'This name cannot be used on Windows or macOS.',
     newFolderExhausted: 'Too many untitled folders already exist here.'
+  },
+  recents: {
+    label: 'Recents',
+    panelLabel: 'Project navigation',
+    loading: 'Loading recent files…',
+    empty: 'Files you open will appear here.',
+    retry: 'Retry',
+    back: 'Back to older file',
+    forward: 'Forward to newer file',
+    reload: 'Reload current preview',
+    linkFailed: 'This file link could not be opened.'
   },
   globalSearch: {
     label: 'Global Search',
@@ -223,6 +238,9 @@ const zh: Localized<typeof en> = {
     openFolder: '打开文件夹',
     agentSkillGuide: '将技能复制给你的 Agent',
     settings: 'OnlyPreview 设置',
+    openInWindow: '在独立窗口中打开',
+    moveToTab: '移回浏览器标签页',
+    dockUnavailable: '请先打开浏览器窗口，再将 OnlyPreview 移入标签页',
     minimize: '最小化 OnlyPreview',
     maximize: '最大化或还原 OnlyPreview',
     close: '关闭 OnlyPreview',
@@ -231,6 +249,7 @@ const zh: Localized<typeof en> = {
   project: {
     label: '项目',
     locateCurrentFile: '在项目中定位当前预览文件',
+    collapseDirectories: '折叠所有子目录',
     dismissError: '关闭项目错误提示',
     copyErrorDetail: '复制详情',
     errorDetailCopied: '已复制',
@@ -244,6 +263,17 @@ const zh: Localized<typeof en> = {
     editNameLabel: '重命名',
     nameInvalid: '该名称在 Windows 或 macOS 上不可用。',
     newFolderExhausted: '此目录下未命名文件夹已过多。'
+  },
+  recents: {
+    label: '最近文件',
+    panelLabel: '项目导航',
+    loading: '正在加载最近文件…',
+    empty: '打开过的文件会显示在这里。',
+    retry: '重试',
+    back: '返回上一个较早文件',
+    forward: '前进到较新文件',
+    reload: '重新加载当前预览',
+    linkFailed: '无法打开此文件链接。'
   },
   globalSearch: {
     label: '全局搜索',

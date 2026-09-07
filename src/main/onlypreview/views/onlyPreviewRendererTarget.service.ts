@@ -33,11 +33,13 @@ export const getOnlyPreviewRendererArguments = (
   previewRuntimeToken?: string,
   officeBrokerCapability?: string,
   previewReadBrokerCapability?: string,
-  openTag?: string
+  openTag?: string,
+  hostSurface: 'window' | 'cowork' = 'window'
 ): string[] => [
   `--onlypreview-host-token=${host.hostToken}`,
   `--onlypreview-host-id=${host.hostId}`,
   `--onlypreview-mode=${mode}`,
+  `--onlypreview-host=${hostSurface}`,
   ...(previewRuntimeToken ? [`--onlypreview-runtime-token=${previewRuntimeToken}`] : []),
   ...(officeBrokerCapability
     ? [`--onlypreview-office-broker-capability=${officeBrokerCapability}`]

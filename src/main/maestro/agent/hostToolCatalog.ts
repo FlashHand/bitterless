@@ -384,7 +384,7 @@ export const HOST_TOOL_CATALOG: HostToolCatalogEntry[] = [
     scopes: ['cowork'],
     category: 'file',
     risk: 'write',
-    summary: 'Open the chat workspace or one of its paths in Finder/File Explorer.',
+    summary: 'Open the chat workspace or one of its paths in OnlyPreview, the local file preview app.',
     useWhen: 'The user asks to see the workspace or a result on disk.',
     safety: 'Only opens an OS window; reads no content and changes no files.'
   },

@@ -22,7 +22,10 @@ import {
   readSingleWorkspaceFile
 } from '../../src/preload/onlypreview/search/core/traversal.mjs';
 import { createWorkspaceWatchController } from '../../src/preload/onlypreview/search/core/watch-controller.mjs';
-import { pathIsWithin } from '../../src/preload/onlypreview/search/core/workspace-config.mjs';
+import {
+  loadOnlyPreviewWorkspaceConfig,
+  pathIsWithin
+} from '../../src/preload/onlypreview/search/core/workspace-config.mjs';
 
 const withTempDirectory = async (callback) => {
   const path = await mkdtemp(join(tmpdir(), 'onlypreview-search-boundary-'));
@@ -513,6 +516,10 @@ test('watch CRUD, rename, and config transitions converge Search projection and 
       full: false,
       paths: ['.bitterless/preview-config.yml']
     });
+    assert.equal(indexedPaths(engine).includes('excluded/drop.txt'), false);
+    await engine.enqueue(async () =>
+      await engine.refreshInternal(await loadOnlyPreviewWorkspaceConfig(root))
+    );
     assert.ok(indexedPaths(engine).includes('excluded/drop.txt'));
     assert.equal(indexedPaths(engine).includes('.hidden/private.txt'), false);
     assert.equal(indexedPaths(engine).includes('node_modules/pkg/module.txt'), false);
@@ -521,6 +528,10 @@ test('watch CRUD, rename, and config transitions converge Search projection and 
       full: false,
       paths: ['.bitterless/preview-config.yml']
     });
+    assert.equal(indexedPaths(engine).includes('excluded/drop.txt'), true);
+    await engine.enqueue(async () =>
+      await engine.refreshInternal(await loadOnlyPreviewWorkspaceConfig(root))
+    );
     assert.equal(indexedPaths(engine).includes('excluded/drop.txt'), false);
     assert.equal(
       engine.treeEntries.some(({ relativePath }) => relativePath === 'excluded/drop.txt'),
@@ -663,7 +674,9 @@ test('failed config refresh restores the active browse policy and replaces candi
     };
     await write(configPath, 'version: 1\nexclude:\n  - configured/**\n');
     await assert.rejects(
-      engine.refresh({ workspaceId: 'workspace', generation: 1 }),
+      engine.enqueue(async () =>
+        await engine.refreshInternal(await loadOnlyPreviewWorkspaceConfig(root))
+      ),
       /forced candidate failure/u
     );
 

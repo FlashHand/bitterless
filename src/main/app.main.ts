@@ -54,6 +54,8 @@ import {
   registerOnlyPreviewScheme,
   uninstallOnlyPreviewProtocol,
 } from '@main/onlypreview/onlyPreviewProtocol.service';
+import { registerOnlyPreviewCoworkTab } from '@main/windows/onlyPreviewCoworkTab';
+import { registerOnlyPreviewMaestroOpener } from '@main/windows/onlyPreviewMaestroOpener';
 import {
   OnlyPreviewOpenQueue,
   resolveOnlyPreviewOpenTargets,
@@ -64,6 +66,7 @@ import {
 } from './xpc/onlyPreview.handler';
 import { onlyPreviewSettingsService } from './onlypreview/onlyPreviewSettings.service';
 import { onlyPreviewRecentDirectoryService } from './onlypreview/onlyPreviewRecentDirectory.service';
+import { onlyPreviewRecentsService } from './onlypreview/onlyPreviewRecents.runtime';
 import { trenchIoWindowService } from './trench/trenchIoWindow.service';
 import { registerTrenchGmgnIpc } from './coin/coinIpc.service';
 import { coinResourceService } from './coin/resources/coinResource.runtime';
@@ -551,6 +554,7 @@ const startGui = async (): Promise<void> => {
     handleCoreSqliteReady: () => {
       startupDiagnosticsService.clear('core-sqlite');
       onlyPreviewRecentDirectoryService.markStorageReady();
+      onlyPreviewRecentsService.markStorageReady();
       void runDiagnosedStartupStage('application-language', async () => {
         await applicationLanguageService.initialize();
       });
@@ -568,6 +572,7 @@ const startGui = async (): Promise<void> => {
     },
     handleCoreSqliteFailure: (err) => {
       onlyPreviewRecentDirectoryService.markStorageFailed();
+      onlyPreviewRecentsService.markStorageFailed();
       startupDiagnosticsService.report('core-sqlite', err);
       console.warn('[app] Core SQLite unavailable; continuing foreground startup:', err);
     },
@@ -627,6 +632,12 @@ if (isLegacyCodingAgentHookHelperMode) {
   });
   void app.whenReady().then(async () => {
     installOnlyPreviewProtocol();
+    // Teach Cowork that OnlyPreview can be one of its tabs. Registered from here rather than from
+    // Maestro because only the host side may know both halves — see `check:maestro`'s alias
+    // boundary — and before `startGui()` so a Cowork window opened during startup already has it.
+    registerOnlyPreviewCoworkTab();
+    // ...and make it the application Cowork's workspace tools show files in, instead of Finder.
+    registerOnlyPreviewMaestroOpener();
     installApplicationFindMenu();
     await startGui();
     onlyPreviewOpenQueue.markReady();

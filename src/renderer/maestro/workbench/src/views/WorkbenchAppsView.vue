@@ -8,10 +8,14 @@ import { maestroWindowEmitter } from '@/emitter/maestroWindow.emitter'
 import { coinWindowEmitter } from '@/emitter/coinWindow.emitter'
 import { eyesOnAgentsWindowEmitter } from '@/emitter/eyesOnAgentsWindow.emitter'
 import { submodulesWindowEmitter } from '@/emitter/submodulesWindow.emitter'
-import { onlyPreviewEmitter } from '@/emitter/onlyPreview.emitter'
-import { unwrapOnlyPreviewResult } from '@shared/onlypreview/onlyPreview.contract'
+import { createXpcRendererEmitter } from 'electron-xpc/renderer'
+import type { CoachXpcContract } from '@maestro-shared/coach.api'
 import { createMiniApps, type MiniApp } from '@/views/miniApp/miniApps.constant'
 import './WorkbenchAppsView.less'
+
+const coach = createXpcRendererEmitter<Pick<CoachXpcContract, 'openCompositeTab'>>(
+  'CoachXpcHandler',
+)
 
 const openingAppIds = ref(new Set<string>())
 
@@ -32,7 +36,8 @@ const miniApps = computed(() =>
         i18nHelper.miniApp.opened.replace('{name}', i18nHelper.miniApp.omniBrowser.name),
       )
     },
-    async () => unwrapOnlyPreviewResult(await onlyPreviewEmitter.openOnlyPreviewWindow()),
+    // Inside Cowork, OnlyPreview opens as a tab in this window rather than as its own window.
+    async () => await coach.openCompositeTab({ id: 'onlypreview' }),
     async () => await submodulesWindowEmitter.openSubmodulesWindow(),
     i18nHelper,
   ),

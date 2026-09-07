@@ -1,4 +1,4 @@
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { useThrottleFn } from '@vueuse/core';
 import type {
   EyesOnAgentsSnapshot,
@@ -117,6 +117,8 @@ class EyesOnAgentsState {
   private refreshTimer: number | null = null;
   private subscribed = false;
   private highestClaudeProviderRevision = -1;
+  // Local deletion invalidates in-flight responses, not later provider discovery.
+  private snapshotGeneration = 0;
 
   get threads(): EyesOnAgentsThread[] {
     return this.snapshot?.threads ?? [];
@@ -128,7 +130,7 @@ class EyesOnAgentsState {
 
   get threadSearchResults(): EyesOnAgentsThread[] {
     const threads = this.focusThreads;
-    const queryTokens = tokenizeThreadTitle(this.titleQuery);
+    const queryTokens = titleQueryTokens.value;
     if (queryTokens.length === 0) return [];
     return threads.filter((thread) => {
       if (thread.title === null) return false;
@@ -139,7 +141,7 @@ class EyesOnAgentsState {
   }
 
   get hasThreadSearchQueryTokens(): boolean {
-    return tokenizeThreadTitle(this.titleQuery).length > 0;
+    return titleQueryTokens.value.length > 0;
   }
 
   get threadSearchRevision(): number {
@@ -265,7 +267,7 @@ class EyesOnAgentsState {
     this.loadError = null;
     const request = (async () => {
       try {
-        this.applySnapshot(await eyesOnAgentsEmitter.getSnapshot());
+        await this.readSnapshot();
       } catch (error) {
         this.loadError = this.errorMessage(error);
       } finally {
@@ -488,9 +490,10 @@ class EyesOnAgentsState {
       : null;
     this.openingSessionKeys = new Set(this.openingSessionKeys).add(sessionKey);
     this.actionError = null;
+    const snapshotGeneration = this.snapshotGeneration;
     try {
       const result = await eyesOnAgentsEmitter.openThread({ sessionKey });
-      this.applySnapshot(result.snapshot);
+      this.applySnapshot(result.snapshot, snapshotGeneration);
       if (
         threadSearchRevision !== null
         && this.threadSearchVisible
@@ -524,6 +527,12 @@ class EyesOnAgentsState {
     );
   }
 
+  async deleteThreadFromBitterless(sessionKey: EyesOnAgentsSessionKey): Promise<void> {
+    await this.runSnapshotAction(`thread-delete:${sessionKey}`, () =>
+      eyesOnAgentsEmitter.deleteThreadFromBitterless({ sessionKey }),
+    );
+  }
+
   async setThreadUnread(
     sessionKey: EyesOnAgentsSessionKey,
     isUnread: boolean,
@@ -552,7 +561,7 @@ class EyesOnAgentsState {
   private async performBackgroundThreadPagesRefresh(): Promise<void> {
     try {
       await eyesOnAgentsEmitter.refreshThreadPages();
-      this.applySnapshot(await eyesOnAgentsEmitter.getSnapshot());
+      await this.readSnapshot();
     } catch {
       // Background refresh keeps the last valid snapshot and stays silent.
     }
@@ -567,13 +576,14 @@ class EyesOnAgentsState {
     );
     if (shouldSyncCodex) await this.syncThreads();
     else if (this.snapshot?.claudeProvider?.enabled) {
+      const snapshotGeneration = this.snapshotGeneration;
       try {
-        this.applySnapshot(await eyesOnAgentsEmitter.refreshClaudeInventory());
+        this.applySnapshot(await eyesOnAgentsEmitter.refreshClaudeInventory(), snapshotGeneration);
       } catch {
-        this.applySnapshot(await eyesOnAgentsEmitter.getSnapshot());
+        await this.readSnapshot();
       }
     } else {
-      this.applySnapshot(await eyesOnAgentsEmitter.getSnapshot());
+      await this.readSnapshot();
     }
 
     if (this.snapshot?.bridge.state !== 'not_installed') {
@@ -595,13 +605,15 @@ class EyesOnAgentsState {
     if (this.busyAction) return;
     this.busyAction = action;
     this.actionError = null;
+    const snapshotGeneration = this.snapshotGeneration;
     try {
       const snapshot = await callback();
       if (snapshot === null) {
         let refreshError: unknown = null;
         try {
+          const refreshGeneration = this.snapshotGeneration;
           const refreshed = await eyesOnAgentsEmitter.getSnapshot();
-          if (refreshed !== null) this.applySnapshot(refreshed);
+          if (refreshed !== null) this.applySnapshot(refreshed, refreshGeneration);
         } catch (error) {
           refreshError = error;
         }
@@ -613,7 +625,12 @@ class EyesOnAgentsState {
           : this.errorMessage(refreshError));
         throw new Error(message.slice(0, MAX_ACTION_ERROR_LENGTH));
       }
-      this.applySnapshot(snapshot);
+      if (action.startsWith('thread-delete:')) {
+        this.snapshotGeneration += 1;
+        this.applySnapshot(snapshot, this.snapshotGeneration);
+      } else {
+        this.applySnapshot(snapshot, snapshotGeneration);
+      }
     } catch (error) {
       this.actionError = this.errorMessage(error);
       throw error;
@@ -651,7 +668,7 @@ class EyesOnAgentsState {
     this.actionError = null;
     try {
       await callback();
-      this.applySnapshot(await eyesOnAgentsEmitter.getSnapshot());
+      await this.readSnapshot();
     } catch (error) {
       this.actionError = this.errorMessage(error);
       throw error;
@@ -662,7 +679,13 @@ class EyesOnAgentsState {
     }
   }
 
-  private applySnapshot(snapshot: EyesOnAgentsSnapshot): void {
+  private async readSnapshot(): Promise<void> {
+    const generation = this.snapshotGeneration;
+    this.applySnapshot(await eyesOnAgentsEmitter.getSnapshot(), generation);
+  }
+
+  private applySnapshot(snapshot: EyesOnAgentsSnapshot, generation: number): void {
+    if (generation !== this.snapshotGeneration) return;
     const claudeProviderRevision = snapshot.claudeProvider?.revision ?? 0;
     if (claudeProviderRevision < this.highestClaudeProviderRevision) return;
     this.highestClaudeProviderRevision = claudeProviderRevision;
@@ -688,6 +711,9 @@ class EyesOnAgentsState {
 }
 
 export const eyesOnAgentsStore = reactive(new EyesOnAgentsState());
+
+// Derive matching tokens from the reactive query; normalization never rewrites the raw draft.
+const titleQueryTokens = computed(() => tokenizeThreadTitle(eyesOnAgentsStore.titleQuery));
 
 export const createEyesOnAgentsTitleQueryScheduler = (
   run: TitleQueryScheduler,

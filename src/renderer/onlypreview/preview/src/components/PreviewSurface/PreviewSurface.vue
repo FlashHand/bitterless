@@ -93,6 +93,7 @@
         :key="selectionPreviewKey"
         :content="onlyPreviewPreviewStore.textContent"
         :reporting-revision="onlyPreviewPreviewStore.selectionReportingRevision"
+        :fragment="onlyPreviewPreviewStore.markdownFragment"
       />
 
       <MonacoTextPreview

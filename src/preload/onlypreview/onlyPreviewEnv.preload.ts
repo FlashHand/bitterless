@@ -2,7 +2,8 @@ import { contextBridge } from 'electron';
 import type {
   OnlyPreviewEntryMode,
   OnlyPreviewEnvApi,
-  OnlyPreviewHostPlatform
+  OnlyPreviewHostPlatform,
+  OnlyPreviewHostSurface
 } from './onlypreview.preload.type';
 
 export const getOnlyPreviewArgument = (name: string): string | null => {
@@ -25,6 +26,12 @@ const resolveEntryMode = (): OnlyPreviewEntryMode => {
   return 'shell';
 };
 
+// An unrecognised or absent value falls back to `window`, which is the host that offers the most
+// controls: a surface that wrongly believes it owns a window shows buttons that fail loudly, while
+// one that wrongly believes it is embedded silently loses its own window controls.
+const resolveHostSurface = (): OnlyPreviewHostSurface =>
+  getOnlyPreviewArgument('onlypreview-host') === 'cowork' ? 'cowork' : 'window';
+
 const resolvePlatform = (): OnlyPreviewHostPlatform => {
   if (process.platform === 'darwin' || process.platform === 'win32') return process.platform;
   return 'other';
@@ -37,7 +44,8 @@ export const exposeOnlyPreviewEnv = (): OnlyPreviewEnvApi => {
     previewRuntimeToken: getOnlyPreviewArgument('onlypreview-runtime-token'),
     openTag: getOnlyPreviewArgument('onlypreview-open-tag'),
     mode: resolveEntryMode(),
-    platform: resolvePlatform()
+    platform: resolvePlatform(),
+    host: resolveHostSurface()
   });
   contextBridge.exposeInMainWorld('onlyPreviewEnv', env);
   return env;

@@ -229,7 +229,9 @@ export const previewOnlyPreviewGlobalSearchResult = async ({
   isCancelled = () => false
 }) => {
   if (
-    searchPolicy.isPhysicallyExcludedPath(authority.relativePath) ||
+    (authority.nodeKind === 'directory'
+      ? searchPolicy.isExcludedDirectoryPath(authority.relativePath)
+      : searchPolicy.isExcludedFilePath(authority.relativePath)) ||
     !isWorkspaceSearchPathWithinDepth(authority.relativePath, {
       isDirectory: authority.nodeKind === 'directory'
     })

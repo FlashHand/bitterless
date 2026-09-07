@@ -14,6 +14,48 @@ no-copy progress rail—remains part of the current feature contract.
 
 ## Active delivery
 
+- [OnlyPreview tree density 151](tasks/onlypreview-tree-density-151.md) — implemented; owner testing pending;
+  Project names 14px, root weight600, rows22px; Cowork mini-021 port.
+
+- [OnlyPreview Recents/navigation 150](tasks/onlypreview-recents-navigation-150.md) — implemented; owner testing pending;
+  external-file Project safety,100-file MRU, preview toolbar and Markdown links; Cowork mini-020 port.
+
+- [Maestro composer cleanup 149](tasks/maestro-composer-cleanup-149.md) — implemented; owner verification pending, BL only;
+  workspace Refresh removed, full names and no preset greeting; 12/12 focused checks passed; no Cowork port.
+
+- [Config quiet reconciliation 148](tasks/onlypreview-config-quiet-reconcile-148.md) — implemented; owner verification pending;
+  sixty-second config quiet edge, serial queue and restart recovery; BL 61/61 and Cowork mini-019 16/16 passed.
+
+- [Python/Go index exclusions 147](tasks/onlypreview-python-go-index-exclusions-147.md) — implemented; owner verification pending;
+  hard dependency/cache directories, safe index identity replacement, and Cowork mini-018 port; 69/69 + 6/6 tests passed.
+
+- [OnlyPreview collapse directories 146](tasks/onlypreview-collapse-directories-146.md) — implemented; owner verification pending;
+  Project-header fold action and the small renderer port to Cowork mini-017 are code verified.
+
+- [Workspace name preview 138](tasks/onlypreview-cowork-workspace-preview-138.md) — in progress with another agent;
+  Ral assigned the workspace-open chain there; this session preserves those edits.
+- [OnlyPreview tab address 145](tasks/onlypreview-composite-tab-address-145.md) — implemented; owner verification pending;
+  keep composite-tab navigation/title state synchronized with the active OnlyPreview tab.
+
+- [OnlyPreview host toggle 139](tasks/onlypreview-host-toggle-139.md) — implemented; owner verification pending;
+  two-state Tabler switch right of Settings with serialized Tab/window relocation and target continuity.
+
+- [OnlyPreview Tab MenuBar alignment 144](tasks/onlypreview-tab-menubar-alignment-144.md) — implemented; owner verification pending;
+  remove the embedded macOS inset and make Open folder a vertically centered icon-only action.
+
+- [Maestro Chat layout 143](tasks/maestro-chat-layout-143.md) — implemented, owner verification pending; keep native Chat
+  visibility and tab bounds consistent through startup, deferred views, and resize.
+
+Current EyesOnAgents fixes:
+
+- [Search raw input 100](tasks/eyes-on-agents-search-raw-input-100.md) — implemented; owner verification pending;
+  preserve raw `v-model` text and isolate computed matching state from input and background updates.
+
+- [Local session removal 098](tasks/eyes-on-agents-local-delete-098.md) — implemented; owner verification pending;
+  local-only menu deletion for both providers, with rediscovery allowed.
+- [Search input lifecycle 099](tasks/eyes-on-agents-search-input-lifecycle-099.md) — implemented; owner verification pending;
+  recreate the retained Input after interrupted composition so future searches remain usable.
+
 | id                                                                                                                                | scope                                                                                                                                                                                                                                                                                   | status                                               | depends-on                                                                                                                                                                                      |
 | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [onlypreview-mvp-001](tasks/onlypreview-mvp-001.md)                                                                               | initial read-only indexed preview MVP; Omni embedding superseded by standalone-only follow-up                                                                                                                                                                                           | done                                                 | —                                                                                                                                                                                               |
@@ -301,12 +343,17 @@ no-copy progress rail—remains part of the current feature contract.
 | [onlypreview-surface-container-130](tasks/onlypreview-surface-container-130.md) | give the OnlyPreview composite its own container View and make the layer service order children inside it, one instance per surface | implemented; owner verification pending |  |
 | [onlypreview-mount-seam-131](tasks/onlypreview-mount-seam-131.md) | introduce OnlyPreviewMount with a standalone implementation, route the single bounds choke point through it, and clamp every layer inside the composite rect | implemented; owner verification pending | onlypreview-surface-container-130 |
 | [onlypreview-surface-registry-132](tasks/onlypreview-surface-registry-132.md) | replace the window helper single-surface fields with a token-keyed surface registry that admits one live content surface | pending | onlypreview-mount-seam-131 |
-| [onlypreview-shortcut-arbitration-133](tasks/onlypreview-shortcut-arbitration-133.md) | resolve the macOS Find accelerators through a surface resolver so they reach an embedded OnlyPreview and still fall through to every other window | pending | onlypreview-surface-registry-132 |
-| [onlypreview-mount-chrome-134](tasks/onlypreview-mount-chrome-134.md) | publish the mount window-chrome capability to the Shell so an embedded surface renders no minimize or maximize control | pending | onlypreview-shortcut-arbitration-133 |
-| [onlypreview-cowork-tab-mount-135](tasks/onlypreview-cowork-tab-mount-135.md) | implement the Cowork mount as a Maestro tab kind that carries the OnlyPreview container, and open it from the Mini Apps grid inside Maestro | pending | onlypreview-mount-chrome-134 |
+| [onlypreview-shortcut-arbitration-133](tasks/onlypreview-shortcut-arbitration-133.md) | resolve the macOS Find accelerators through a surface resolver so they reach an embedded OnlyPreview and still fall through to every other window | partially implemented — Command+W hole fixed | onlypreview-surface-registry-132 |
+| [onlypreview-mount-chrome-134](tasks/onlypreview-mount-chrome-134.md) | publish the mount window-chrome capability to the Shell so an embedded surface renders no minimize or maximize control | implemented; owner manual verification pending | onlypreview-mount-seam-131 |
+| [onlypreview-cowork-tab-mount-135](tasks/onlypreview-cowork-tab-mount-135.md) | implement the Cowork mount as a Maestro tab kind that carries the OnlyPreview container, and open it from the Mini Apps grid inside Maestro | done — owner verified 2026-09-07 | onlypreview-mount-seam-131 |
 | [onlypreview-surface-ownership-136](tasks/onlypreview-surface-ownership-136.md) | let only one OnlyPreview content surface be live, with the standalone window taking priority and the Cowork tab falling back to a View-in-window placeholder | pending | onlypreview-cowork-tab-mount-135 |
 | [onlypreview-standalone-close-takeover-137](tasks/onlypreview-standalone-close-takeover-137.md) | rebuild the deferred Cowork OnlyPreview when the standalone window closes, resuming the directory and file the window was showing through the existing first-restore path | pending | onlypreview-surface-ownership-136 |
-| [onlypreview-cowork-workspace-preview-138](tasks/onlypreview-cowork-workspace-preview-138.md) | clicking the workspace path in the Cowork Control panel opens OnlyPreview on that workspace directory | pending | onlypreview-cowork-tab-mount-135 |
+| [onlypreview-cowork-workspace-preview-138](tasks/onlypreview-cowork-workspace-preview-138.md) | clicking the workspace path in the Cowork Control panel opens OnlyPreview on that workspace directory | in-progress with another agent | onlypreview-cowork-tab-mount-135 |
+| [onlypreview-host-toggle-139](tasks/onlypreview-host-toggle-139.md) | Settings-right two-state Tabler toggle between a Cowork tab and a standalone window | done | onlypreview-mount-chrome-134 |
+| [onlypreview-remembered-host-140](tasks/onlypreview-remembered-host-140.md) | remember which host OnlyPreview was last opened in and make that the default target for every open route | pending | onlypreview-surface-ownership-136 |
+| [onlypreview-load-before-refresh-141](tasks/onlypreview-load-before-refresh-141.md) | a reusable index loads and reports ready immediately, and the freshness reconcile moves off the initialize and search path into the background | pending | — |
+| [onlypreview-workspace-folder-opens-preview-142](tasks/onlypreview-workspace-folder-opens-preview-142.md) | Cowork's open_workspace_folder tool opens OnlyPreview instead of the OS file manager | implemented; owner manual verification pending | onlypreview-cowork-tab-mount-135 |
+| [onlypreview-composite-tab-address-145](tasks/onlypreview-composite-tab-address-145.md) | publish OnlyPreview composite URL/title instead of leaving Home in the address bar | done | onlypreview-cowork-tab-mount-135 |
 | [desktop-youtube-dl-removal-003](tasks/desktop-youtube-dl-removal-003.md)                                                       | remove the unused youtube-dl-exec helper so dependency installation no longer calls the unauthenticated GitHub Releases API; [review 1](reviews/desktop-youtube-dl-removal-003-1.md) passed                                                                                               | done                                                 | —                                                                                                                                                                                               |
 | [codex-gpt55-retention-008](tasks/codex-gpt55-retention-008.md)                                                                   | keep GPT-5.5 while adding GPT-5.6 runtime models                                                                                                                                                                                                                                        | implemented; owner verification pending              | model-provider-login-cancel-regression-007                                                                                                                                                      |
 | [model-provider-fresh-login-callback-009](tasks/model-provider-fresh-login-callback-009.md)                                       | fresh Codex login with one modern OAuth callback owner                                                                                                                                                                                                                                  | implemented; owner verification pending              | model-provider-login-cancel-regression-007, codex-gpt55-retention-008                                                                                                                           |

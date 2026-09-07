@@ -125,7 +125,22 @@ export class FileSearchRuntimeRelayService {
     capability: string;
     client: FileSearchRuntimeClient;
     broadcast(eventName: string, params: unknown): void;
+    /**
+     * The runtime is being handed to a NEW host without being restarted, so its workspace binding
+     * is still live and must be carried over.
+     *
+     * Without this the event path below fails closed on `active.workspaceId === null` and latches
+     * INDEX_PROTOCOL_ERROR: the surviving runtime keeps emitting index events for the workspace it
+     * is still building, and a fresh `active` claims to know nothing about any workspace. Those
+     * two fields are only otherwise set by an `initialize` call, which a re-attach deliberately
+     * does not make — re-initializing is exactly the restart this whole path exists to avoid.
+     */
+    preserveWorkspace?: boolean;
   }): void {
+    const carried =
+      params.preserveWorkspace && this.active
+        ? { workspaceId: this.active.workspaceId, generation: this.active.generation }
+        : { workspaceId: null, generation: null };
     this.detach();
     let resolveStopped = (): void => undefined;
     const stopped = new Promise<void>((resolve) => {
@@ -143,8 +158,8 @@ export class FileSearchRuntimeRelayService {
       client: params.client,
       pending: new Set(),
       retiredSearchRequests: new FileSearchRetiredRequestRegistry(),
-      workspaceId: null,
-      generation: null,
+      workspaceId: carried.workspaceId,
+      generation: carried.generation,
       broadcast: params.broadcast,
       protocolFailure: null,
       protocolFailureSignal,

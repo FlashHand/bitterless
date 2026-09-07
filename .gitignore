@@ -38,3 +38,4 @@ prebuilt/
 
 # Indexing benchmark corpora and reports
 tmp
+tsconfig.surface.*.json

@@ -8,6 +8,11 @@ verify: node --test tests/onlypreview/onlyPreviewHistory.test.mjs && yarn typech
 
 # Project and History tabs
 
+Superseded for file-history delivery by Ral's 2026-09-07
+[Recents/navigation task 150](onlypreview-recents-navigation-150.md). The old contract below is
+historical: current delivery is files-only, capped at100 per active Project including external files,
+with the tab named Recents. Do not implement this older History/directory-visit plan independently.
+
 ## Objective
 
 Turn the left panel's static `Project` heading into a two-tab header and add a History tab listing
