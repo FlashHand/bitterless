@@ -20,7 +20,7 @@ import type {
   ModelRetryProgress,
   WorkspaceRef
 } from '@maestro-shared/coach.api'
-import type { MaestroChatApi, MaestroChatMessage, MaestroChatSession } from '@maestro-shared/maestroChat.api'
+import type { MaestroChatApi, MaestroChatMessage, MaestroChatSession, MaestroCompactionApi } from '@maestro-shared/maestroChat.api'
 import type { MaestroTask, MaestroTaskPart } from '@maestro-shared/task.api'
 import type {
   ChatAttachment,
@@ -36,6 +36,13 @@ import { TurnService, type SendResult } from './turn.service'
 
 const coach = createXpcRendererEmitter<CoachXpcContract>('CoachXpcHandler')
 const maestroChat = createXpcRendererEmitter<MaestroChatApi>('MaestroChatDao')
+/**
+ * main 侧 `CompactionHandler` —— **凡调 pi 的都在那边**(渲染端 import pi 拿到的是空壳,
+ * 编译期一声不吭、运行期才炸;而且摘要要调模型、provider 凭据不进渲染进程)。
+ * 字符串必须是 handler 的**类名**。与 cowork 同一份设计
+ * (`areas/agent-runtime/agent-design-parity.md` 裁决一)。
+ */
+const compaction = createXpcRendererEmitter<MaestroCompactionApi>('CompactionHandler')
 
 interface SessionOptions {
   title: string
@@ -50,6 +57,9 @@ const DEFAULT_CONTEXT_LIMIT_LABEL = '256K'
 const DEFAULT_COMPRESSION_REMAINING_PERCENT = 10
 const COMPACTING_CONTENT = 'Compacting...'
 const COMPACTED_CONTENT = 'Compacting complete.'
+// 摘要出来了但没落回 pi 会话 —— 补水通路有了内容,而活着的会话没变小。
+// 照实说,不拿 'Compacting complete.' 冒充。
+const COMPACT_NOT_APPLIED_CONTENT = 'Compacted summary saved, but the live session was not shrunk.'
 const COMPACT_SUMMARY_MAX_CONTEXT_SHARE = 0.45
 const COMPACT_SUMMARY_HARD_MAX_CHARS = 500_000
 // Auto-scroll "stick to bottom" threshold. While streaming we keep pinning the list to the bottom,
@@ -863,6 +873,9 @@ export class MessageStoreState {
   async compactSessionIfNeeded(session: MessageSession, options?: { protectMessageIds?: Set<string> }): Promise<boolean> {
     this.updateSessionContextUsage(session)
     if (!session.contextUsage.compressionTriggered) return false
+    // 渲染端的启发式说该压了 → 再问 main 一次真 usage。**只有真数说"没到线"才拦**,
+    // 其余情形(账本里还没这个会话、跨进程失败)一律放行 —— 见 confirmRealUsage。
+    if (!(await this.confirmRealUsage(session))) return false
 
     const candidates = this.selectCompactCandidates(session, options?.protectMessageIds || new Set<string>())
     if (!candidates.length) return false
@@ -885,12 +898,31 @@ export class MessageStoreState {
     await delay(80)
 
     const bridgeMessages = this.selectCompactBridgeMessages(session, candidates)
-    const compactSummary = await this.buildCompactSummary(session, candidates, bridgeMessages)
+    // 压缩本体在 main:候选批是**它自己的 pi entry 树**,不是这里的 `candidates`
+    // (渲染端的 chat 消息永远没有工具返回正文,拿它当候选批会让那套三层兜底永远休眠)。
+    // `candidates` 从此只决定**渲染端自己**标哪些消息为已压缩 —— 两个坐标系不通,
+    // 回包里的 `cutPoint` 是 entry 下标、映不到消息 id,所以这一份保留集仍由渲染端自己算。
+    const outcome = await this.requestMainCompaction(session, candidates, bridgeMessages)
+    const compactSummary = outcome.summary
+    // **`compressed` 标照打,不看 `applied`** —— 与 cowork 一致(它那边 `applied === false`
+    // 只改占位文案,不分叉打标)。
+    //
+    // 我先前写成「只有 applied 才打标」,理由是不想让记账说"压过了"而模型仍看得见全部。
+    // 撤回,因为那个理由的前提不成立,而代价是真的:
+    //  · 兜底是 pi 自己的 auto-compaction —— 两边都在 `piRuntimeAdapter.ts:188` 显式
+    //    `setAutoCompactionEnabled?.(true)`,它在**回合内**按 overflow/threshold 触发并 compact-and-retry。
+    //    所以「活着的会话没变小」不会一路撞到硬失败,有人接着;
+    //  · `applied:false` 通常是**永久**失败(pi 把 `appendCompaction` 挪走了),门控会让渲染端每一轮
+    //    重压一次、每次花一次模型钱,而重试不会成功;
+    //  · 渲染端这份标记管的是**它自己**的账与补水载荷 —— 有了摘要覆盖那段,它们就该减下去,
+    //    这件事与 pi 活着的树是否变小本来就是两回事(真 usage 才是那件事的口径,由 `shouldCompact` 读)。
+    //
+    // 让偏差**可见**而不是消失:占位文案照实说没落回会话(见下面的 `COMPACT_NOT_APPLIED_CONTENT`)。
     for (const message of candidates) {
       message.compressed = true
       this.withTokenCount(message)
     }
-    compactMessage.content = COMPACTED_CONTENT
+    compactMessage.content = outcome.applied ? COMPACTED_CONTENT : COMPACT_NOT_APPLIED_CONTENT
     compactMessage.streaming = false
     compactMessage.compactSummary = compactSummary
     compactMessage.compactUntilMessageId = until.id
@@ -954,6 +986,78 @@ export class MessageStoreState {
       .slice(Math.max(0, startIndex))
       .filter((message) => !compactedIds.has(message.id) && isPromptContextMessage(message))
       .slice(0, 4)
+  }
+
+  /**
+   * 真数据的**否决票** —— 渲染端的启发式先说该压了,再问 main「按真 usage 算,到线了吗」。
+   *
+   * **只有 `under-threshold` 会拦下来**:那是真数说没到线,那就是没到线。`no-usage`(账本里
+   * 还没有这个会话)、跨进程异常、解析不到模型 —— 一律放行,回落到渲染端自己的判断。
+   * 与 cowork 的 `confirmRealUsage` 同一语义。
+   *
+   * 为什么是否决而不是主触发:渲染端的账是**它自己**要用的(进度条、`compressed` 标记都按它走),
+   * 而真 usage 只有 main 知道。让真数当主触发就等于把渲染端的显示与它自己的决定拆成两套口径。
+   *
+   * 参数不发明新数字,用本仓已有的两个:
+   * · `reserveTokens` = 「要留多少余量」,正是 `compressionRemainingPercent` 的语义(pi 的判据是
+   *   `used > window - reserve`)。**按比例算,不写死** —— 写死的余量在小窗口模型上会让它永远在压缩;
+   * · `keepRecentTokens` = `selectCompactCandidates` 里那个受保护尾部预算,同一把尺。
+   */
+  private async confirmRealUsage(session: MessageSession): Promise<boolean> {
+    const maxTokens = Math.max(1, session.contextUsage.maxTokens || this.contextLimitK * 1024)
+    try {
+      const reply = await compaction.shouldCompact({
+        sessionId: session.id,
+        reserveTokens: Math.round((maxTokens * this.compressionRemainingPercent) / 100),
+        keepRecentTokens: maxTokens <= 2048 ? Math.round(maxTokens * 0.3) : Math.min(Math.round(maxTokens * 0.25), 12000)
+      })
+      return reply.shouldCompact || reply.reason !== 'under-threshold'
+    } catch {
+      return true
+    }
+  }
+
+  /**
+   * 让 main 压一次 —— 摘要 + **把结果落回活着的 pi 会话**。
+   *
+   * 返回 `applied` 而不只是一段摘要,是因为两者的后果不同:摘要生成成功只代表有一段文字,
+   * **只有 `applied:true` 才代表模型看到的上下文真的变小了**。调用方按它决定要不要给渲染端
+   * 消息打 `compressed` 标 —— 打错的后果见 `compactSessionIfNeeded` 里那段注释。
+   *
+   * 失败时回落到确定性摘要(`buildFallbackCompactSummary`):那段文字对**补水**仍然有用
+   * (重启后 `compressedContext` 是恢复历史的唯一来源),只是它没有让活着的会话变小。
+   * 所以 `applied` 照实报 false,不拿兜底冒充一次成功的压缩。
+   */
+  private async requestMainCompaction(
+    session: MessageSession,
+    candidates: ChatMessage[],
+    bridgeMessages: ChatMessage[]
+  ): Promise<{ summary: string; applied: boolean; error?: string }> {
+    const maxChars = this.compactSummaryMaxChars()
+    const maxTokens = Math.max(1, session.contextUsage.maxTokens || this.contextLimitK * 1024)
+    try {
+      const reply = await compaction.compact({
+        sessionId: session.id,
+        keepRecentTokens: maxTokens <= 2048 ? Math.round(maxTokens * 0.3) : Math.min(Math.round(maxTokens * 0.25), 12000),
+        // 迁移兜底而已:main 优先用自己 entry 树上最后一条 compaction entry 作为 S₁,
+        // 只有树上还没有时才用这个(老会话的 `detail.compressedContext`)。
+        previousSummary: session.detail.compressedContext || undefined
+      })
+      if (reply.ok && reply.summary.trim()) {
+        return { summary: clipChars(reply.summary, maxChars), applied: reply.applied, error: reply.error }
+      }
+      return {
+        summary: await this.buildCompactSummary(session, candidates, bridgeMessages),
+        applied: false,
+        error: reply.error || 'compact-failed'
+      }
+    } catch (error) {
+      return {
+        summary: await this.buildCompactSummary(session, candidates, bridgeMessages),
+        applied: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
   }
 
   private async buildCompactSummary(session: MessageSession, messages: ChatMessage[], bridgeMessages: ChatMessage[]): Promise<string> {
