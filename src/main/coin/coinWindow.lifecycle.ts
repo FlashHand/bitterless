@@ -30,6 +30,12 @@ export class CoinWindowLifecycle<TWindow> {
   }
 
   async open(): Promise<void> {
+    const window = await this.ensure();
+    this.assertCanOpen();
+    this.port.showAndFocus(window);
+  }
+
+  async ensure(): Promise<TWindow> {
     await this.cleanupPromise;
     this.assertCanOpen();
 
@@ -37,8 +43,7 @@ export class CoinWindowLifecycle<TWindow> {
     if (!pendingBoot) {
       const current = this.port.getCurrent();
       if (current && !this.port.isDestroyed(current)) {
-        this.port.showAndFocus(current);
-        return;
+        return current;
       }
 
       const controller = new AbortController();
@@ -57,7 +62,7 @@ export class CoinWindowLifecycle<TWindow> {
     if (this.port.isDestroyed(window)) {
       throw new Error('[coin] window closed before startup completed');
     }
-    this.port.showAndFocus(window);
+    return window;
   }
 
   async destroyForAuth(): Promise<void> {
@@ -71,7 +76,7 @@ export class CoinWindowLifecycle<TWindow> {
     await this.cleanup();
   }
 
-  private assertCanOpen(): void {
+  assertCanOpen(): void {
     if (this.hostStopping) throw new Error('[coin] host cleanup has started');
     if (!this.authenticated) throw new Error('[coin auth] session is not authenticated');
   }

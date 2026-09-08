@@ -1,6 +1,13 @@
 import type { enTrench } from './enTrench';
 
 export const zhTrench: typeof enTrench = {
+  host: {
+    openWindow: '在独立窗口中打开',
+    openTab: '在 Maestro 标签页中打开',
+    openMaestro: '请先打开 Maestro，再将 Trench 移到标签页',
+    unavailable: 'Trench 窗口控件不可用',
+    failed: '无法移动 Trench，请重试。'
+  },
   header: {
     subtitle: '本地记录库',
     loading: '正在打开本地记录',
@@ -570,7 +577,7 @@ export const zhTrench: typeof enTrench = {
     modules: 'Trench 模块',
     chains: 'INDEX 链',
     indexForChain: '{chain} INDEX',
-    addCa: '添加 CA',
+    addCa: '添加 Token CA',
     reanalyze: '重新分析',
     reanalyzeAll: '重新分析全部',
     retry: '重试',
@@ -580,7 +587,7 @@ export const zhTrench: typeof enTrench = {
     indexWallets: 'INDEX 钱包',
     indexWalletsForChain: '{chain} INDEX 钱包',
     emptyTargetTitle: '添加第一个目标 CA',
-    emptyTargetDescription: 'Trench 会把所有启用的目标作为一个 INDEX 批次统一分析。',
+    emptyTargetDescription: '该链暂无 Token 合约。',
     unknownToken: '未知 Token',
     copyAddress: '复制 {address}',
     copyContractAddress: '复制合约地址 {address}',
@@ -593,15 +600,15 @@ export const zhTrench: typeof enTrench = {
     updatedAt: '更新于 {time}',
     waitingFirstAnalysis: '等待首次分析',
     firstRunTitle: '正在生成首个 INDEX',
-    firstRunDescription: '正在读取每个目标 CA 中按利润排序的前 100 个交易者。',
+    firstRunDescription: '正在读取本批 Token CA 中按利润排序的交易者。',
     emptyIndexTitle: '暂无 INDEX 结果',
     emptyIndexDescription: '添加 CA 或重新分析，以发布符合条件的用户钱包证据。',
-    totalProfit: '总利润 {value}',
+    totalProfit: 'Token 样本利润 {value}',
     walletSources: '{count} 个来源 CA · 最佳 #{rank}',
-    dialogTitle: '添加目标 CA',
+    dialogTitle: '添加 Token CA',
     dialogTitleForChain: '添加 {chain} 目标 CA',
-    addAndAnalyze: '添加并分析',
-    contractAddress: '合约地址',
+    addAndAnalyze: '更新 INDEX',
+    contractAddress: 'Token 合约地址',
     caPlaceholder: '粘贴一个 Solana 或 EVM CA',
     caBatchPlaceholder: '粘贴 1–1000 个 Solana 或 EVM CA，以换行或空格分隔',
     caBatchPlaceholderForChain: '粘贴 1–1000 个 {chain} CA，以换行或空格分隔',

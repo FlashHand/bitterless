@@ -13,6 +13,8 @@ import { initMessageServer } from './messageServer/messageServer';
 import { coreSqliteMigrations, coreSqliteTables } from './coreSqlite.release';
 // Dao imports trigger singleton creation -> auto-register xpc handlers via BaseDao
 import './dao/setting.dao';
+import { settingDao } from './dao/setting.dao';
+import { registerOnlyPreviewBookmarkStorage } from '../onlypreview/onlyPreviewBookmarkStorage.handler';
 import './dao/message.dao';
 import './dao/session.dao';
 import './dao/env.dao';
@@ -107,6 +109,20 @@ const isSqliteRendererDocument = (() => {
 })();
 const bootPromise = isSqliteRendererDocument ? bootSqlite() : Promise.resolve();
 const targetId = isSqliteRendererDocument ? randomUUID() : null;
+if (isSqliteRendererDocument) {
+  registerOnlyPreviewBookmarkStorage(
+    async () => {
+      await bootPromise;
+      if (!bootResult.ok) throw new Error(bootResult.error);
+      return await sqlitePathCapability.getUserDataPath();
+    },
+    async (sub_key) => {
+      const stored = await settingDao.getStored({ key: 'onlypreview_bookmarks', sub_key });
+      if (stored.exists && !stored.valid) throw new Error('Legacy bookmarks storage is invalid.');
+      return stored.exists ? stored.value : null;
+    }
+  );
+}
 
 const todoistSyncCredentialOptions = createTodoistSyncCredentialOptions({
   e2e: process.env.BITTERLESS_E2E === '1',

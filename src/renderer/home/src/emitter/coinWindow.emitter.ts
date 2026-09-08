@@ -1,7 +1,5 @@
 import { createXpcRendererEmitter } from 'electron-xpc/renderer';
 
-interface CoinWindowApi {
-  openCoinWindow(): Promise<void>;
-}
+import type { TrenchHostApi } from '@shared/trench/trenchHost.type';
 
-export const coinWindowEmitter = createXpcRendererEmitter<CoinWindowApi>('CoinWindowHandler');
+export const coinWindowEmitter = createXpcRendererEmitter<Pick<TrenchHostApi, 'openCoinWindow' | 'openCoinTab'>>('CoinWindowHandler');

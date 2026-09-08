@@ -10,7 +10,7 @@ import type {
   TrenchPersonUpdateProfileInput,
 } from './trenchPerson.type';
 
-export const TRENCH_INDEX_POLICY_VERSION = 'profit-sum-v2' as const;
+export const TRENCH_INDEX_POLICY_VERSION = 'profit-sum-v3' as const;
 export const TRENCH_INDEX_CHANGED_EVENT = 'trench/index-changed' as const;
 export const TRENCH_INDEX_MAX_CANDIDATES_PER_TARGET = 100;
 export const TRENCH_INDEX_MAX_WALLETS = 300;

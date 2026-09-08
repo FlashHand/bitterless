@@ -5,13 +5,15 @@ import { normalizeTrenchXIdentity } from '../../shared/trench/trenchPerson.valid
 export const TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE = '260807114211';
 export const TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE = '260811170011';
 export const TRENCH_IO_PERSON_SCHEMA_VERSION_CODE = '260813155644';
-export const TRENCH_IO_SCHEMA_VERSION_CODE = '260813155645';
+export const TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE = '260813155645';
+export const TRENCH_IO_SCHEMA_VERSION_CODE = '260908130001';
 
 export const TRENCH_IO_MIGRATION_MANIFEST = [
   { versionCode: TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE, name: 'initial-index-schema' },
   { versionCode: TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE, name: 'chain-partitioned-index' },
   { versionCode: TRENCH_IO_PERSON_SCHEMA_VERSION_CODE, name: 'global-wallet-person-registry' },
-  { versionCode: TRENCH_IO_SCHEMA_VERSION_CODE, name: 'person-import-ledger' },
+  { versionCode: TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE, name: 'person-import-ledger' },
+  { versionCode: TRENCH_IO_SCHEMA_VERSION_CODE, name: 'incremental-index-evidence' },
 ] as const;
 
 export interface TrenchIoMigrationDatabase {
@@ -58,6 +60,7 @@ export const TRENCH_IO_TABLE_COLUMNS = {
   trench_index_wallets: [
     'run_id', 'wallet_account_id', 'chain', 'chain_rank', 'total_profit_usd', 'source_ca_count',
     'profitable_ca_count', 'best_source_rank', 'realized_profit_usd', 'unrealized_profit_usd',
+    'evidence_run_id',
   ],
   trench_persons: [
     'person_id', 'status', 'merged_into_person_id', 'display_name', 'avatar_url', 'note',
@@ -1128,7 +1131,7 @@ const applyPersonImportLedgerMigration = (
   db.exec(PERSON_IMPORT_LEDGER_MIGRATION);
   db.prepare(
     'INSERT INTO trench_schema_migrations (version_code,name,applied_at) VALUES (?,?,?)',
-  ).run(TRENCH_IO_SCHEMA_VERSION_CODE, 'person-import-ledger', now);
+  ).run(TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE, 'person-import-ledger', now);
 };
 
 interface ColumnRow {
@@ -1203,7 +1206,10 @@ export const assertTrenchIoSchema = (db: TrenchIoMigrationDatabase): void => {
   const foreignKeys: Record<string, Record<string, string>> = {
     trench_wallet_chain_accounts: { wallet_id: 'trench_wallets' },
     trench_index_wallet_candidates: { wallet_account_id: 'trench_wallet_chain_accounts' },
-    trench_index_wallets: { wallet_account_id: 'trench_wallet_chain_accounts' },
+    trench_index_wallets: {
+      wallet_account_id: 'trench_wallet_chain_accounts',
+      evidence_run_id: 'trench_index_runs',
+    },
     trench_persons: { merged_into_person_id: 'trench_persons' },
     trench_person_wallets: { person_id: 'trench_persons', wallet_id: 'trench_wallets' },
     trench_person_external_identities: { person_id: 'trench_persons' },
@@ -1293,6 +1299,38 @@ export const applyTrenchIoMigrations = (
     } finally {
       db.exec('PRAGMA foreign_keys = ON');
     }
+    ledger = readTrenchIoMigrationLedger(db);
+    assertTrenchIoMigrationLedgerPrefix(ledger);
+  }
+  if (ledger.length === 4) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE trench_index_wallets_incremental (
+          run_id TEXT NOT NULL REFERENCES trench_index_runs(run_id) ON DELETE RESTRICT,
+          wallet_account_id TEXT NOT NULL
+            REFERENCES trench_wallet_chain_accounts(wallet_account_id) ON DELETE RESTRICT,
+          chain TEXT NOT NULL CHECK (chain IN ('bsc', 'solana', 'robinhood')),
+          chain_rank INTEGER NOT NULL CHECK (chain_rank BETWEEN 1 AND 300),
+          total_profit_usd REAL NOT NULL,
+          source_ca_count INTEGER NOT NULL CHECK (source_ca_count BETWEEN 1 AND 1000),
+          profitable_ca_count INTEGER NOT NULL CHECK (profitable_ca_count BETWEEN 0 AND source_ca_count),
+          best_source_rank INTEGER NOT NULL CHECK (best_source_rank BETWEEN 1 AND 100),
+          realized_profit_usd REAL,
+          unrealized_profit_usd REAL,
+          evidence_run_id TEXT NOT NULL REFERENCES trench_index_runs(run_id) ON DELETE RESTRICT,
+          PRIMARY KEY (run_id, wallet_account_id)
+        );
+        INSERT INTO trench_index_wallets_incremental
+          SELECT *, run_id FROM trench_index_wallets;
+        DROP TABLE trench_index_wallets;
+        ALTER TABLE trench_index_wallets_incremental RENAME TO trench_index_wallets;
+        CREATE UNIQUE INDEX trench_index_wallets_rank
+          ON trench_index_wallets(run_id, chain, chain_rank);
+      `);
+      db.prepare(
+        'INSERT INTO trench_schema_migrations (version_code,name,applied_at) VALUES (?,?,?)',
+      ).run(TRENCH_IO_SCHEMA_VERSION_CODE, 'incremental-index-evidence', now);
+    })();
     ledger = readTrenchIoMigrationLedger(db);
     assertTrenchIoMigrationLedgerPrefix(ledger);
   }

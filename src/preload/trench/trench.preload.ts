@@ -15,9 +15,11 @@ const platform = (): TrenchHostContext['platform'] => {
     : 'other';
 };
 
+const surfaceToken = process.argv.find((arg) => arg.startsWith('--trenchSurfaceToken='))?.split('=')[1];
 const trenchHost = Object.freeze<TrenchHostContext>({
   host: process.argv.includes('--mode=omni') ? 'omni' : 'standalone',
   platform: platform(),
+  ...(surfaceToken ? { surfaceToken } : {}),
 });
 
 const gmgnResources = Object.freeze({

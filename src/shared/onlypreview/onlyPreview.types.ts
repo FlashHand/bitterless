@@ -571,9 +571,11 @@ export interface OnlyPreviewApi {
   getBookmarks(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksRequest):
     Promise<OnlyPreviewResult<import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksSnapshot>>;
   addBookmark(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarkRequest):
-    Promise<OnlyPreviewResult<void>>;
+    Promise<OnlyPreviewResult<import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksSnapshot>>;
+  removeBookmark(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarkRequest):
+    Promise<OnlyPreviewResult<import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksSnapshot>>;
   showBookmarkContextMenu(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarkRequest):
-    Promise<OnlyPreviewResult<void>>;
+    Promise<OnlyPreviewResult<import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksSnapshot | null>>;
   getRecents(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<OnlyPreviewRecentsSnapshot>>;
   openRecent(params: OnlyPreviewHostRequest & {
     entryId: string;

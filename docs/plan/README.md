@@ -14,6 +14,14 @@ no-copy progress rail—remains part of the current feature contract.
 
 ## Active delivery
 
+- [INDEX incremental import 030](tasks/trench-index-incremental-030.md) - implemented; owner testing pending.
+
+- [Trench host toggle 029](tasks/trench-host-toggle-029.md) - implemented; owner testing pending; ordinary singleton
+  window/tab hosting, with Omni multi-panel embedding unchanged.
+
+- [Project bookmarks 170](tasks/onlypreview-project-bookmarks-170.md) — implemented; owner testing pending;
+  Project-only fixed list and independent preload SQLite, matching Cowork mini-033.
+
 - [Slash commands 169](tasks/maestro-slash-commands-169.md) — implemented; owner testing pending; Cowork-style
   `/clear` and `/view_context` menu with BL-native, read-only context export.
 

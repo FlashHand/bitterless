@@ -15,6 +15,7 @@ import {
   createSnipingOmniTrenchTargets,
   type SnipingRendererTargets,
   type SnipingSenderWebContents,
+  type SnipingWindowLike,
 } from './snipingSender.guard';
 import { snipingSessionService, type SnipingSessionService } from './snipingSession.service';
 
@@ -22,7 +23,7 @@ export interface SnipingIpcDependencies {
   bridge: SnipingBridge;
   session: SnipingSessionService;
   getHomeWindow(): BrowserWindow | null;
-  getStandaloneWindow(): BrowserWindow | null;
+  getStandaloneWindow(): SnipingWindowLike | null;
   isLiveOmniTrench(sender: SnipingSenderWebContents): boolean;
   rendererTargets: SnipingRendererTargets;
   omniTrenchTargets: string[];
@@ -46,7 +47,7 @@ const defaultDependencies = (): SnipingIpcDependencies => {
     bridge: new SnipingBridgeService(relay),
     session: snipingSessionService,
     getHomeWindow: () => mainWindowHelper.browserWindow,
-    getStandaloneWindow: () => coinWindowManager.browserWindow,
+    getStandaloneWindow: () => coinWindowManager.surface,
     isLiveOmniTrench: (sender) =>
       omniWindowHelper.isLiveMiniAppWebContents('trench', sender as Electron.WebContents),
     rendererTargets: createSnipingRendererTargets(

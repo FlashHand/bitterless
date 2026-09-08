@@ -40,30 +40,20 @@ const { OnlyPreviewBookmarksService, OnlyPreviewHostRegistry, OnlyPreviewWorkspa
   await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 
 class Storage {
-  rows = new Map();
-  writes = 0;
-  readGate = null;
-  conflict = null;
-  key(params) { return JSON.stringify([params.key, params.sub_key]); }
-  async getStored(params) {
-    const gate = this.readGate;
-    this.readGate = null;
+  rows = new Map(); writes = 0; readGate = null;
+  async execute(request) {
+    const gate = this.readGate; this.readGate = null;
     if (gate) await gate.promise;
-    const serializedValue = this.rows.get(this.key(params));
-    if (serializedValue === undefined) return { exists: false, valid: false, value: null, serializedValue: null };
-    try { return { exists: true, valid: true, value: JSON.parse(serializedValue), serializedValue }; }
-    catch { return { exists: true, valid: false, value: null, serializedValue }; }
-  }
-  async insertIfAbsent(params) {
-    const key = this.key(params);
-    if (this.conflict) { const conflict = this.conflict; this.conflict = null; conflict(params); return false; }
-    if (this.rows.has(key)) return false;
-    this.rows.set(key, JSON.stringify(params.value)); this.writes++; return true;
-  }
-  async compareAndSet(params) {
-    const key = this.key(params);
-    if (this.rows.get(key) !== params.expectedSerializedValue) return false;
-    this.rows.set(key, JSON.stringify(params.value)); this.writes++; return true;
+    const old = this.rows.get(request.rootRealPath);
+    const state = old ? JSON.parse(old) : { revision: 0, entries: [] };
+    let entries = state.entries;
+    if (request.action === 'add' && !entries.some(e => e.relativePath === request.entry.relativePath)) entries = [...entries, request.entry];
+    if (request.action === 'remove') entries = entries.filter(e => e.relativePath !== request.relativePath);
+    if (JSON.stringify(entries) !== JSON.stringify(state.entries)) {
+      state.entries = entries; state.revision++; this.writes++;
+      this.rows.set(request.rootRealPath, JSON.stringify(state));
+    }
+    return state;
   }
 }
 const harness = (storage = new Storage(), ready = true) => {
@@ -107,7 +97,7 @@ test('Project-scoped bookmarks survive A/B/A, new host and service restart witho
   const restarted = harness(h.storage);
   const request = restarted.bind('/bookmarks/A', restarted.hosts.issue('standalone', 'content'));
   assert.deepEqual((await restarted.service.snapshot(request)).entries, back.entries);
-  assert.equal(h.events.length, 2);
+  assert.equal(h.events.length, 3);
   assert.equal(h.workspaces.restore(h.host.hostToken).selectedRelativePath, undefined);
 });
 
@@ -143,19 +133,17 @@ test('stale authorization and slow storage reads cannot mutate a replacement Pro
   h.gate(null);
   const b = h.bind('/bookmarks/B'), readGate = deferred();
   h.storage.readGate = readGate;
-  const removal = assert.rejects(h.service.remove({ ...b, relativePath: 'notes.md' }));
+  const removal = assert.rejects(h.service.snapshot(b));
   await tick();
   h.bind('/bookmarks/C'); readGate.release(); await removal;
   assert.equal(h.storage.writes, 0);
 });
 
-test('serial writes retain concurrent additions and CAS retries merge an external writer', async () => {
+test('serial writes retain overlapping additions and removals', async () => {
   const h = harness(), request = h.bind();
-  h.storage.conflict = (params) => h.storage.rows.set(h.storage.key(params),
-    JSON.stringify({ version: 1, entries: [{ relativePath: 'other.md', nodeKind: 'file' }] }));
   await Promise.all(['one.md', 'two.md', 'folder'].map((relativePath) => h.service.add({ ...request, relativePath })));
   assert.deepEqual((await h.service.snapshot(request)).entries.map((e) => e.relativePath),
-    ['other.md', 'one.md', 'two.md', 'folder']);
+    ['one.md', 'two.md', 'folder']);
 });
 
 test('readiness waits, failed/corrupt storage fails explicitly and failed writes do not poison the queue', async () => {
@@ -190,6 +178,62 @@ const classText = (path, names) => {
 };
 const success = (value) => ({ ok: true, value });
 const unwrap = (value) => { if (!value.ok) throw new Error(value.error.message); return value.value; };
+test('actual native-menu API cancels without storage reads and removal returns its committed snapshot', async () => {
+  let remove = false, reads = 0, writes = 0;
+  const committed = { workspaceId: 'A', revision: 2, entries: [] };
+  const Handler = evaluate('export class Handler { ' + classText('src/main/xpc/onlyPreview.handler.ts', ['showBookmarkContextMenu', 'removeBookmark']) + ' }', {
+    runOperation: (_name, run) => run(), parseOnlyPreviewFileRef: value => value,
+    onlyPreviewWorkspaceRegistry: { getProjectAuthorityRootRef: () => ({}) },
+    onlyPreviewWindowHelper: { getStandaloneWindow: () => ({}) },
+    showOnlyPreviewBookmarkMenu: async () => remove,
+    onlyPreviewBookmarksService: { snapshot: async () => { reads++; return committed; }, remove: async () => { writes++; return committed; } }
+  }).Handler;
+  const api = new Handler(), request = { hostToken: 'host', workspaceId: 'A', relativePath: 'one.md' };
+  assert.equal(await api.showBookmarkContextMenu(request), null);
+  assert.equal(reads, 0); assert.equal(writes, 0);
+  remove = true;
+  assert.equal(await api.showBookmarkContextMenu(request), committed);
+  assert.equal(reads, 0); assert.equal(writes, 1);
+  assert.equal(await api.removeBookmark(request), committed);
+  assert.equal(reads, 0); assert.equal(writes, 2);
+});
+test('committed responses/events apply once without rereads; old reads, failures and A/B responses cannot replace newer state', async () => {
+  const first = deferred(), addGate = deferred();
+  let project = 'A', loads = 0;
+  const Store = evaluate(classText(shell + 'onlyPreviewBookmarks.store.ts'), {
+    unwrapOnlyPreviewResult: unwrap, describeOnlyPreviewError: e => e.message,
+    xpcRenderer: { subscribe: () => {} }, ONLY_PREVIEW_BOOKMARK_ADD_EVENT: 'add', ONLY_PREVIEW_BOOKMARKS_CHANGED_EVENT: 'change'
+  }).OnlyPreviewBookmarksStore;
+  const snapshot = (revision, names, workspaceId = project) => ({ workspaceId, revision, entries: names.map(name => ({ name, relativePath: name, nodeKind: 'file' })) });
+  const client = {
+    getBookmarks: async () => { loads++; return first.promise; },
+    addBookmark: async () => addGate.promise,
+    removeBookmark: async () => ({ ok: false, error: { message: 'write failed' } }),
+    showBookmarkContextMenu: async () => success(null)
+  };
+  const store = new Store(client, { hostId: 'host', hostToken: 'token', workspaceId: () => project });
+  store.initialize();
+  const adding = store.add('new.md');
+  store.receive({ hostId: 'host', ...snapshot(2, ['new.md']) });
+  const confirmed = store.entries;
+  addGate.release(success(snapshot(2, ['new.md']))); await adding;
+  first.release(success(snapshot(0, []))); await tick();
+  assert.equal(store.entries, confirmed);
+  assert.equal(loads, 1);
+  store.receive({ hostId: 'host', ...snapshot(1, ['old.md']) });
+  await store.showMenu('new.md');
+  assert.equal(loads, 1);
+  await store.remove('new.md');
+  assert.equal(store.entries, confirmed);
+  assert.equal(store.errorMessage, 'write failed');
+  const late = deferred(); client.addBookmark = () => late.promise;
+  const pending = store.add('late.md');
+  project = 'B'; client.getBookmarks = async () => success(snapshot(0, ['B.md']));
+  store.resetWorkspace(); await tick();
+  late.release(success(snapshot(9, ['late.md'], 'A'))); await pending;
+  store.receive({ hostId: 'host', ...snapshot(10, ['late.md'], 'A') });
+  assert.equal(store.entries[0].name, 'B.md');
+});
 test('renderer ignores old Project responses/events and preserves full bookmark names', async () => {
   const first = deferred();
   let project = 'A', loads = 0, additions = 0;
@@ -200,14 +244,14 @@ test('renderer ignores old Project responses/events and preserves full bookmark 
   const store = new Store({
     getBookmarks: async ({ workspaceId }) => {
       loads++;
-      return workspaceId === 'A' ? first.promise : success({ workspaceId, entries: [{ name: '完整名称.md', relativePath: '完整名称.md', nodeKind: 'file' }] });
+      return workspaceId === 'A' ? first.promise : success({ workspaceId, revision: 0, entries: [{ name: '完整名称.md', relativePath: '完整名称.md', nodeKind: 'file' }] });
     },
     addBookmark: async () => { additions++; return success(); },
     showBookmarkContextMenu: async () => success()
   }, { hostToken: 'token', hostId: 'host', workspaceId: () => project });
   store.initialize(); await tick();
   project = 'B'; store.resetWorkspace(); await tick();
-  first.release(success({ workspaceId: 'A', entries: [{ name: 'old' }] })); await tick();
+  first.release(success({ workspaceId: 'A', revision: 0, entries: [{ name: 'old' }] })); await tick();
   assert.equal(store.entries[0].name, '完整名称.md');
   store.receive({ hostId: 'host', workspaceId: 'A', relativePath: 'old' }, true);
   store.receive({ hostId: 'other', workspaceId: 'B', relativePath: 'old' }, true);
@@ -291,20 +335,25 @@ test('bar/Shell compile, native bounds remain measured, scoped highlights and na
     transformSync(script.content, { loader: 'ts' });
   }
   const app = read(shell + 'App.vue');
-  assert.ok(app.indexOf('<BookmarkBar />') < app.indexOf('<main name="onlypreview__workspace"'));
+  assert.ok(app.indexOf('<BookmarkBar />') > app.indexOf('name="onlypreview__projectPanel"'));
+  assert.ok(app.indexOf('<BookmarkBar />') < app.indexOf('name="onlypreview__tree"'));
+  assert.match(app, /v-show="onlyPreviewRecentsStore.activePanel === 'project'"/);
   assert.match(app, /getBoundingClientRect/);
   assert.match(app, /resizeObserver.observe\(host\)/);
   const css = (await less.render(read(shell + 'App.less'))).css;
   assert.match(css, /onlypreview-shell--focused \.onlypreview-shell__tree-row--selected\s*\{\s*background: #a9c9ff/);
   assert.match(css, /onlypreview-shell__tree-row--selected\s*\{\s*background: #d6e4ff/);
   const bookmarksCss = (await less.render(read(shell + 'components/Bookmarks/BookmarkBar.less'))).css;
-  assert.match(bookmarksCss, /flex: 0 0 30px/);
-  assert.match(bookmarksCss, /overflow-x: auto/);
+  assert.match(bookmarksCss, /max-height: 30%/);
+  assert.match(bookmarksCss, /overflow-y: auto/);
+  const bar = read(shell + 'components/Bookmarks/BookmarkBar.vue');
+  assert.doesNotMatch(bar, /IconBookmark|IconFolder|IconFile/);
+  assert.match(bar, /@click.stop="onlyPreviewBookmarksStore.remove\(entry.relativePath\)"/);
   const native = read(base + 'onlyPreviewProjectNativeAction.service.ts');
   assert.match(native.slice(0, native.indexOf('async showProjectRootContextMenu')), /onlypreview-add-bookmark/);
   assert.doesNotMatch(native.slice(native.indexOf('async showProjectRootContextMenu'), native.indexOf('async copyProjectItemFromUi')), /onlypreview-add-bookmark/);
-  assert.match(read('src/main/xpc/onlyPreview.handler.ts'), /onlyPreviewBookmarksService.configureStorage/);
+  assert.match(read(base + 'onlyPreviewBookmarks.runtime.ts'), /configureStorage\(onlyPreviewBookmarkStorage\)/);
+  assert.doesNotMatch(read('src/main/xpc/onlyPreview.handler.ts'), /onlyPreviewBookmarksService.configureStorage/);
   const startup = read('src/main/app.main.ts') + read('src/main/xpc/onlyPreview.handler.ts');
   assert.match(startup, /onlyPreviewBookmarksService.markStorageReady/);
 });
-

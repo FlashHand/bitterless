@@ -116,13 +116,14 @@ test('embedded Trench removes standalone chrome and keeps all accepted responsiv
     'src/renderer/coin/src/components/TrenchRecordWorkspace/TrenchRecordWorkspace.less'
   );
 
-  assert.match(app, /'trench-app--embedded': host\.host === 'omni'/);
+  assert.match(app, /'trench-app--embedded': host\.host !== 'standalone'/);
   assert.match(app, /:data-host="host\.host"/);
   assert.match(
     header,
     /'trench-header--mac': host\.platform === 'darwin' && host\.host === 'standalone'/
   );
-  assert.match(header, /'trench-header--embedded': host\.host === 'omni'/);
+  assert.match(header, /'trench-header--embedded': host\.host !== 'standalone'/);
+  assert.match(header, /v-if="host\.host !== 'omni'" :content="hostToggleLabel"/);
   assert.match(
     headerStyle,
     /\.trench-header\s*\{[^}]*height:\s*32px;[^}]*min-height:\s*32px;[^}]*flex:\s*0 0 32px;[^}]*padding:\s*0 12px;[^}]*border-bottom:\s*1px solid #3d4666;[^}]*background-color:\s*#4e5882;/s

@@ -99,7 +99,6 @@ const recentDirectoryStorage =
   createXpcMainEmitter<OnlyPreviewRecentDirectoryStorage>('SettingDao');
 onlyPreviewRecentDirectoryService.configureStorage(recentDirectoryStorage);
 onlyPreviewRecentsService.configureStorage(recentDirectoryStorage);
-onlyPreviewBookmarksService.configureStorage(recentDirectoryStorage);
 onlyPreviewRecentDirectoryService.configureTargetRuntime({
   inspectTarget: async (absoluteTarget) =>
     await fileSearchWindowService.inspectTarget(absoluteTarget),
@@ -167,15 +166,19 @@ class OnlyPreviewHandler
     return await runOperation('addBookmark', () => onlyPreviewBookmarksService.add(params));
   }
 
+  async removeBookmark(params: ApiParams<'removeBookmark'>): ReturnType<OnlyPreviewApi['removeBookmark']> {
+    return await runOperation('removeBookmark', () => onlyPreviewBookmarksService.remove(params));
+  }
+
   async showBookmarkContextMenu(
     params: ApiParams<'showBookmarkContextMenu'>
   ): ReturnType<OnlyPreviewApi['showBookmarkContextMenu']> {
     return await runOperation('showBookmarkContextMenu', async () => {
       const { relativePath } = parseOnlyPreviewFileRef(params);
-      const snapshot = await onlyPreviewBookmarksService.snapshot(params);
-      if (!snapshot.entries.some((entry) => entry.relativePath === relativePath)) return;
+      onlyPreviewWorkspaceRegistry.getProjectAuthorityRootRef(params.hostToken, params.workspaceId);
       const window = onlyPreviewWindowHelper.getStandaloneWindow(params.hostToken);
-      if (await showOnlyPreviewBookmarkMenu(window)) await onlyPreviewBookmarksService.remove(params);
+      if (await showOnlyPreviewBookmarkMenu(window)) return await onlyPreviewBookmarksService.remove({ ...params, relativePath });
+      return null;
     });
   }
 

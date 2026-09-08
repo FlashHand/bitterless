@@ -19,6 +19,21 @@ const normalizeRows = (list: Array<Record<string, unknown>>) => normalizeTrenchT
   data: { list },
 }, 'bsc');
 
+test('incremental analysis skips incumbent profits by chain identity without renumbering source ranks', () => {
+  const incumbent = evmAddress('a');
+  const newcomer = evmAddress('b');
+  const read = { operation: 'token-traders' as const, observedAt: 100, data: { list: [
+    { address: incumbent.toUpperCase().replace('0X', '0x'), profit: 'not-read', addr_type: 0 },
+    { address: newcomer, profit: 20, addr_type: 0 },
+  ] } };
+  const rows = normalizeTrenchTraderCandidates(read, 'bsc', new Set([`bsc:${incumbent}`]));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.wallet.canonicalAddress, newcomer);
+  assert.equal(rows[0]!.sourceRank, 2);
+  assert.throws(() => normalizeTrenchTraderCandidates(read, 'bsc'), /finite/);
+  assert.throws(() => normalizeTrenchTraderCandidates(read, 'bsc', new Set([`robinhood:${incumbent}`])), /finite/);
+});
+
 const rankedCandidate = (
   chain: TrenchChain,
   address: string,

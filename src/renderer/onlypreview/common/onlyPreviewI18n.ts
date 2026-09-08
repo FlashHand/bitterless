@@ -10,8 +10,9 @@ import type { OnlyPreviewErrorCode } from '@shared/onlypreview/onlyPreview.types
 const en = {
   bookmarks: {
     label: 'Bookmarks',
+    remove: 'Remove bookmark',
     empty: 'Right-click a file or folder to add a bookmark.',
-    unavailable: 'This bookmarked folder is unavailable. You can remove its bookmark with a right-click.'
+    unavailable: 'This bookmarked folder is unavailable. You can remove its bookmark.'
   },
   productName: 'OnlyPreview',
   bootstrapFailed: 'OnlyPreview could not start. Close and reopen it to retry.',
@@ -241,8 +242,9 @@ type Localized<T> = {
 const zh: Localized<typeof en> = {
   bookmarks: {
     label: '书签',
+    remove: '移除书签',
     empty: '右击文件或目录可添加书签。',
-    unavailable: '此书签目录已不可用，可右击移除书签。'
+    unavailable: '此书签目录已不可用，可移除书签。'
   },
   productName: 'OnlyPreview',
   bootstrapFailed: 'OnlyPreview 无法启动。请关闭后重新打开。',

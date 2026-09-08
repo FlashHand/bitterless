@@ -119,7 +119,6 @@
       </div>
     </header>
 
-    <BookmarkBar />
     <main name="onlypreview__workspace" class="onlypreview-shell__workspace">
       <aside name="onlypreview__project" class="onlypreview-shell__project">
         <div name="onlypreview__projectHeader" class="onlypreview-shell__project-header">
@@ -161,6 +160,7 @@
           role="tabpanel"
           aria-labelledby="onlypreview-tab-project"
         >
+        <BookmarkBar />
         <div
           v-if="onlyPreviewShellStore.errorMessage"
           name="onlypreview__indexError"

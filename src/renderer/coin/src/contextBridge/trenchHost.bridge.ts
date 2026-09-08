@@ -1,3 +1,1 @@
-import type { TrenchHostContext } from '@shared/trench/trenchXpc.type';
-
-export const trenchHost: TrenchHostContext = window.trenchHost;
+export { trenchHostStore as trenchHost } from '../views/host/trenchHost.store';

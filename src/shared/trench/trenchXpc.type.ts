@@ -85,6 +85,7 @@ export type TrenchListPage = TrenchCursorPage<unknown> & {
 };
 
 export interface TrenchHostContext {
-  host: 'standalone' | 'omni';
+  host: 'standalone' | 'tab' | 'omni';
   platform: 'darwin' | 'win32' | 'other';
+  surfaceToken?: string;
 }

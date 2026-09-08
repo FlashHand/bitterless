@@ -8,6 +8,9 @@ verify: Bookmark persistence/authority, renderer state and component compilation
 
 # OnlyPreview bookmarks and focus
 
+2026-09-08 follow-up: the top-bar layout and setting-store persistence below are superseded by
+[Project bookmarks](../../features/onlypreview-project-bookmarks.md), task 170. Focus is unchanged.
+
 Selected Project rows retain the existing pale highlight when Shell loses focus to another
 renderer/window. Shell focus deepens the blue without changing selection, preview or Recents.
 

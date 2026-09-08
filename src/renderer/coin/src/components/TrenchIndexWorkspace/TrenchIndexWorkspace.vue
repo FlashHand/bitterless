@@ -3,16 +3,6 @@
     <section name="trench__index__actions" class="trench-index__actions">
       <div class="trench-index__action-buttons">
         <a-button
-          name="trench__index__add-ca"
-          size="small"
-          type="primary"
-          :disabled="running || unavailable"
-          @click="openAddDialog"
-        >
-          <template #icon><IconPlus aria-hidden="true" /></template>
-          {{ t('trench.indexWorkspace.addCa') }}
-        </a-button>
-        <a-button
           name="trench__index__reanalyze"
           size="small"
           :loading="reanalyzePending"
@@ -60,7 +50,6 @@
         <div v-if="!activeProjection?.targets.length" class="trench-index__empty">
           <strong>{{ t('trench.indexWorkspace.emptyTargetTitle') }}</strong>
           <span>{{ t('trench.indexWorkspace.emptyTargetDescription') }}</span>
-          <a-button size="small" type="primary" @click="openAddDialog">{{ t('trench.indexWorkspace.addCa') }}</a-button>
         </div>
         <div v-else class="trench-index__list">
           <article
@@ -151,55 +140,17 @@
       </section>
     </div>
 
-    <a-modal
-      v-model:visible="addDialogVisible"
-      :title="t('trench.indexWorkspace.dialogTitleForChain', { chain: chainLabel(selectedChain) })"
-      :ok-text="t('trench.indexWorkspace.addAndAnalyze')"
-      :ok-loading="addPending"
-      :mask-closable="!addPending"
-      :closable="!addPending"
-      :on-before-ok="submitAdd"
-      @cancel="closeAddDialog"
-    >
-      <label class="trench-index__field-label" for="trench-index-ca-input">{{ t('trench.indexWorkspace.contractAddress') }}</label>
-      <a-textarea
-        id="trench-index-ca-input"
-        ref="caInput"
-        v-model="caText"
-        name="trench__index__ca-input"
-        :placeholder="t('trench.indexWorkspace.caBatchPlaceholderForChain', { chain: chainLabel(selectedChain) })"
-        :disabled="addPending"
-        :auto-size="{ minRows: 4, maxRows: 10 }"
-        @input="clearDialogError"
-      />
-      <p v-if="addPartition.ignoredCount" class="trench-index__dialog-warning" role="status">
-        {{ t(addPartition.ignoredChain === 'solana' ? 'trench.indexWorkspace.ignoredSolana' : 'trench.indexWorkspace.ignoredBsc', { count: addPartition.ignoredCount }) }}
-      </p>
-      <div v-if="dialogError" class="trench-index__dialog-error" role="alert">
-        <span>{{ dialogError }}</span>
-        <a-button
-          v-if="dialogErrorCode === 'PROVIDER_UNAVAILABLE'"
-          name="trench__index__dialog-configure-gmgn"
-          size="mini"
-          @click="trenchGmgnSettingsStore.open()"
-        >{{ t('trench.gmgnSettings.configure') }}</a-button>
-      </div>
-    </a-modal>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { IconPlus, IconRefresh } from '@tabler/icons-vue';
+import { IconRefresh } from '@tabler/icons-vue';
 import type { TrenchChain } from '@shared/trench/trench.type';
 import type { TrenchHighestMarketCapKind, TrenchIndexError } from '@shared/trench/trenchIndex.type';
 import { trenchGmgnSettingsStore } from '../TrenchGmgnSettings/trenchGmgnSettings.runtime';
 import { trenchIndexStore as store } from '../../views/index/trenchIndex.runtime';
-import {
-  buildTrenchIndexAddTargetInput,
-  partitionTrenchIndexAddInput,
-} from '../../views/index/trenchIndexAddInput';
 import {
   hasTrenchWalletAvatarImage,
   markTrenchWalletAvatarFailed,
@@ -210,22 +161,15 @@ const props = defineProps<{
   selectedChain: TrenchChain;
 }>();
 
-const addDialogVisible = ref(false);
 const { locale, t } = useI18n();
-const addPending = ref(false);
 const reanalyzePending = ref(false);
-const caText = ref('');
 const selectedChain = computed(() => props.selectedChain);
-const dialogError = ref<string | null>(null);
-const dialogErrorCode = ref<TrenchIndexError['code'] | null>(null);
-const caInput = ref<{ focus(): void } | null>(null);
 const failedAvatarUrls = ref<ReadonlySet<string>>(new Set());
 const snapshot = computed(() => store.snapshot);
 const activeProjection = computed(() => snapshot.value?.chainProjections
   .find(({ chain }) => chain === selectedChain.value));
 const allTargetCount = computed(() => snapshot.value?.chainProjections
   .reduce((count, projection) => count + projection.targets.length, 0) ?? 0);
-const addPartition = computed(() => partitionTrenchIndexAddInput(caText.value, selectedChain.value));
 const running = computed(() => snapshot.value?.jobState === 'running');
 const unavailable = computed(() => store.phase === 'unavailable');
 const runStatus = computed(() => {
@@ -276,61 +220,6 @@ const copy = async (value: string): Promise<void> => {
 };
 const onAvatarError = (avatarUrl: string): void => {
   failedAvatarUrls.value = markTrenchWalletAvatarFailed(failedAvatarUrls.value, avatarUrl);
-};
-const openAddDialog = (): void => {
-  store.clearCommandError();
-  addDialogVisible.value = true;
-  dialogError.value = null;
-  dialogErrorCode.value = null;
-  void nextTick(() => caInput.value?.focus());
-};
-const clearDialogError = (): void => {
-  dialogError.value = null;
-  dialogErrorCode.value = null;
-};
-const closeAddDialog = (): void => {
-  if (addPending.value) return;
-  addDialogVisible.value = false;
-  caText.value = '';
-  dialogError.value = null;
-  dialogErrorCode.value = null;
-};
-const submitAdd = async (done: (closed: boolean) => void): Promise<void> => {
-  const partition = addPartition.value;
-  if (partition.enteredCount < 1 || partition.enteredCount > 1_000 || partition.invalidCount > 0) {
-    dialogError.value = t('trench.indexWorkspace.addressBatchRequiredForChain', { chain: chainLabel(selectedChain.value) });
-    dialogErrorCode.value = 'INVALID_INPUT';
-    done(false);
-    await nextTick(() => caInput.value?.focus());
-    return;
-  }
-  if (partition.retained.length === 0) {
-    dialogError.value = t('trench.indexWorkspace.noValidForChain', { chain: chainLabel(selectedChain.value) });
-    dialogErrorCode.value = 'INVALID_INPUT';
-    done(false);
-    await nextTick(() => caInput.value?.focus());
-    return;
-  }
-  addPending.value = true;
-  const request = buildTrenchIndexAddTargetInput(
-    partition,
-    selectedChain.value,
-    window.crypto.randomUUID(),
-  );
-  if (!request) throw new Error('validated Trench INDEX Add input became empty');
-  const ok = await store.addTarget(request);
-  addPending.value = false;
-  if (!ok) {
-    dialogErrorCode.value = store.commandError?.code ?? null;
-    dialogError.value = store.commandError
-      ? localizedError(store.commandError)
-      : t('trench.indexWorkspace.addFailed');
-    done(false);
-    await nextTick(() => caInput.value?.focus());
-    return;
-  }
-  done(true);
-  closeAddDialog();
 };
 const reanalyze = async (): Promise<void> => {
   reanalyzePending.value = true;

@@ -8,6 +8,19 @@ import {
 const bsc = '0x1111111111111111111111111111111111111111';
 const solana = 'So11111111111111111111111111111111111111112';
 
+test('batch construction rejects oversize input and deduplicates explicit-chain contracts', () => {
+  const address = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+  const request = buildTrenchIndexAddTargetInput(
+    partitionTrenchIndexAddInput(`${address};${address.toUpperCase().replace('0X', '0x')},${address}`, 'bsc'),
+    'bsc', '11111111-1111-4111-8111-111111111111',
+  );
+  assert.deepEqual(request?.targets, [{ contractAddress: address, chain: 'bsc' }]);
+  assert.equal(buildTrenchIndexAddTargetInput(
+    partitionTrenchIndexAddInput(Array(1001).fill(bsc).join('\n'), 'bsc'),
+    'bsc', '11111111-1111-4111-8111-111111111111',
+  ), null);
+});
+
 test('selected SOL keeps only Solana rows and reports the exact ignored BSC count', () => {
   assert.deepEqual(partitionTrenchIndexAddInput(`${bsc}\n${solana}\n${bsc}`, 'solana'), {
     enteredCount: 3,

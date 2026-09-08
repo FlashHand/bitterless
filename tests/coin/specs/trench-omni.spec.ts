@@ -261,9 +261,14 @@ const nativeStandaloneTrenchViews = async (
   }>
 > =>
   await app.evaluate((electron) =>
-    electron.BrowserWindow.getAllWindows()
-      .filter((window) => /\/coin\/index\.html(?:$|[?#])/.test(window.webContents.getURL()))
-      .map((window) => ({ id: window.webContents.id, url: window.webContents.getURL() }))
+    electron.BaseWindow.getAllWindows()
+      .filter((window) => window.getTitle() === 'BL Trench')
+      .flatMap((window) => window.contentView.children.flatMap((view) => {
+        const contents = (view as Electron.WebContentsView).webContents;
+        return contents && !contents.isDestroyed() && /\/coin\/index\.html(?:$|[?#])/.test(contents.getURL())
+          ? [{ id: contents.id, url: contents.getURL() }]
+          : [];
+      }))
   );
 
 const waitForStandaloneTrenchView = async (
@@ -586,8 +591,8 @@ test('embeds live sandboxed Trench cells and coordinates standalone updates', as
         process.platform === 'darwin'
           ? electron.app.commandLine.hasSwitch('use-mock-keychain')
           : null,
-      standaloneTrenchWindows: electron.BrowserWindow.getAllWindows().filter((window) =>
-        /\/coin\/index\.html(?:$|[?#])/.test(window.webContents.getURL())
+      standaloneTrenchWindows: electron.BaseWindow.getAllWindows().filter((window) =>
+        window.getTitle() === 'BL Trench'
       ).length
     };
   });

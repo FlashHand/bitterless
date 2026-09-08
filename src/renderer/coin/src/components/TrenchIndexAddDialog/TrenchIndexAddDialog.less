@@ -1,0 +1,28 @@
+.trench-index-add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+
+  label {
+    font-size: 13px;
+  }
+
+  &__warning,
+  &__error {
+    margin: 0;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  &__warning {
+    color: var(--color-text-2);
+  }
+  &__error {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: rgb(var(--danger-6));
+  }
+}

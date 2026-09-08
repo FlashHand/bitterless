@@ -63,7 +63,9 @@ const dirsIn = (relative) =>
 const buildSurfaces = () => {
   const surfaces = [
     { id: 'shared', kind: 'node', include: ['src/shared/**/*'] },
-    { id: 'main', kind: 'node', include: ['src/main/**/*', 'src/shared/**/*'] },
+    // SDK 跟着 main 一起查:它在仓外,tsconfig.node.json 的 include 在这里会被整体覆盖,
+    // 只加到那边等于没加。宿主与 SDK 的契约破裂必须在这个 surface 上现形。
+    { id: 'main', kind: 'node', include: ['src/main/**/*', 'src/shared/**/*', 'src/main/agent/**/*.ts'] },
     { id: 'utility', kind: 'node', include: ['src/utility/**/*', 'src/shared/**/*'] },
     // Checked on its own because every renderer surface pulls it in; without this the ~45 errors it
     // carries would be attributed to whichever module happened to be checked.

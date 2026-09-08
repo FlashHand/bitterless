@@ -174,8 +174,9 @@ test('Todo-parity Trench menu exposes one shared GMGN settings recovery surface'
   ]) assert.match(preload, new RegExp(`\\b${method}:`));
   assert.doesNotMatch(preload, /getStatus:|saveService:|connectCodex:|cancelGmgnVerify:/);
   assert.match(workspace, /store\.commandError\.code === 'PROVIDER_UNAVAILABLE'/);
-  assert.match(workspace, /dialogErrorCode === 'PROVIDER_UNAVAILABLE'/);
-  assert.doesNotMatch(workspace, /dialogErrorCode === '(?:SOURCE_INVALID|TOKEN_NOT_FOUND|INTERNAL)'/);
+  const addDialog = read('src/renderer/coin/src/components/TrenchIndexAddDialog/TrenchIndexAddDialog.vue');
+  assert.match(addDialog, /state\.error === 'PROVIDER_UNAVAILABLE'/);
+  assert.doesNotMatch(addDialog, /state\.error === '(?:SOURCE_INVALID|TOKEN_NOT_FOUND|INTERNAL)'/);
 });
 
 test('Arco navigation is the single local INDEX chain owner with locked ordering and rail colors', () => {
@@ -332,15 +333,34 @@ test('all Trenchers prose is shared between English and Chinese locale trees', (
   }
 });
 
+test('Add CA is a global menu action with one persistent batch dialog and a data-only reactive class', () => {
+  const header = read('src/renderer/coin/src/components/TrenchHeader/TrenchHeader.vue');
+  const app = read('src/renderer/coin/src/App.vue');
+  const workspace = read('src/renderer/coin/src/components/TrenchIndexWorkspace/TrenchIndexWorkspace.vue');
+  const dialog = read('src/renderer/coin/src/components/TrenchIndexAddDialog/TrenchIndexAddDialog.vue');
+  const store = read('src/renderer/coin/src/views/index/trenchIndexAdd.store.ts');
+  assert.match(header, /name="trench__header__add-ca"/);
+  assert.match(header, /@click="openIndexAdd"/);
+  assert.match(app, /<TrenchIndexAddDialog\s*\/>/);
+  assert.doesNotMatch(workspace, /trench__index__add-ca|<a-modal|<a-textarea/);
+  assert.match(dialog, /<a-textarea/);
+  assert.match(dialog, /v-model="state\.chain"/);
+  assert.match(dialog, /finally\s*\{\s*state\.pending = false/);
+  assert.match(dialog, /if \(accepted\)\s*\{\s*state\.text = ''/);
+  assert.match(store, /class TrenchIndexAddStore/);
+  assert.match(store, /reactive\(new TrenchIndexAddStore\(\)\)/);
+  assert.doesNotMatch(store.match(/class TrenchIndexAddStore \{[\s\S]*?\n\}/)?.[0] ?? '', /=>|function|\w+\([^)]*\)\s*\{/);
+});
+
 test('Add CA filters opposite-chain rows before the boundary and keeps the selected chain explicit', () => {
   const workspace = read(
-    'src/renderer/coin/src/components/TrenchIndexWorkspace/TrenchIndexWorkspace.vue',
+    'src/renderer/coin/src/components/TrenchIndexAddDialog/TrenchIndexAddDialog.vue',
   );
   const helper = read('src/renderer/coin/src/views/index/trenchIndexAddInput.ts');
   const en = readBusinessLocale('en');
   const zh = readBusinessLocale('zh');
-  assert.match(workspace, /partitionTrenchIndexAddInput\(caText\.value, selectedChain\.value\)/);
-  assert.match(workspace, /partition\.retained\.length === 0/);
+  assert.match(workspace, /partitionTrenchIndexAddInput\(state\.text, state\.chain\)/);
+  assert.match(workspace, /!input\.retained\.length/);
   assert.match(helper, /chain: selectedChain/);
   assert.match(helper, /partition\.retained\.length === 0\s*\? null/);
   assert.doesNotMatch(workspace, /trench__index__chain-select/);
@@ -401,7 +421,8 @@ test('Main owns orchestration without SQLite and module tables reference chain a
   assert.match(migration, /ON trench_wallets\(address_namespace, canonical_address\)/);
   assert.match(migration, /ON trench_wallet_chain_accounts\(wallet_id, chain\)/);
   assert.match(migration, /TRENCH_IO_PERSON_SCHEMA_VERSION_CODE = '260813155644'/);
-  assert.match(migration, /TRENCH_IO_SCHEMA_VERSION_CODE = '260813155645'/);
+  assert.match(migration, /TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE = '260813155645'/);
+  assert.match(migration, /TRENCH_IO_SCHEMA_VERSION_CODE = '260908130001'/);
   const personTypes = read('src/shared/trench/trenchPerson.type.ts');
   assert.match(personTypes, /TRENCH_PERSON_CHANGED_EVENT = 'trench\/person-changed'/);
   assert.doesNotMatch(personTypes.match(/interface TrenchPersonChangedEvent[\s\S]*?\n\}/)?.[0] ?? '',

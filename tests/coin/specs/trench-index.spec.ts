@@ -130,7 +130,7 @@ const expectWorkspaceAt = async (
     wallets: document.querySelectorAll('[name="trench__index__wallet-row"]').length,
     overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     overflowY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-    addVisible: Boolean(document.querySelector('[name="trench__index__add-ca"]')?.getClientRects().length),
+    addVisible: Boolean(document.querySelector('[name="trench__header__add-ca"]')?.getClientRects().length),
     reanalyzeVisible: Boolean(document.querySelector('[name="trench__index__reanalyze"]')?.getClientRects().length),
   }))()`)).toEqual({
     width,
@@ -299,7 +299,7 @@ test('renders the persisted INDEX workspace in standalone and Omni host geometri
   await trenchPage.locator('[name="trench__gmgn-settings__close"]').click();
   await expect(trenchPage.locator('[name="trench__gmgn-settings"]')).toHaveCount(0);
 
-  await trenchPage.locator('[name="trench__index__add-ca"]').click();
+  await trenchPage.locator('[name="trench__header__add-ca"]').click();
   const callsBeforeWrongChain = gmgnCliCalls().length;
   await trenchPage.locator('[name="trench__index__ca-input"]').fill(
     GMGN_CLI_FIXTURE_ADDRESSES.bsc,
@@ -339,7 +339,7 @@ test('renders the persisted INDEX workspace in standalone and Omni host geometri
   await trenchPage.getByRole('tab', { name: 'BSC' }).click();
   expect(gmgnCliCalls().length).toBe(callsBeforeTabSwitch);
   await expect(trenchPage.locator('[name="trench__index__target-row"]')).toHaveCount(0);
-  await trenchPage.locator('[name="trench__index__add-ca"]').click();
+  await trenchPage.locator('[name="trench__header__add-ca"]').click();
   const callsBeforeWrongSolana = gmgnCliCalls().length;
   await trenchPage.locator('[name="trench__index__ca-input"]').fill(GMGN_CLI_FIXTURE_ADDRESSES.solana);
   await expect(trenchPage.locator('.trench-index__dialog-warning')).toContainText(
@@ -481,7 +481,7 @@ test('renders the persisted INDEX workspace in standalone and Omni host geometri
   const credentialPath = join(dirname(userDataDir), 'home', '.config', 'gmgn', '.env');
   rmSync(credentialPath, { force: true });
   await trenchPage.getByRole('tab', { name: 'BSC' }).click();
-  await trenchPage.locator('[name="trench__index__add-ca"]').click();
+  await trenchPage.locator('[name="trench__header__add-ca"]').click();
   await trenchPage.locator('[name="trench__index__ca-input"]').fill(fourCaText);
   await trenchPage.locator('.arco-modal-footer .arco-btn-primary').click();
   await expect(trenchPage.locator('.trench-index__dialog-error')).toContainText(

@@ -1,5 +1,6 @@
 import { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import { WindowHelper } from './window.helper';
+import { onlyPreviewBookmarkStorageArgument } from '@main/miniapps/onlypreview/onlyPreviewBookmarkStorage.runtime';
 
 class SqliteWindowHelper extends WindowHelper {
   protected preloadFile = 'sqlite.js';
@@ -9,6 +10,7 @@ class SqliteWindowHelper extends WindowHelper {
     height: 600,
     minWidth: 800,
     minHeight: 600,
+    webPreferences: { additionalArguments: [onlyPreviewBookmarkStorageArgument] },
   };
   protected showOnReady = false;
 

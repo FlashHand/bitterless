@@ -3,6 +3,7 @@ import { ONLY_PREVIEW_BOOKMARKS_CHANGED_EVENT } from '@shared/onlypreview/onlyPr
 import { fileSearchWindowService } from '@main/fileSearch/fileSearchWindow.service';
 import { onlyPreviewWorkspaceRegistry } from './onlyPreviewWorkspace.registry';
 import { OnlyPreviewBookmarksService } from './onlyPreviewBookmarks.service';
+import { onlyPreviewBookmarkStorage } from './onlyPreviewBookmarkStorage.runtime';
 
 export const onlyPreviewBookmarksService = new OnlyPreviewBookmarksService(
   onlyPreviewWorkspaceRegistry,
@@ -12,6 +13,7 @@ export const onlyPreviewBookmarksService = new OnlyPreviewBookmarksService(
       workspaceGeneration: authority.workspaceGeneration,
       relativePath: authority.relativePath
     }),
-  (hostId, workspaceId) =>
-    xpcMain.broadcast(ONLY_PREVIEW_BOOKMARKS_CHANGED_EVENT, { hostId, workspaceId })
+  (hostId, snapshot) =>
+    xpcMain.broadcast(ONLY_PREVIEW_BOOKMARKS_CHANGED_EVENT, { hostId, ...snapshot })
 );
+onlyPreviewBookmarksService.configureStorage(onlyPreviewBookmarkStorage);

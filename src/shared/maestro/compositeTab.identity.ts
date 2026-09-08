@@ -12,3 +12,6 @@ export const MAESTRO_ONLY_PREVIEW_DISPLAY_URL = 'bitterless://only-preview'
  * Maestro looks a tab up by it. The host re-exports it so its own call sites keep one import.
  */
 export const MAESTRO_ONLY_PREVIEW_TAB_ID = 'onlypreview'
+
+export const MAESTRO_TRENCH_TAB_ID = 'trench'
+export const MAESTRO_TRENCH_DISPLAY_URL = 'bitterless://trench'

@@ -6,9 +6,9 @@ Status: Implemented; authoritative for the first INDEX phase
 
 Trench INDEX turns a user-maintained set of target token contracts into current, reproducible
 chain-scoped sets of at most 300 best-performing wallets per chain. Ral adds one or more CAs.
-Bitterless resolves each chain, reads token metadata and the provider's top 100 traders ordered by
-total profit, aggregates wallet performance across active CAs on the same chain, and atomically
-publishes every chain INDEX from one full-set run.
+Bitterless reads the submitted tokens' top 100 profit-ranked traders, skips already-indexed
+wallets, and atomically merges stronger newcomers into the existing top 300 per chain. Explicit
+Reanalyze all remains a full rebuild across all active targets.
 
 This contract supersedes the three-tab read-only record-browser UI in [`coin.md`](coin.md). The
 the original 12 public `trench.*` MCP tools and their legacy JSON repository remain compatible in this
@@ -24,10 +24,10 @@ SOL/BSC/Robinhood child is the chain selector and drives two columns scoped to t
 | Target CAs | Active analysis targets on the selected chain with token name, symbol, CA, current market cap, best available highest-market-cap value, last success, and current error/state |
 | INDEX wallets | The most recent fully successful run's selected-chain ranks `1..300`, joined to the shared wallet address/metadata registry and person membership |
 
-The module navigation never renders record counts. `Add CA` accepts a bounded batch of one or more CAs,
-scopes the pasted entries to the currently selected chain, validates and resolves the retained
-batch, atomically persists its unique targets, and then starts exactly one analysis of the complete
-active target set. Structurally recognizable opposite-chain entries are counted and ignored before
+The module navigation never renders record counts. The always-visible menu-bar `Add Token CA`
+action accepts 1..1000 token contract addresses, not wallet addresses, in a multiline dialog with
+an explicit chain selector. It validates and resolves the retained batch, atomically persists its
+unique targets, and analyzes only that batch. Structurally recognizable opposite-chain entries are counted and ignored before
 submission, with a visible warning naming the ignored chain; they do not reject valid current-chain
 entries or become targets on another chain. A malformed, unresolved, or ambiguous retained item
 rejects the retained batch before persistence. `Reanalyze` refreshes the complete set. Header
@@ -103,7 +103,7 @@ realpath containment, entry existence, and the exact
 env-node shebang remain mandatory; a blank, unrelated, extra-command, missing, or cross-root
 launcher fails closed. A native `gmgn-cli.exe` remains direct.
 
-For every active target, one run reads:
+For each submitted target (every active target during Reanalyze all), one run reads:
 
 ```text
 gmgn-cli token info
@@ -117,9 +117,10 @@ gmgn-cli token traders
 `GmgnReadInput` therefore exposes the bounded `orderBy: 'profit'` and `direction: 'desc'` contract
 for `token-traders`; relying on the CLI default `amount_percentage` is invalid for INDEX.
 
-The token-trader response must be an object with a bounded `list` array. Every valid source row has
-a valid wallet address and finite `profit`; all such rows are preserved as candidate relations for
-audit. The normalizer may also retain finite `realized_profit`, `unrealized_profit`, source rank,
+The token-trader response must be an object with a bounded `list` array. Every row must have a valid
+wallet address and unique source rank. Incremental runs then skip indexed identities before profit
+analysis. Remaining rows require finite `profit` and are preserved as candidate relations for audit.
+The normalizer may also retain finite `realized_profit`, `unrealized_profit`, source rank,
 and bounded non-identity evidence. Only a row explicitly classified as a user wallet is eligible
 for aggregation. AMM/liquidity-pool, exchange/CEX, contract, and unknown rows are retained with an
 `eligibility` decision and `exclusion_reason` but cannot enter the materialized INDEX.
@@ -144,7 +145,7 @@ manufacturing a rank.
 
 CA uniqueness is `(chain, canonical_address)`. EVM values canonicalize to lowercase. Solana values
 preserve the validated Base58 spelling. Adding an already active target does not create a duplicate;
-it starts the same full-set reanalysis when the job is idle.
+it discovers newcomers from that token again, without rerunning unrelated CAs.
 
 ## Token metadata and market cap
 
@@ -204,6 +205,15 @@ filter receives a normalized relation table when required; v1 does not prebuild 
 
 ## Chain-scoped ranking contract
 
+Add Token CA freezes incumbents by `(chain, canonical_address)` from the published snapshot and
+skips their profit analysis. New wallets aggregate only across the submitted token batch, using
+the existing sample-profit metric below, not full-wallet lifetime or 30-day P&L. Incumbents retain
+their stored metrics and evidence. Equal-profit incumbents precede newcomers: a full INDEX changes
+only for strictly higher profit, never exceeds 300 per chain, and never erases another chain.
+Empty/weaker additions can update token metadata without replacing wallets. Reanalyze all explicitly
+recomputes the full set instead. Every published row retains its `evidence_run_id`, pointing to the
+immutable candidate evidence that produced its metrics. A failed run publishes nothing.
+
 Each target contributes at most 100 provider-ranked candidate relations, including excluded rows
 for audit. Only candidates whose joined registry classification is explicitly `user` and whose
 run-time eligibility is true are aggregated over the same run and the same chain. A BSC candidate
@@ -229,9 +239,9 @@ Within each chain partition, the deterministic order is:
 The first 300 in each chain partition become that chain's materialized INDEX. `chain_rank` is
 contiguous and unique within `(run_id, chain)`; rank numbering restarts from `1` for every chain.
 If fewer than 100 finite eligible wallets exist for a chain, the UI truthfully shows fewer. This
-phase intentionally avoids an opaque composite score. New runs record `profit-sum-v2`; historical
-`profit-sum-v1` runs retain their stored metrics while v2 changes only the final per-chain cap from
-100 to 300 and keeps every sort/aggregate key unchanged.
+phase intentionally avoids an opaque composite score. New runs record `profit-sum-v3`: the sample
+profit formula remains unchanged, while `add-target` retains incumbents and `reanalyze` rebuilds.
+Historical v1/v2 runs retain their stored metrics; v2 previously raised the per-chain cap to 300.
 
 ## Dedicated encrypted SQLite
 
@@ -248,10 +258,10 @@ The schema family starts with these tables:
 | `trench_index_targets` | target CA and last successful Meta; unique `(chain, canonical_address)` |
 | `trench_wallets` | global wallet registry; unique `(address_namespace, canonical_address)` |
 | `trench_wallet_chain_accounts` | unique chain presence/classification for `(wallet_id, chain)` |
-| `trench_index_runs` | one full-set job with trigger, lifecycle, counts, policy version, error |
+| `trench_index_runs` | one incremental/full-set job with trigger, lifecycle, counts, policy version, error |
 | `trench_index_target_snapshots` | one token Meta snapshot per `(run_id, target_id)` |
 | `trench_index_wallet_candidates` | one module relation per `(run_id, target_id, wallet_account_id)` with eligibility/exclusion reason and unique source rank |
-| `trench_index_wallets` | one materialized result per `(run_id, wallet_account_id)`, carrying explicit `chain` and a unique `(run_id, chain, chain_rank)` |
+| `trench_index_wallets` | one result per `(run_id, wallet_account_id)`, with immutable `evidence_run_id`, `chain` and unique `(run_id, chain, chain_rank)` |
 | `trench_persons` and person relations | active/merged profiles, one-person-to-many-wallet membership, X identity and conflict audit |
 
 All foreign keys are enforced. Candidate and result tables contain `wallet_account_id`, never wallet
@@ -290,15 +300,15 @@ renderer's preload context, never the page context or Main.
 
 ## Atomic run and recovery
 
-The storage runtime persists a new target before starting the full-set run, so an analysis failure
+The storage runtime persists the submitted targets before starting their incremental run, so an analysis failure
 does not lose the target. It then records `queued -> running`. A successful normalized batch is
 committed with one `BEGIN IMMEDIATE` transaction:
 
 1. upsert target snapshots and successful Meta;
 2. upsert shared wallet identities without overwriting manual metadata;
 3. insert target candidate relations;
-4. insert the deterministic Top 300 relations independently for every represented chain;
-5. ensure a person membership for every published global user wallet and resolve safe X evidence;
+4. merge and cap each chain at 300, retaining incumbent evidence references for Add Token CA;
+5. ensure person membership and resolve safe X evidence only for newly published user wallets;
 6. mark the run completed;
 7. switch `trench_repository_state.current_run_id` and increment `revision`.
 
@@ -334,6 +344,10 @@ renderer. Changed events contain only revision and job state.
 
 ## Compatibility and migration
 
+- Migration `260908130001` adds required, foreign-keyed `evidence_run_id` to published wallets,
+  backfills historical rows from their own `run_id`, and preserves all history, ranks and registry
+  identities. It is transactional; no data reset, remote write, or live database edit is needed.
+
 - Existing `userData/trench/analyses` and `negative-wallets` JSON bytes are not deleted or rewritten.
 - The original 12 `trench.*` MCP tools remain available under the exact configured server name and keep
   their current contract in this phase.
@@ -347,9 +361,10 @@ renderer. Changed events contain only revision and job state.
 
 - The first Arco module reads `INDEX`, its three chain children own scope, and no item displays a
   numeric count.
-- Adding one or N supported CAs atomically persists the unique batch and triggers one full-set
-  analysis; N targets produce one target list and one global INDEX, not N sequential runs or
-  separate visible result modules.
+- Adding one or N supported Token CAs via the global menu bar persists one unique batch and queries
+  only that batch. Incumbents are skipped; weaker/equal additions cannot replace a full INDEX.
+  Stronger newcomers replace the weakest wallets, leaving at most 300 per chain. Empty candidate
+  batches preserve existing results. Reanalyze all remains an explicit full rebuild.
 - Every target request asks GMGN for `profit DESC, limit 100`; a test proves the adapter no longer
   relies on `amount_percentage` for INDEX.
 - Target rows show name, CA, current market cap and accurately labelled highest/estimated/observed

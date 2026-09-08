@@ -158,6 +158,60 @@ C 的形状:渲染器的 `code()` 只吐一个 `<pre data-onlypreview-code="N"><
    所以这三个映射应当同时修正 —— 否则 JSX 与 Vue SFC 的高亮仍然是残的。这属于本条改动
    自然要带的部分,不是额外需求。
 
+## 三处必须更正的判断(2026-09-08 实测)
+
+诊断那张表里关于 **cowork 聊天**的那一行是错的,连带影响两条「不做」。
+
+### ① 那 92 行手写渲染器服务的不是聊天,是 Workbench 技能详情
+
+聊天走的是 **`markstream-vue`** 的 `MarkdownRender`(`MessageItem.vue`),而且它**已经**配了
+`:code-block-props="{ lightTheme: 'github-light' }"` ＋ `:is-dark="false"` —— 聊天那一面
+在这次改动之前就是对的。手写那份(`control/src/markdown.ts`)的唯一消费方是
+`WorkbenchSkillsView.vue` 的技能正文。
+
+所以「ts,js 高亮很差」的实际来源只有**文件预览的 monarch**,而那正是 hl-002 修的。
+
+### ② `stream-monaco` **有人用** —— 摘掉它会弄坏聊天
+
+原文写「两仓都有的 `stream-monaco`(也没人 import)」,并把它列进「顺手摘掉」。**那是错的**:
+它只是没被**我们的 `src/`** import。真实链条是
+
+```
+markstream-vue → stream-monaco → @shikijs/monaco + shiki
+```
+
+而聊天用 `markstream-vue`。**摘掉 `stream-monaco` 会让聊天的代码块失去高亮。**
+(`highlight.js` 那条仍然成立 —— 那个确实没有消费者。)
+
+这也解释了 `@shikijs/monaco` 为什么本来就装着:它是 `stream-monaco` 的依赖。
+
+### ③ 那张 31 语言静态表并没有省下 9.9 MB —— 省的是别的东西
+
+实测产物:**223 个语法 chunk,合计 6.1 MB**,全部按需加载。它们由 `stream-monaco` 使用 shiki
+的 **bundled** 工厂(`createHighlighter`)带来,而两个渲染进程共享同一个 `assets/`,
+所以那 6.1 MB **已经在产物里**,与我的静态表无关。
+
+静态表真正省下的是:**预览渲染进程的 import 图不被全量语法拉入**(模板字符串 `import()` 会被
+Vite 转成 glob)。这个价值仍然成立,但「避免 9.9 MB」的说法要收回。
+
+**不追那 6.1 MB**:它是惰性的,而要压缩它就得去改第三方组件的语言集 —— 风险大于收益,
+而且刚才 hl-004 已经拿掉了 19 MB 的**非惰性**体积。
+
+## hl-005 已落地(2026-09-08)
+
+`WorkbenchSkillsView.vue` 改用 `MarkdownRender`,props 与 `MessageItem.vue` 一致
+(同一个渲染器、同一个 github-light —— 两处不该看起来不同)。
+
+手写那份因此零消费方,已删除。它自己的文件头写着
+「swap that in later if the heavy peer deps — mermaid/d2/monaco/shiki/katex — become worth
+pulling」—— 它本来就是 markstream-vue 值得引入之前的占位,占位的使命已完成。
+
+**代价为零**:`renderer` 总计仍是 53 MB,因为 `markstream-vue` 本来就在包里(聊天在用)。
+收益是技能正文拿到真高亮,并且这个应用里的两份 markdown 实现减成一份。
+
+> 已知限制(与聊天相同,非本次引入):`markstream-vue` 的 mermaid / katex / infographic 是
+> **可选 peer deps 且未安装**,Vite 会把它们打成 stub —— 那三类内容不渲染。
+
 ## 不做
 
 - **不换掉 Monaco。** find adapter、选区计数、大文件虚拟滚动都挂在它上面。

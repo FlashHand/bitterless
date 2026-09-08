@@ -4,7 +4,7 @@
     class="trench-header"
     :class="{
       'trench-header--mac': host.platform === 'darwin' && host.host === 'standalone',
-      'trench-header--embedded': host.host === 'omni'
+      'trench-header--embedded': host.host !== 'standalone'
     }"
   >
     <span class="trench-header__title">Trench</span>
@@ -21,6 +21,19 @@
         />
         <span class="trench-header__status-label">{{ statusText }}</span>
       </div>
+      <a-tooltip :content="t('trench.indexWorkspace.addCa')" position="br" mini>
+        <a-button
+          name="trench__header__add-ca"
+          size="mini"
+          type="text"
+          :disabled="indexAdd.pending || trenchIndexStore.snapshot?.jobState === 'running' || !trenchIndexStore.snapshot || trenchIndexStore.phase === 'unavailable'"
+          :title="t('trench.indexWorkspace.addCa')"
+          :aria-label="t('trench.indexWorkspace.addCa')"
+          @click="openIndexAdd"
+        >
+          <template #icon><IconPlus aria-hidden="true" /></template>
+        </a-button>
+      </a-tooltip>
       <a-tooltip :content="t('trench.agentGuide.trigger')" position="br" mini>
         <a-button
           name="trench__header__agent-guide"
@@ -68,6 +81,30 @@
           </template>
         </a-button>
       </a-tooltip>
+      <a-tooltip v-if="host.host !== 'omni'" :content="hostToggleLabel" position="br" mini>
+        <a-button
+          name="trench__header__host-toggle"
+          class="trench-header__host-toggle"
+          :class="{ 'trench-header__host-toggle--standalone': host.host === 'standalone' }"
+          size="mini"
+          type="text"
+          :loading="host.pending || host.requesting"
+          :disabled="
+            host.pending ||
+            host.requesting ||
+            host.unavailable ||
+            (host.host === 'standalone' && !host.canDock)
+          "
+          :title="hostToggleLabel"
+          :aria-label="hostToggleLabel"
+          @click="toggleHost"
+        >
+          <template #icon>
+            <IconExternalLink v-if="host.host === 'tab'" aria-hidden="true" />
+            <IconBrowser v-else aria-hidden="true" />
+          </template>
+        </a-button>
+      </a-tooltip>
     </div>
   </header>
   <TrenchAgentGuideModal />
@@ -76,19 +113,47 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { IconRefresh, IconRobot, IconSettings } from '@tabler/icons-vue';
+import {
+  IconBrowser,
+  IconExternalLink,
+  IconPlus,
+  IconRefresh,
+  IconRobot,
+  IconSettings
+} from '@tabler/icons-vue';
+import { Message } from '@arco-design/web-vue';
 import TrenchAgentGuideModal from '../TrenchAgentGuideModal/TrenchAgentGuideModal.vue';
 import { trenchGmgnSettingsStore } from '../TrenchGmgnSettings/trenchGmgnSettings.runtime';
 import { trenchHost } from '../../contextBridge/trenchHost.bridge';
 import { trenchAgentGuideStore } from '../../views/vault/trenchAgentGuide.runtime';
 import { trenchIndexStore } from '../../views/index/trenchIndex.runtime';
+import { trenchIndexAddStore as indexAdd } from '../../views/index/trenchIndexAdd.store';
 import { trenchNavigationStore } from '../../views/navigation/trenchNavigation.runtime';
 import { snipingStore } from '../../views/sniping/sniping.runtime';
 import { trenchPersonStore } from '../../views/trenchers/trenchPerson.runtime';
 import { monitoringStore } from '../../views/monitoring/monitoring.runtime';
+import { toggleTrenchHost } from '../../views/host/trenchHost.service';
 
 const { t } = useI18n();
+const openIndexAdd = (): void => {
+  if (trenchNavigationStore.module === 'index') indexAdd.chain = trenchNavigationStore.selectedChain;
+  indexAdd.error = null;
+  trenchIndexStore.clearCommandError();
+  indexAdd.visible = true;
+};
 const host = trenchHost;
+const hostToggleLabel = computed(() => {
+  if (host.unavailable) return t('trench.host.unavailable');
+  if (host.host === 'standalone' && !host.canDock) return t('trench.host.openMaestro');
+  return t(host.host === 'tab' ? 'trench.host.openWindow' : 'trench.host.openTab');
+});
+const toggleHost = async (): Promise<void> => {
+  try {
+    await toggleTrenchHost();
+  } catch {
+    Message.error(t('trench.host.failed'));
+  }
+};
 const currentList = computed(() => {
   if (trenchNavigationStore.module === 'index') return { phase: trenchIndexStore.phase };
   if (trenchNavigationStore.module === 'trenchers') return { phase: trenchPersonStore.phase };

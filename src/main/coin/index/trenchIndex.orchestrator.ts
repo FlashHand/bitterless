@@ -108,10 +108,18 @@ export class TrenchIndexOrchestrator {
         });
       }
       const resolvedTargets: ResolvedTarget[] = [];
+      const requestedTargets = new Set<string>();
       for (const target of input.targets) {
+        const chain = target.chain ?? 'auto';
+        const addressChain = chain === 'auto' ? coinCandidateChains(target.contractAddress)[0] : chain;
+        if (!addressChain) throw { code: 'INVALID_INPUT', message: 'Enter an exact token contract address.' };
+        const canonicalAddress = canonicalizeIndexAddress(target.contractAddress, addressChain, 'contractAddress');
+        const requestedIdentity = `${chain}:${canonicalAddress}`;
+        if (requestedTargets.has(requestedIdentity)) continue;
+        requestedTargets.add(requestedIdentity);
         resolvedTargets.push(await this.resolveTarget(
-          target.contractAddress,
-          target.chain ?? 'auto',
+          canonicalAddress,
+          chain,
         ));
       }
       const identities = new Map<string, ResolvedTarget>();
@@ -144,7 +152,7 @@ export class TrenchIndexOrchestrator {
       if (!begun.ok) return begun;
       this.changed(begun.value.revision, begun.value.status === 'running' ? 'running' : 'idle');
       const analysisStarted = !begun.value.replayed && begun.value.status === 'running';
-      if (analysisStarted) this.startAnalysis(begun.value);
+      if (analysisStarted) this.startAnalysis(begun.value, 'add-target');
       return {
         ok: true,
         value: {
@@ -174,7 +182,7 @@ export class TrenchIndexOrchestrator {
       if (!begun.ok) return begun;
       this.changed(begun.value.revision, begun.value.status === 'running' ? 'running' : 'idle');
       const analysisStarted = !begun.value.replayed && begun.value.status === 'running';
-      if (analysisStarted) this.startAnalysis(begun.value);
+      if (analysisStarted) this.startAnalysis(begun.value, 'reanalyze');
       return {
         ok: true,
         value: {
@@ -232,18 +240,22 @@ export class TrenchIndexOrchestrator {
     return probes[0]!;
   }
 
-  private startAnalysis(run: TrenchIndexStorageBeginRunResult): void {
-    const analysis = this.performAnalysis(run).finally(() => {
+  private startAnalysis(run: TrenchIndexStorageBeginRunResult, trigger: 'add-target' | 'reanalyze'): void {
+    const analysis = this.performAnalysis(run, trigger).finally(() => {
       this.analyses.delete(run.runId);
     });
     this.analyses.set(run.runId, analysis);
     void analysis;
   }
 
-  private async performAnalysis(run: TrenchIndexStorageBeginRunResult): Promise<void> {
+  private async performAnalysis(run: TrenchIndexStorageBeginRunResult, trigger: 'add-target' | 'reanalyze'): Promise<void> {
     let failedTargetId: string | null = null;
     try {
       const workspace = await this.requireWorkspace();
+      const indexedWallets = new Set(trigger === 'add-target'
+        ? workspace.chainProjections.flatMap(({ wallets }) => wallets
+          .map(({ chain, canonicalAddress }) => `${chain}:${canonicalAddress}`))
+        : []);
       const targets = [];
       for (const target of run.targets) {
         failedTargetId = target.targetId;
@@ -271,7 +283,7 @@ export class TrenchIndexOrchestrator {
           chain: target.chain,
           contractAddress: target.contractAddress,
           metadata: normalizeTrenchTokenInfo(info, previousHighest),
-          candidates: normalizeTrenchTraderCandidates(traders, target.chain),
+          candidates: normalizeTrenchTraderCandidates(traders, target.chain, indexedWallets),
         });
       }
       failedTargetId = null;

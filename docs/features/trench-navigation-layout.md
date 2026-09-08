@@ -13,7 +13,7 @@ surfaces remain unchanged.
 ## Overall structure
 
 ```text
-┌──────────────────────── Trench ───── status · Agent · Refresh · ⚙ ┐
+┌──────── Trench ── status · ＋ Token CA · Agent · Refresh · ⚙ · Host ┐
 ├───────────────┬─────────────────────────────────────────────────────┤
 │ ▾ INDEX       │ selected module content                             │
 │   SOL         │                                                     │
@@ -44,14 +44,17 @@ surfaces remain unchanged.
   observation and statistical evidence, not Sniping triggers or execution. Its first metric is
   finalized BSC ERC-20 Transfer-event count; it never relabels that evidence as price or trades.
 - The old INDEX module/chain tab row is removed; there is one chain selection owner.
-- Header Refresh rereads whichever module is selected. GMGN Settings remains global.
+- Header Add Token CA opens the global batch dialog; Refresh rereads the selected module.
+  GMGN Settings remains global.
+- Ordinary Trench adds a Settings-right tab/window toggle, with one shared renderer. Omni keeps
+  independent embedded panels and no toggle: [hosting contract](trench-host-toggle.md).
 
 ## INDEX page
 
 ```text
 │ INDEX / BSC                                                    │
 ├────────────────────────────────────────────────────────────────┤
-│ [＋ Add CA] [↻ Reanalyze all]  Last successful …               │
+│ [↻ Reanalyze all]  Last successful …                          │
 ├───────────────────────────────┬────────────────────────────────┤
 │ BSC TARGET CAs               │ BSC INDEX WALLETS              │
 │ …                             │ #001 … #300                    │

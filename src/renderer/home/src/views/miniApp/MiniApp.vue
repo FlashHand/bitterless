@@ -63,7 +63,8 @@ const openMaestro = async () => {
 };
 
 const openCoin = async () => {
-  await coinWindowEmitter.openCoinWindow();
+  if (props.host === 'cowork') await coinWindowEmitter.openCoinTab();
+  else await coinWindowEmitter.openCoinWindow();
 };
 
 const openEyesOnAgents = async () => {

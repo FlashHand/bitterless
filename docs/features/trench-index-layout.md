@@ -15,9 +15,9 @@ never as large fills or decorative gradients. Module and chain ownership now fol
 ## Desktop and wide Omni
 
 ```text
-┌──────────────────────── Trench ───── status · Agent · Refresh · ⚙ ┐
+┌──────── Trench ── status · ＋ Token CA · Agent · Refresh · ⚙ · Host ┐
 ├───────────────┬─────────────────────────────────────────────────────┤
-│ ▾ INDEX       │ [＋ Add CA] [↻ Reanalyze all] Last successful …     │
+│ ▾ INDEX       │ [↻ Reanalyze all] Last successful …                │
 │   SOL         ├───────────────────────────┬─────────────────────────┤
 │   BSC         │ SOL TARGET CAs            │ SOL INDEX WALLETS       │
 │   Robinhood   │ Token name · SYMBOL       │ #001 wallet address     │
@@ -31,14 +31,14 @@ never as large fills or decorative gradients. Module and chain ownership now fol
 
 - The menu bar remains exactly the accepted Todo-parity contract in [`coin-layout.md`](coin-layout.md):
   32px, `#4e5882`, `#3d4666`, one `Trench` title, standalone traffic-light clearance, Omni no-drag,
-  and always-reachable Agent/Refresh/GMGN settings actions. The settings action is the same 28px
+  and always-reachable Add Token CA/Agent/Refresh/GMGN settings actions. The settings action is the same 28px
   text-button/icon treatment as Todo and the other Trench actions; it adds no new header height,
   background, label row, or accent color.
 - The Arco left rail contains INDEX children SOL, BSC, and Robinhood in that order. It is the only
   selected-chain owner; the old module/chain tab row does not render.
 - Every menu child is keyboard reachable through Arco semantics. Selecting an INDEX child changes
   both columns atomically and never starts provider analysis or storage writes.
-- A 40px action/status row contains `Add CA`, `Reanalyze all`, the last completed time, and a concise
+- A 40px action/status row contains `Reanalyze all`, the last completed time, and a concise
   global running/failure status. Header `Refresh` remains local reread; its tooltip must not imply
   analysis.
 - Content is a two-column CSS grid. Target CAs default to 42% with a 320px useful minimum; INDEX
@@ -83,7 +83,13 @@ module-local duplicate name/avatar/note field shape.
 
 ## Add CA dialog
 
-- The dialog is scoped to the selected chain and names it in the title/input guidance. One labelled
+- The menu-bar plus icon is labelled `Add Token CA`, available in every module and host. No Add
+  button remains inside INDEX. The dialog is global, not unmounted when changing modules.
+- An explicit SOL/BSC/RHC selector defaults to the active INDEX chain, or retains the last dialog
+  chain outside INDEX. Changing chain preserves pasted input. Submission/transport failures retain
+  input, release loading, and keep the dialog open. Unchanged retries reuse the request identity.
+
+- The dialog is scoped to its explicit chain and names it in the input guidance. One labelled
   multiline CA input accepts a bounded batch, one address per line. Current-chain entries validate
   before submission; duplicate resolved identities collapse to one target.
 - Structurally recognizable opposite-chain entries are removed from the outgoing command and shown
@@ -96,7 +102,7 @@ module-local duplicate name/avatar/note field shape.
 - Retained EVM input is submitted with the explicit selected BSC/Robinhood chain; retained Base58
   input is submitted as explicit Solana. The dialog never silently routes an ignored CA into a
   different chain INDEX.
-- Primary action is `Add and analyze`; secondary action cancels without mutation.
+- Primary action is `Update INDEX`; secondary action cancels without mutation.
 - Validation, not-found, ambiguous-chain, busy, and provider failures render inline with focus
   returned to the relevant control.
 - Submission is request-idempotent. The dialog closes only after the target is persisted; analysis
@@ -133,7 +139,7 @@ Add CA dialog (preserved underneath, when opened from its error)
   configured key without requiring replacement. `Get API key` uses the existing allowlisted
   official-link action. No control accepts a CLI path or private key.
 - When opened over Add CA, closing settings returns to the still-open Add dialog with its CA batch
-  unchanged. Verification never submits the batch; Ral explicitly chooses `Add and analyze` again.
+  unchanged. Verification never submits the batch; Ral explicitly chooses `Update INDEX` again.
 - Initial focus enters the dialog heading/first available control; `Tab` stays within the modal and
   `Esc` closes only while no save/probe is pending. Pending actions disable duplicate submission and
   expose a visible loading state.
@@ -160,8 +166,8 @@ labels.
 - Below 640px the columns stack in business order: Target CAs, then INDEX wallets.
 - The left rail stays 148px on wide layouts and 112px below 560px; complete child labels remain
   visible and independently scrollable rather than collapsing to unlabeled icons.
-- The action bar wraps without hiding either action. The menu status text may yield before the two
-  header icon actions, preserving Agent, Refresh, and GMGN settings. At narrow width the status
+- The action bar wraps without hiding its controls. The menu status text yields before the
+  header icon actions, preserving Add Token CA, Agent, Refresh, and GMGN settings. At narrow width the status
   label hides before any icon action.
 - At 398x568 and 800x282 Omni cells, every action remains reachable, each list owns scrolling, and
   the renderer root has no horizontal overflow or artificial 800x600 minimum.

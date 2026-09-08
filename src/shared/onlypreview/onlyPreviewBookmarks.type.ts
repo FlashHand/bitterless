@@ -11,6 +11,7 @@ export interface OnlyPreviewBookmarksRequest extends OnlyPreviewHostRequest {
 export type OnlyPreviewBookmarkRequest = OnlyPreviewHostRequest & OnlyPreviewFileRef;
 export interface OnlyPreviewBookmarksSnapshot {
   workspaceId: string;
+  revision: number;
   entries: OnlyPreviewBookmark[];
 }
 export const ONLY_PREVIEW_BOOKMARKS_CHANGED_EVENT = 'onlypreview/bookmarksChanged' as const;

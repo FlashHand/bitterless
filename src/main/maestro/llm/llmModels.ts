@@ -272,6 +272,30 @@ export const resolveLoginMethod = (providerId: string, method?: string): LlmLogi
   return provider.methods.some((item) => item.id === requested) ? requested : provider.methods[0]?.id || 'browser'
 }
 
+/**
+ * provider/model id → 人话,喂给 SDK BaseAgent 的 `describeTarget` 端口(「## Which model you are」那段)。
+ *
+ * 这个端口在 SDK 里**刻意没有默认值**:一个空的或错的后端身份块,曾让用户对着一条指名了根本
+ * 没在用的 provider 的额度提示白等六天。宿主必须显式提供,编译期就挡住"忘了传"。
+ */
+export const describeLlmTarget = (
+  providerId: string,
+  modelId: string
+): { providerLabel: string; modelLabel: string; supplier: string } => {
+  const provider = normalizeLlmProvider(providerId)
+  const preset = LLM_PRESETS.find((item) => item.provider === provider && item.model === modelId)
+  return {
+    providerLabel: preset?.providerLabel || providerLabel(provider),
+    modelLabel: preset?.label || modelId,
+    supplier:
+      provider === 'ai-crms'
+        ? 'supplied by Micromeet through the signed-in AI-CRMS session (not a personal subscription)'
+        : provider === 'anthropic'
+          ? "the user's own Claude subscription, signed in through the in-app browser login"
+          : "the user's own ChatGPT/Codex subscription, signed in through the in-app browser login"
+  }
+}
+
 export const providerLabel = (providerId: string): string => {
   if (providerId === 'ai-crms') return 'Micromeet'
   if (providerId.startsWith('openai')) return 'OpenAI Codex (ChatGPT)'

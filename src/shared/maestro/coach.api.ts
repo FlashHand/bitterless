@@ -267,7 +267,7 @@ export interface BrowserRequestReplayResult {
   auth?: { header: string; source: string; key?: string; applied: boolean }[]
 }
 
-export type TabKind = 'home' | 'ai-crms' | 'browser' | 'onlypreview'
+export type TabKind = 'home' | 'ai-crms' | 'browser' | 'onlypreview' | 'trench'
 export type WorkbenchPane =
   | 'recording'
   | 'skills'

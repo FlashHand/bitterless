@@ -6,6 +6,15 @@ design document.
 
 ## Feature contracts
 
+- [INDEX incremental Token CA import](features/trench-index.md) - menu-bar batch input, incumbent
+  retention and per-chain top 300; [delivery](plan/tasks/trench-index-incremental-030.md).
+
+- [Trench Tab and Window Hosting](features/trench-host-toggle.md) - implemented; owner testing pending; one ordinary
+  surface shared across window/tab, with independent multi-renderer Omni panels retained.
+
+- [Project bookmark list and state SQLite](features/onlypreview-project-bookmarks.md) — implemented; owner testing pending;
+  fixed Project-only list, direct removal, preload commit-driven UI and per-Project state DB.
+
 - [Maestro slash commands](features/maestro-slash-commands.md) — implemented; owner testing pending: Cowork-style
   `/clear` and `/view_context` menu, preserving BL runtime and composer behavior.
 

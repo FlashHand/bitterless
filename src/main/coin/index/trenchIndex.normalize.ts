@@ -433,6 +433,7 @@ export const normalizeTrenchTokenInfo = (
 export const normalizeTrenchTraderCandidates = (
   read: GmgnReadResult,
   chain: TrenchChain,
+  indexedWallets: ReadonlySet<string> = new Set(),
 ): TrenchIndexCandidate[] => {
   if (read.operation !== 'token-traders' || !isRecord(read.data) || !Array.isArray(read.data.list)) {
     throw new TrenchIndexSourceError('Token trader response must be an object with a list array.');
@@ -473,6 +474,7 @@ export const normalizeTrenchTraderCandidates = (
       throw new TrenchIndexSourceError('Token trader response contains an invalid source rank.');
     }
     sourceRanks.add(sourceRankNumber);
+    if (indexedWallets.has(walletKey)) continue;
     const profitUsd = optionalFinite(value.profit ?? value.profit_usd ?? value.total_profit, 'profit');
     if (profitUsd === null) throw new TrenchIndexSourceError('Each token trader row must contain finite profit.');
     const holder: LocalHolder = {

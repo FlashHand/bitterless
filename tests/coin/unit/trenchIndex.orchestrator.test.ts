@@ -5,6 +5,7 @@ import type { GmgnReadInput } from '../../../src/main/coin/resources/gmgnCli.ser
 import type {
   TrenchIndexStorageAddTargetsAndBeginRunInput,
   TrenchIndexWorkspaceSnapshot,
+  TrenchIndexCompletedBatch,
 } from '../../../src/shared/trench/trenchIndex.type';
 
 const first = '0x1111111111111111111111111111111111111111';
@@ -93,6 +94,7 @@ test('duplicate resolved identities collapse while unresolved items fail before 
   assert.equal(duplicateResult.ok, true);
   assert.equal(duplicate.writes.length, 1);
   assert.equal(duplicate.writes[0]?.targets.length, 1);
+  assert.equal(duplicate.reads.length, 1);
 
   const unresolved = makeHarness(() => '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   const unresolvedResult = await unresolved.orchestrator.addTargets({
@@ -130,4 +132,54 @@ test('rejects an Add batch before GMGN resolution while a run is active', async 
   if (!result.ok) assert.equal(result.error.code, 'ANALYSIS_BUSY');
   assert.equal(harness.reads.length, 0);
   assert.equal(harness.writes.length, 0);
+});
+
+test('Add analyzes only returned batch tokens and skips indexed wallets while Reanalyze includes them', async () => {
+  const incumbent = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const newcomer = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const snapshot: TrenchIndexWorkspaceSnapshot = {
+    ...workspace,
+    chainProjections: [workspace.chainProjections[0]!, { chain: 'bsc', targets: [], wallets: [{
+      walletId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      walletAccountId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      chain: 'bsc', address: incumbent, canonicalAddress: incumbent,
+      name: null, avatarUrl: null, note: null, metadata: {}, metadataSource: 'gmgn',
+      walletKind: 'user', classificationSource: 'gmgn-addr-type', classificationUpdatedAt: 1,
+      chainRank: 1, totalProfitUsd: 100, sourceCaCount: 1, profitableCaCount: 1, bestSourceRank: 1,
+      realizedProfitUsd: 100, unrealizedProfitUsd: null,
+    }] }],
+  };
+  const run = { runId: '99999999-9999-4999-8999-999999999999', revision: 1,
+    targets: [{ targetId: '11111111-1111-4111-8111-111111111111', chain: 'bsc' as const,
+      contractAddress: first, canonicalAddress: first }], replayed: false, status: 'running' as const };
+  const batches: TrenchIndexCompletedBatch[] = [];
+  const reads: GmgnReadInput[] = [];
+  const orchestrator = new TrenchIndexOrchestrator({
+    storage: {
+      getWorkspace: async () => ({ ok: true, value: snapshot }),
+      addTargetsAndBeginRun: async () => ({ ok: true, value: run }),
+      beginRun: async () => ({ ok: true, value: run }),
+      completeRun: async (batch) => { batches.push(batch); return { ok: true, value: { revision: 2 } }; },
+      failRun: async () => { throw new Error('unexpected failure'); },
+    },
+    gmgn: { read: async (input) => {
+      reads.push(input);
+      return { operation: input.operation, observedAt: 100, data: input.operation === 'token-traders'
+        ? { list: [{ address: incumbent, profit: 100, addr_type: 0 }, { address: newcomer, profit: 200, addr_type: 0 }] }
+        : { address: 'address' in input ? input.address : '', name: 'Token' } };
+    } },
+    broadcast: () => undefined,
+  });
+  const added = await orchestrator.addTargets({ requestId: '11111111-1111-4111-8111-111111111111',
+    targets: [{ chain: 'bsc', contractAddress: first }] });
+  assert.equal(added.ok, true);
+  await orchestrator.waitForIdle();
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0]!.wallets.map((row) => row.canonicalAddress), [newcomer]);
+  assert.equal(reads.filter((read) => read.operation === 'token-traders').length, 1);
+  assert.equal(reads.every((read) => 'address' in read && read.address === first), true);
+  await orchestrator.reanalyze({ requestId: '22222222-2222-4222-8222-222222222222' });
+  await orchestrator.waitForIdle();
+  assert.equal(batches.length, 2);
+  assert.deepEqual(batches[1]!.wallets.map((row) => row.canonicalAddress), [newcomer, incumbent]);
 });

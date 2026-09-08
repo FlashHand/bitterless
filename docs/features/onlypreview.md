@@ -48,6 +48,12 @@ scoped CSS dimension assertions and Monaco initialization option AST checks pass
 and both projects' diff checks pass. Cowork has no ESLint executable available. No Electron/E2E,
 build, installation or Git sync was run; actual scrollbar appearance remains owner-tested.
 
+## Project bookmarks
+
+Project bookmark layout, per-Project durable state SQLite, migration and commit-driven UI are
+specified in [Project bookmarks](onlypreview-project-bookmarks.md). Search-index replacement
+must never replace this durable state. This follow-up supersedes task 165's top bar/settings path.
+
 ## Ownership
 
 | Concern                                                                                          | Owner                                                                   |

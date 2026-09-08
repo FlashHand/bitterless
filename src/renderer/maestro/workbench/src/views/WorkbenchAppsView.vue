@@ -27,7 +27,7 @@ const miniApps = computed(() =>
       await homeShellBridge.openTodo()
     },
     async () => await maestroWindowEmitter.openMaestroWindow(),
-    async () => await coinWindowEmitter.openCoinWindow(),
+    async () => await coinWindowEmitter.openCoinTab(),
     async () => await eyesOnAgentsWindowEmitter.openEyesOnAgentsWindow(),
     async () => {
       const result = await omniWindowEmitter.openOmniWindow()

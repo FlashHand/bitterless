@@ -55,6 +55,7 @@ import {
   uninstallOnlyPreviewProtocol,
 } from '@main/miniapps/onlypreview/onlyPreviewProtocol.service';
 import { registerOnlyPreviewCoworkTab } from '@main/windows/onlyPreviewCoworkTab';
+import { registerTrenchCoworkTab } from '@main/windows/trenchCoworkTab';
 import { registerOnlyPreviewMaestroOpener } from '@main/windows/onlyPreviewMaestroOpener';
 import {
   OnlyPreviewOpenQueue,
@@ -639,6 +640,7 @@ if (isLegacyCodingAgentHookHelperMode) {
     // Maestro because only the host side may know both halves — see `check:maestro`'s alias
     // boundary — and before `startGui()` so a Cowork window opened during startup already has it.
     registerOnlyPreviewCoworkTab();
+    registerTrenchCoworkTab();
     // ...and make it the application Cowork's workspace tools show files in, instead of Finder.
     registerOnlyPreviewMaestroOpener();
     installApplicationFindMenu();

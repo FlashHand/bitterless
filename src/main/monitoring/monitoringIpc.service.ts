@@ -1,4 +1,4 @@
-import { app, ipcMain, net, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
+import { app, ipcMain, net, type IpcMainInvokeEvent } from 'electron';
 import { is } from '@electron-toolkit/utils';
 import {
   MONITORING_IPC_CHANNELS,
@@ -12,7 +12,8 @@ import {
   createSnipingOmniTrenchTargets,
   createSnipingRendererTargets,
   type SnipingRendererTargets,
-  type SnipingSenderWebContents
+  type SnipingSenderWebContents,
+  type SnipingWindowLike
 } from '../sniping/snipingSender.guard';
 import { SnipingRelayClient, type SnipingFetch } from '../sniping/snipingRelay.client';
 import {
@@ -24,7 +25,7 @@ import { MonitoringBridgeService } from './monitoringBridge.service';
 export interface MonitoringIpcDependencies {
   bridge: MonitoringBridge;
   session: SnipingSessionService;
-  getStandaloneWindow(): BrowserWindow | null;
+  getStandaloneWindow(): SnipingWindowLike | null;
   isLiveOmniTrench(sender: SnipingSenderWebContents): boolean;
   rendererTargets: SnipingRendererTargets;
   omniTrenchTargets: string[];
@@ -49,7 +50,7 @@ const defaultDependencies = (): MonitoringIpcDependencies => {
   return {
     bridge: new MonitoringBridgeService(relay),
     session: snipingSessionService,
-    getStandaloneWindow: () => coinWindowManager.browserWindow,
+    getStandaloneWindow: () => coinWindowManager.surface,
     isLiveOmniTrench: (sender) =>
       omniWindowHelper.isLiveMiniAppWebContents('trench', sender as Electron.WebContents),
     rendererTargets: createSnipingRendererTargets(

@@ -2,7 +2,7 @@
   <div
     name="trench__app"
     class="trench-app"
-    :class="{ 'trench-app--embedded': host.host === 'omni' }"
+    :class="{ 'trench-app--embedded': host.host !== 'standalone' }"
     :data-host="host.host"
   >
     <TrenchHeader />
@@ -19,6 +19,7 @@
       </section>
     </div>
     <TrenchGmgnSettings />
+    <TrenchIndexAddDialog />
   </div>
 </template>
 
@@ -27,6 +28,7 @@ import { onMounted, watch } from 'vue';
 import TrenchHeader from './components/TrenchHeader/TrenchHeader.vue';
 import TrenchGmgnSettings from './components/TrenchGmgnSettings/TrenchGmgnSettings.vue';
 import TrenchIndexWorkspace from './components/TrenchIndexWorkspace/TrenchIndexWorkspace.vue';
+import TrenchIndexAddDialog from './components/TrenchIndexAddDialog/TrenchIndexAddDialog.vue';
 import TrenchModuleNavigation from './components/TrenchModuleNavigation/TrenchModuleNavigation.vue';
 import TrenchersWorkspace from './components/TrenchersWorkspace/TrenchersWorkspace.vue';
 import SnipingWorkspace from './components/SnipingWorkspace/SnipingWorkspace.vue';
@@ -36,10 +38,12 @@ import { trenchIndexStore } from './views/index/trenchIndex.runtime';
 import { trenchNavigationStore as navigation } from './views/navigation/trenchNavigation.runtime';
 import { trenchPersonStore } from './views/trenchers/trenchPerson.runtime';
 import { monitoringStore } from './views/monitoring/monitoring.runtime';
+import { initializeTrenchHost } from './views/host/trenchHost.service';
 
 const host = trenchHost;
 
 onMounted(() => {
+  initializeTrenchHost();
   void trenchIndexStore.initialize();
 });
 

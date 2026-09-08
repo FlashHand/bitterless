@@ -18,6 +18,7 @@ import type {
 } from '@shared/trench/trenchIndex.type';
 import {
   TRENCH_INDEX_MAX_TARGETS,
+  TRENCH_INDEX_MAX_WALLETS,
   TRENCH_INDEX_POLICY_VERSION,
 } from '@shared/trench/trenchIndex.type';
 import type { TrenchJsonObject } from '@shared/trench/trench.type';
@@ -967,7 +968,7 @@ export class TrenchIoRepository {
           );
         }
       }
-      return this.createRun(input.requestId, input.requestFingerprint, 'add-target', now);
+      return this.createRun(input.requestId, input.requestFingerprint, 'add-target', now, identities);
     });
   }
 
@@ -989,6 +990,16 @@ export class TrenchIoRepository {
       if (!run || run.status !== 'running') {
         throw new TrenchIndexRepositoryError('REQUEST_CONFLICT', 'The analysis run is not active.');
       }
+      const incumbents = new Map<string, WalletRow & { evidence_run_id: string }>();
+      if (run.trigger === 'add-target') {
+        const rows = this.database.raw.prepare(`
+          SELECT i.*,a.wallet_id,w.canonical_address FROM trench_repository_state s
+          JOIN trench_index_wallets i ON i.run_id=s.current_run_id
+          JOIN trench_wallet_chain_accounts a ON a.wallet_account_id=i.wallet_account_id
+          JOIN trench_wallets w ON w.wallet_id=a.wallet_id WHERE s.id=1
+        `).all() as Array<WalletRow & { evidence_run_id: string }>;
+        for (const row of rows) incumbents.set(`${row.chain}:${row.canonical_address}`, row);
+      }
       const expectedTargets = this.runTargets(batch.runId);
       const actualIds = new Set(batch.targets.map(({ targetId }) => targetId));
       if (actualIds.size !== batch.targets.length || actualIds.size !== expectedTargets.length ||
@@ -1009,6 +1020,9 @@ export class TrenchIoRepository {
         }
         this.assertMetadata(analysis.metadata);
         for (const candidate of analysis.candidates) {
+          if (incumbents.has(`${candidate.wallet.chain}:${candidate.wallet.canonicalAddress}`)) {
+            throw new TrenchIndexRepositoryError('SOURCE_INVALID', 'Incremental analysis must skip indexed wallets.');
+          }
           if (candidate.wallet.chain !== analysis.chain) {
             throw new TrenchIndexRepositoryError('SOURCE_INVALID', 'Candidate wallet belongs to the wrong chain.');
           }
@@ -1098,6 +1112,30 @@ export class TrenchIoRepository {
 
       const ranks = new Set<string>();
       const expectedRanks = new Map<string, number>();
+      const published: Array<{
+        ranked: TrenchIndexCompletedBatch['wallets'][number];
+        walletId: string;
+        walletAccountId: string;
+        evidenceRunId: string;
+        retained: boolean;
+      }> = [...incumbents.values()].map((row) => ({
+        ranked: {
+          chain: row.chain,
+          canonicalAddress: row.canonical_address,
+          chainRank: row.chain_rank,
+          totalProfitUsd: row.total_profit_usd,
+          sourceCaCount: row.source_ca_count,
+          profitableCaCount: row.profitable_ca_count,
+          bestSourceRank: row.best_source_rank,
+          realizedProfitUsd: row.realized_profit_usd,
+          unrealizedProfitUsd: row.unrealized_profit_usd,
+          xIdentity: null,
+        },
+        walletId: row.wallet_id,
+        walletAccountId: row.wallet_account_id,
+        evidenceRunId: row.evidence_run_id,
+        retained: true,
+      }));
       for (const ranked of batch.wallets) {
         assertFiniteOrNull(ranked.totalProfitUsd, 'ranked wallet profit');
         assertFiniteOrNull(ranked.realizedProfitUsd, 'ranked realized profit');
@@ -1116,37 +1154,54 @@ export class TrenchIoRepository {
         if (!walletId || !walletAccountId) {
           throw new TrenchIndexRepositoryError('SOURCE_INVALID', 'Published wallet has no candidate evidence.');
         }
+        published.push({ ranked, walletId, walletAccountId, evidenceRunId: batch.runId, retained: false });
+      }
+      published.sort((left, right) => left.ranked.chain.localeCompare(right.ranked.chain) ||
+        right.ranked.totalProfitUsd - left.ranked.totalProfitUsd ||
+        Number(right.retained) - Number(left.retained) ||
+        (left.retained && right.retained ? left.ranked.chainRank - right.ranked.chainRank : 0) ||
+        right.ranked.profitableCaCount - left.ranked.profitableCaCount ||
+        right.ranked.sourceCaCount - left.ranked.sourceCaCount ||
+        left.ranked.bestSourceRank - right.ranked.bestSourceRank ||
+        left.ranked.canonicalAddress.localeCompare(right.ranked.canonicalAddress));
+      const publishedRanks = new Map<string, number>();
+      let publishedCount = 0;
+      for (const { ranked, walletId, walletAccountId, evidenceRunId, retained } of published) {
+        const chainRank = (publishedRanks.get(ranked.chain) ?? 0) + 1;
+        if (chainRank > TRENCH_INDEX_MAX_WALLETS) continue;
+        publishedRanks.set(ranked.chain, chainRank);
         const eligible = this.database.raw.prepare(`
           SELECT 1 FROM trench_index_wallet_candidates c
           JOIN trench_wallet_chain_accounts a ON a.wallet_account_id=c.wallet_account_id
           WHERE c.run_id=? AND c.wallet_account_id=? AND c.eligible=1 AND a.wallet_kind='user'
             AND a.chain=? LIMIT 1
-        `).get(batch.runId, walletAccountId, ranked.chain);
+        `).get(evidenceRunId, walletAccountId, ranked.chain);
         if (!eligible) {
           throw new TrenchIndexRepositoryError('SOURCE_INVALID', 'Published wallet is not an eligible user wallet.');
         }
         this.database.raw.prepare(`
           INSERT INTO trench_index_wallets (
             run_id,wallet_account_id,chain,chain_rank,total_profit_usd,source_ca_count,profitable_ca_count,
-            best_source_rank,realized_profit_usd,unrealized_profit_usd
-          ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            best_source_rank,realized_profit_usd,unrealized_profit_usd,evidence_run_id
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
         `).run(
-          batch.runId, walletAccountId, ranked.chain, ranked.chainRank, ranked.totalProfitUsd, ranked.sourceCaCount,
+          batch.runId, walletAccountId, ranked.chain, chainRank, ranked.totalProfitUsd, ranked.sourceCaCount,
           ranked.profitableCaCount, ranked.bestSourceRank, ranked.realizedProfitUsd,
-          ranked.unrealizedProfitUsd,
+          ranked.unrealizedProfitUsd, evidenceRunId,
         );
-        this.ensurePublishedPerson(
+        if (!retained) this.ensurePublishedPerson(
           walletId,
           this.publishedPersonEvidence(batch, ranked),
           batch.observedAt,
         );
+        publishedCount += 1;
       }
       this.database.raw.prepare(`
         UPDATE trench_index_runs
         SET status='completed',completed_at=?,candidate_count=?,eligible_count=?,published_count=?,
             error_code=NULL,error_message=NULL
         WHERE run_id=?
-      `).run(batch.observedAt, candidateCount, eligibleCount, batch.wallets.length, batch.runId);
+      `).run(batch.observedAt, candidateCount, eligibleCount, publishedCount, batch.runId);
       const revision = this.bumpRevision(batch.observedAt, batch.runId);
       return { revision };
     });
@@ -1189,10 +1244,17 @@ export class TrenchIoRepository {
     fingerprint: string,
     trigger: TrenchIndexRunSummary['trigger'],
     startedAt: number,
+    targetIdentities?: ReadonlySet<string>,
   ): TrenchIndexStorageBeginRunResult {
-    const targets = this.database.raw.prepare(`
+    const activeTargets = this.database.raw.prepare(`
       SELECT * FROM trench_index_targets WHERE active=1 ORDER BY created_at,target_id
     `).all() as TargetRow[];
+    if (activeTargets.length > TRENCH_INDEX_MAX_TARGETS) {
+      throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Active target set exceeds its limit.');
+    }
+    const targets = targetIdentities
+      ? activeTargets.filter((row) => targetIdentities.has(`${row.chain}:${row.canonical_address}`))
+      : activeTargets;
     if (targets.length === 0) {
       throw new TrenchIndexRepositoryError('EMPTY_TARGET_SET', 'Add a target CA before reanalyzing.');
     }
@@ -1217,8 +1279,9 @@ export class TrenchIoRepository {
     }
     this.database.raw.prepare(`
       UPDATE trench_index_targets SET state='analyzing',error_code=NULL,error_message=NULL,
-        error_at=NULL,updated_at=? WHERE active=1
-    `).run(startedAt);
+        error_at=NULL,updated_at=?
+      WHERE target_id IN (SELECT target_id FROM trench_index_target_snapshots WHERE run_id=?)
+    `).run(startedAt, runId);
     const revision = this.bumpRevision(startedAt);
     return {
       runId,

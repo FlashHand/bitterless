@@ -41,6 +41,7 @@ import {
   TRENCH_IO_INITIAL_SCHEMA,
   TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE,
   TRENCH_IO_PERSON_SCHEMA_VERSION_CODE,
+  TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
   TRENCH_IO_SCHEMA_VERSION_CODE,
   type TrenchIoMigrationDatabase,
 } from '../../src/renderer/trench-io/trenchIo.migration'
@@ -1545,6 +1546,7 @@ const auditTrenchIo = (): void => {
       TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE,
       TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE,
       TRENCH_IO_PERSON_SCHEMA_VERSION_CODE,
+      TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
       TRENCH_IO_SCHEMA_VERSION_CODE,
     ])
     applyTrenchIoMigrations(asTrenchMigrationDatabase(fresh), currentVersionCode, 2)
@@ -1717,8 +1719,12 @@ const auditTrenchIo = (): void => {
         name: 'global-wallet-person-registry',
       },
       {
-        version_code: TRENCH_IO_SCHEMA_VERSION_CODE,
+        version_code: TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
         name: 'person-import-ledger',
+      },
+      {
+        version_code: TRENCH_IO_SCHEMA_VERSION_CODE,
+        name: 'incremental-index-evidence',
       },
     ])
     assert.equal(getScalar(missingPredecessors,

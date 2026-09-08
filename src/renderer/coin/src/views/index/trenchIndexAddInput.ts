@@ -1,6 +1,7 @@
 import { coinCandidateChains } from '@shared/coin/coinAddress';
 import type { TrenchChain } from '@shared/trench/trench.type';
 import type { TrenchIndexAddTargetInput } from '@shared/trench/trenchIndex.type';
+import { TRENCH_INDEX_MAX_TARGETS } from '@shared/trench/trenchIndex.type';
 
 export interface TrenchIndexAddInputPartition {
   enteredCount: number;
@@ -41,11 +42,14 @@ export const buildTrenchIndexAddTargetInput = (
   partition: TrenchIndexAddInputPartition,
   selectedChain: TrenchChain,
   requestId: string,
-): TrenchIndexAddTargetInput | null => partition.invalidCount > 0 || partition.retained.length === 0
+): TrenchIndexAddTargetInput | null => partition.enteredCount < 1 ||
+  partition.enteredCount > TRENCH_INDEX_MAX_TARGETS ||
+  partition.invalidCount > 0 || partition.retained.length === 0
   ? null
   : {
       requestId,
-      targets: partition.retained.map((contractAddress) => ({
+      targets: [...new Set(partition.retained.map((address) => selectedChain === 'solana'
+        ? address : address.toLowerCase()))].map((contractAddress) => ({
         contractAddress,
         chain: selectedChain,
       })),
