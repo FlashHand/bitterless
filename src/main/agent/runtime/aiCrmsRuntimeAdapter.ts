@@ -3,18 +3,16 @@ import { fetch } from 'undici'
 import type { SessionApi, AuthSession } from '@maestro-shared/session.api'
 import { normalizeCoachRegion } from '@maestro-shared/networking/coachRegion'
 import { resolveAiCrmsRelayEndpoint } from '@maestro-main/networking/clients/relay.client'
-import { sanitizeRuntimeError } from './errorSanitizer'
-import { snapshotRuntimeContext } from './contextSnapshot.service'
+import { sanitizeRuntimeError } from '@main/agent/runtime/errorSanitizer'
 import { isDownloadableMediaUrl } from './mediaRefResolver'
 import type {
   AgentRuntimeAdapter,
-  AgentRuntimeContextSnapshot,
   AgentRuntimeEvent,
   AgentRuntimePrompt,
   AgentRuntimeSession,
   AgentRuntimeSessionOptions,
   AgentToolSpec
-} from './agentRuntime.types'
+} from '@main/agent/runtime/agentRuntime.types'
 
 const aiCrmsSession = createXpcMainEmitter<SessionApi>('MaestroSessionDao')
 
@@ -58,9 +56,6 @@ class AiCrmsRuntimeSession implements AgentRuntimeSession {
 
   constructor(private readonly params: AiCrmsRuntimeSessionParams) {}
 
-  readContext(): AgentRuntimeContextSnapshot {
-    return snapshotRuntimeContext('', this.messages)
-  }
 
   subscribe(listener: (event: AgentRuntimeEvent) => void): undefined | (() => void) {
     this.listeners.add(listener)

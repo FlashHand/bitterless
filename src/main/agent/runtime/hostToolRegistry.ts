@@ -1,6 +1,6 @@
 import type { HostToolPolicyMap, HostToolPolicyMode, HostToolScope } from '@maestro-shared/coach.api'
 import { HOST_TOOL_CATALOG } from '../hostToolCatalog'
-import type { AgentToolSpec } from './agentRuntime.types'
+import type { AgentToolSpec } from '@main/agent/runtime/agentRuntime.types'
 
 export interface HostToolConfirmRequest {
   scope: HostToolScope

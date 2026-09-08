@@ -1,4 +1,4 @@
-import { BaseAgent } from './BaseAgent'
+import { BaseAgent } from '@main/agent/BaseAgent'
 import { DELEGATE_SYSTEM_PROMPT } from './prompt/delegateSysPrompt'
 
 /**

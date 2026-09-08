@@ -1,6 +1,11 @@
-import type { CodexDebugEvent } from '@maestro-shared/coach.api'
+import type { CodexDebugEvent } from './runtime.types'
 
-export type AgentRuntimeThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type { AgentRuntimeContextEntry, AgentRuntimeContextSurface, AgentRuntimeUsage } from './runtime.types'
+import type { AgentRuntimeContextSurface, AgentRuntimeUsage } from './runtime.types'
+
+// Mirrors pi-ai's `ModelThinkingLevel` (pi 0.85.1). `max` sits above `xhigh` and only the
+// models whose catalog entry declares it accept it — the preset's effort list is what gates it.
+export type AgentRuntimeThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface AgentToolParamSpec {
   name: string
@@ -13,12 +18,16 @@ export interface AgentToolSpec {
   name: string
   description: string
   params: AgentToolParamSpec[]
-  /** Optional per-tool wall clock override for long bounded operations. */
-  timeoutMs?: number
-  /** Short action phrase appended to timeout guidance. */
-  timeoutHint?: string
   /** Runs the underlying coach tool; returns an observation string for the agent. */
   execute: (args: Record<string, unknown>) => Promise<string>
+  /**
+   * Per-tool wall clock, overriding the default 120 s. For tools whose honest runtime is minutes,
+   * not seconds — API ingest is `ceil(endpoints/4)` sequential LLM calls, so any site with more than
+   * a handful of endpoints blows the default and the agent is told it failed while it keeps running.
+   */
+  timeoutMs?: number
+  /** Replaces the default timeout advice ("reading a very large file…") when that would mislead. */
+  timeoutHint?: string
 }
 
 export interface AgentRuntimeTarget {
@@ -55,13 +64,27 @@ export interface AgentRuntimeSessionOptions {
   target: AgentRuntimeTarget
   authPath: string
   modelsPath?: string
-  /** pi agent dir (global AGENTS.md/SYSTEM.md, skills, settings, managed `bin`). Maestro passes
-   * `<userData>/.pi`; omitting it makes pi read the user's own `~/.pi/agent`. */
-  agentDir?: string
   tools: AgentToolSpec[]
   scope: CodexDebugEvent['scope']
   onDebug?: (event: CodexDebugEvent) => void
+  /** pi agent dir (auth/sessions/bin). Cowork passes `<userData>/.pi` so the app is self-contained
+   * and the managed ripgrep lands in a path we control; unset falls back to pi's ~/.pi/agent. */
+  agentDir?: string
+  /** Working dir for pi's builtin file tools (read/write/grep/find/ls) and relative-path resolution.
+   * Cowork passes `<userData>/skills` — the dir that already has package.json + node_modules
+   * (skills preset), so agent-written scripts can `import axios` and the mjs runner accepts them. */
+  cwd?: string
+  /** Enable pi's own builtin tools alongside the host tools. Names are allow-listed together with
+   * every host tool name, because pi's allowlist filters builtin AND custom tools. */
+  builtinTools?: string[]
+  /**
+   * 一个助手回合内工具循环的轮次上限。省略 → 环境变量 `COACH_AI_CRMS_TOOL_ROUNDS` → 默认。
+   * 探站是【一个回合里循环几十次 explore_visit】,默认 12 会把它砍断;它真正的边界是自己的
+   * 120 分钟时间预算 + 无进展检测,所以走这条 per-session 覆盖把上限抬高,而不是全局放松。
+   */
+  maxToolRounds?: number
 }
+
 
 export type AgentRuntimeEvent =
   | { type: 'text_delta'; delta: string }
@@ -70,22 +93,39 @@ export type AgentRuntimeEvent =
   | { type: 'thinking_end' }
   | { type: 'assistant_done'; text?: string; stopReason?: string; errorMessage?: string }
   | { type: 'assistant_message_end'; text?: string; stopReason?: string; errorMessage?: string }
+  // **独立事件,不挂在 assistant_message_end 上** —— AI-CRMS 那条 runtime 的工具循环只在整轮
+  // 结束时发一次 assistant_message_end(aiCrmsRuntimeAdapter `runToolLoop`),挂上去就等于
+  // 回合结束才报一次用量,钻探的 token 预算永远来不及触发。每次模型往返各发一条。
+  | { type: 'usage'; usage: AgentRuntimeUsage }
   | { type: 'tool_start'; toolName?: string; args?: unknown }
   | { type: 'tool_end'; toolName?: string; args?: unknown; isError?: boolean }
+  /**
+   * 运行时自己做的【上下文压缩】。pi 会话内置 auto-compaction(`_runAutoCompaction`,每条
+   * assistant 消息后检查一次:溢出 或 超阈值就压)—— 但我们原来**一个都没接**,日志里 0 条,
+   * 于是"这一轮到底压没压、压了几次、压完剩多少"完全不可观测(Ral 2026-08-13 要日志)。
+   * 钻探是单个能跑十几分钟、上百轮的回合,压缩是不是在正常工作直接决定它能不能跑完。
+   */
+  | { type: 'compaction_start'; reason?: string }
+  | { type: 'compaction_end'; reason?: string; ok?: boolean; beforeTokens?: number; afterTokens?: number }
+
+
 
 export interface AgentRuntimeSession {
   subscribe: (listener: (event: AgentRuntimeEvent) => void) => undefined | (() => void)
   prompt: (message: AgentRuntimePrompt) => Promise<unknown>
   abort: () => Promise<void>
-  /** Optional capability used only to steer an already-running runtime turn safely. */
+  /** 上下文条目面。见 `AgentRuntimeContextSurface`。 */
+  readonly context?: AgentRuntimeContextSurface
+  /**
+   * 这个会话此刻是不是**真的在流式输出**。只读,给回合内 steering 当前置条件用
+   * (`BaseAgent.steerActiveTurn` 在投递**之前**读它 —— 理由见那里的方法注释)。
+   *
+   * **可选**:只有支持「把消息带进正在跑的那个回合」的运行时才实现它。不实现 = 这条运行时上
+   * 没有可插进去的活跃流,steering 会如实报 `failed` 而不是投出去 —— 这正是我们要的:
+   * AI-CRMS 那条运行时的 `prompt()` 是自己跑一整轮工具循环,第二次调用等于并发再跑一轮,
+   * 比「没投出去」坏得多。
+   */
   readonly isStreaming?: boolean
-  /** Read the existing runtime state only; never initialize a session for export. */
-  readContext?: () => AgentRuntimeContextSnapshot
-}
-
-export interface AgentRuntimeContextSnapshot {
-  systemPrompt: string
-  messages: unknown[]
 }
 
 export interface AgentRuntimeAdapter {

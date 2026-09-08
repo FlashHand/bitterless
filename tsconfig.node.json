@@ -24,7 +24,12 @@
       "@preload/*": ["src/preload/*"],
       "@shared/*": ["src/shared/*"],
       "@maestro-main/*": ["src/main/maestro/*"],
-      "@maestro-shared/*": ["src/shared/maestro/*"]
+      "@maestro-shared/*": ["src/shared/maestro/*"],
+      // SDK 源码在仓外,bare specifier 从它那儿向上找不到本仓的 node_modules。
+      // 显式指到本仓的安装位置 —— 与 app 自己解析到的是同一份。
+      // 漏了这两行的症状很误导:报的是"属性不存在",不是"找不到模块"。
+      "@earendil-works/*": ["node_modules/@earendil-works/*"],
+      "typebox": ["node_modules/typebox"]
     }
   }
 }

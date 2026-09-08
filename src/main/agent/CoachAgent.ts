@@ -1,4 +1,4 @@
-import { BaseAgent } from './BaseAgent'
+import { BaseAgent } from '@main/agent/BaseAgent'
 import { COACH_SYSTEM_PROMPT } from './prompt/coachSysPrompt'
 
 /**

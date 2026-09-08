@@ -1,5 +1,5 @@
 import { basename } from 'path'
-import type { AgentRuntimeImage, AgentRuntimeMediaRef } from './agentRuntime.types'
+import type { AgentRuntimeImage, AgentRuntimeMediaRef } from '@main/agent/runtime/agentRuntime.types'
 
 export type AgentRuntimeMediaTransport = 'path' | 'url'
 

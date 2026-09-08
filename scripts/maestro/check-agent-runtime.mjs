@@ -7,6 +7,8 @@ import ts from 'typescript'
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const root = join(projectRoot, 'src')
+// 读本仓的副本等于在检查一个不再被打包的文件,守卫会安静地失去意义。
+const sdkRoot = join(projectRoot, 'src', 'main', 'agent')
 const workspaceRoot = projectRoot
 const require = createRequire(import.meta.url)
 const baseAgent = readFileSync(join(root, 'main/agent/BaseAgent.ts'), 'utf8')
@@ -17,7 +19,7 @@ const coachRuntime = readFileSync(join(root, 'main/agent/runtime/coachRuntimeAda
 const aiCrmsRuntimeCheck = readFileSync(join(projectRoot, 'scripts/maestro/check-ai-crms-runtime.mjs'), 'utf8')
 const mediaResolver = readFileSync(join(root, 'main/agent/runtime/mediaRefResolver.ts'), 'utf8')
 const mediaUpload = readFileSync(join(root, 'main/maestro/networking/api/mediaUpload.api.ts'), 'utf8')
-const errorSanitizer = readFileSync(join(root, 'main/agent/runtime/errorSanitizer.ts'), 'utf8')
+const errorSanitizer = readFileSync(join(sdkRoot, 'runtime/errorSanitizer.ts'), 'utf8')
 const maestroWindow = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
 const maestroAgent = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
 const coachApi = readFileSync(join(root, 'shared/maestro/coach.api.ts'), 'utf8')

@@ -1,4 +1,4 @@
-import { BaseAgent } from './BaseAgent'
+import { BaseAgent } from '@main/agent/BaseAgent'
 import { MAESTRO_SYSTEM_PROMPT } from './prompt/maestroSysPrompt'
 
 /**

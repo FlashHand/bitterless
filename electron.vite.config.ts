@@ -428,14 +428,24 @@ export default defineConfig({
       bytecode: false
     },
     resolve: {
-      alias: {
-        '@renderer': resolve('src/renderer'),
-        '@preload': resolve('src/preload'),
-        '@shared': resolve('src/shared'),
-        '@main': resolve('src/main'),
-        '@maestro-main': resolve('src/main/maestro'),
-        '@maestro-shared': resolve('src/shared/maestro')
-      }
+      alias: [
+        { find: '@renderer', replacement: resolve('src/renderer') },
+        { find: '@preload', replacement: resolve('src/preload') },
+        { find: '@shared', replacement: resolve('src/shared') },
+        { find: '@main', replacement: resolve('src/main') },
+        { find: '@maestro-main', replacement: resolve('src/main/maestro') },
+        { find: '@maestro-shared', replacement: resolve('src/shared/maestro') },
+        // 别名引入,由 vite 打进 main chunk —— 不是 npm 包,不进 node_modules,不进 asar。
+        // 目的是 agent 逻辑只有一处:改 SDK,cowork 与 bitterless 同时生效。
+        // SDK 在仓外,裸模块从它那儿向上找不到本仓的 node_modules。`typebox` 在
+        // bundledRuntimeDependencies 里(有意打包,不外置)⇒ rollup 必须真解析到它,
+        // 于是要显式指路。这是 tsconfig.node.json 里那条 `"typebox"` paths 的打包器侧对应物,
+        // 两处必须同时在,否则症状不同但都指向同一个原因:类型侧报"属性不存在",
+        // 打包侧报 `Rollup failed to resolve import "typebox"`。
+        // 精确匹配,别用前缀 —— typebox 的子路径导入不该被改写。
+        // 其余裸模块不需要:pi-ai 全是 import type(擦除),pi-coding-agent 走外置。
+        { find: /^typebox$/, replacement: resolve('node_modules/typebox') }
+      ]
     },
     esbuild: {
       tsconfigRaw: {

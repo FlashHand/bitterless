@@ -67,4 +67,5 @@ i18n 那 13 项以前是**逐文件放行**(allowlist 里已有 4 条一模一�
 ## 与 maestro-agent-sdk 抽取的关系
 
 这套守卫必须先真的在跑,bitterless 接入 SDK 的改造才有网 ——
-见 `overmind:projects/maestro-agent-sdk/docs/bitterless-adoption.md` §5 第 6 步。
+见 `overmind:areas/agent-runtime/agent-design-parity.md`(那份台账随共享 SDK 一起退役,
+内容合并进了这份统一设计文档 —— Ral 2026-09-08 放弃共享 SDK,改为文档统一、实现两边)。

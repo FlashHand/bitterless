@@ -173,7 +173,7 @@
     "fast_publish_win:win": "node scripts/fast_publish_win.js"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@electron-toolkit/utils": "^4.0.0",
     "@sapphire/snowflake": "^3.5.5",
     "@seald-io/nedb": "^4.1.2",
@@ -202,7 +202,7 @@
   },
   "devDependencies": {
     "@arco-design/web-vue": "^2.57.0",
-    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-ai": "0.85.1",
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/preload": "^3.0.2",
@@ -298,7 +298,7 @@
     "rigs/*",
     "rig_dev/*"
   ],
-  "name": "Bitterless",
+  "name": "Bitterless_DEBUG_DEV",
   "version": "0.0.94",
   "version_code": "260908134246"
 }

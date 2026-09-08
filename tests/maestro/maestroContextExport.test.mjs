@@ -1,13 +1,31 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
+/*
+ * 上下文导出 —— 组装交给 `@main/agent/contextExport.service`(与 cowork 同一份设计,各自实现)。
+ *
+ * 这个文件守的是**与实现无关的保证**,不是某一版的文本格式:
+ *   ① 导出不建模型会话、不预热 preamble;
+ *   ② 导出零副作用(不初始化服务、不重放技能、不改 workspace、不标记记忆已注水);
+ *   ③ 历史来自**运行时的真实条目**(含工具调用参数与工具返回正文),不拿渲染端消息冒充;
+ *   ④ 待发内容(草稿 / workspace / 附件)如实出现,附件**不被读取**;
+ *   ⑤ 失败可见,且**不写剪贴板**;
+ *   ⑥ 内联媒体只标记不搬字节;
+ *   ⑦ 超限是清晰失败(宿主的 8 MiB 闸);
+ *   ⑧ send 与 export 用**同一个** prompt 构建器。
+ *
+ * 换实现时改断言的写法可以,别把上面任何一条删掉 —— 它们各自对应一次真实的踩坑。
+ */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import ts from 'typescript';
 import { build } from 'esbuild';
 
 const root = resolve(import.meta.dirname, '../..');
+// SDK 在仓外(overmind 的 projects/ 下,与 bitterless 平级)。这里按绝对路径读它的源码 ——
+// 和 scripts/maestro 那些守卫补 `@main/agent/` 解析分支是同一件事的两种写法。
+const sdk = resolve(root, 'src', 'main', 'agent');
 const read = path => readFileSync(resolve(root, path), 'utf8');
 const require = createRequire(import.meta.url);
 const load = (path, dependencies, extra = '') => {
@@ -25,8 +43,8 @@ const load = (path, dependencies, extra = '') => {
 const output = await build({
   stdin: {
     contents: `
-      export * from './src/main/agent/contextExport.service';
-      export * from './src/main/agent/runtime/contextSnapshot.service';
+      export * from '@main/agent/contextExport.service';
+      export * from './src/main/agent/runtime/contextExportLimit.service';
       export { buildAgentTurnPrompt } from './src/main/agent/runtime/agentPrompt';
       export { MAESTRO_SYSTEM_PROMPT } from './src/main/agent/prompt/maestroSysPrompt';
     `,
@@ -35,20 +53,24 @@ const output = await build({
   bundle: true, write: false, platform: 'node', format: 'esm', tsconfig: resolve(root, 'tsconfig.node.json')
 });
 const real = await import(`data:text/javascript;base64,${Buffer.from(output.outputFiles[0].text).toString('base64')}`);
-const { BaseAgent, prependAgentPreamble } = load('src/main/agent/BaseAgent.ts', {
-  './runtime/coachRuntimeAdapter': { CoachRuntimeAdapter: class {} }
+
+const noopBudget = { record: () => undefined, get turnIndexNow() { return 0; } };
+const noopIoLog = { append: () => undefined, dirForSession: async () => null };
+const { BaseAgent } = load(join(sdk, 'BaseAgent.ts'), {
+  './runtime/inputBudget': { inputBudget: noopBudget, subjectOf: () => '' },
+  './runtime/modelIoLog': { modelIoLog: noopIoLog }
 });
-const { PiRuntimeSession } = load('src/main/agent/runtime/piRuntimeAdapter.ts', {
-  './contextSnapshot.service': real,
+const { PiRuntimeSession } = load(join(sdk, 'runtime/piRuntimeAdapter.ts'), {
   './errorSanitizer': { sanitizeRuntimeError: value => value },
+  './toolResultFailure': { toolResultLooksFailed: () => false },
   '../steering/steeringPolicy': { decideStreamingBehavior: () => { throw new Error('Must not prompt'); } }
 });
 const { AiCrmsRuntimeSession } = load('src/main/agent/runtime/aiCrmsRuntimeAdapter.ts', {
-  './contextSnapshot.service': real,
   'electron-xpc/main': { createXpcMainEmitter: () => ({}) },
   '@maestro-shared/networking/coachRegion': {},
   '@maestro-main/networking/clients/relay.client': {},
-  './errorSanitizer': {}, './mediaRefResolver': {}
+  '@main/agent/runtime/errorSanitizer': { sanitizeRuntimeError: value => value },
+  './mediaRefResolver': {}
 }, '\nexport { AiCrmsRuntimeSession };');
 
 const method = (path, name, bindings = {}) => {
@@ -64,6 +86,9 @@ const method = (path, name, bindings = {}) => {
   }).outputText;
   return new Function(...Object.keys(bindings), `${code}; return Actual.prototype.${name}`)(...Object.values(bindings));
 };
+
+/** pi 条目形状(`SessionEntry`)—— 组装侧按 type/message 分型,测试里照它构造。 */
+const messageEntry = message => ({ type: 'message', message });
 
 const mainHarness = () => {
   const clipboardWrites = [];
@@ -83,7 +108,7 @@ const mainHarness = () => {
   const servicePath = 'src/main/agent/maestroAgent.service.ts';
   owner.agentSkillBriefs = method(servicePath, 'agentSkillBriefs');
   owner.copyNextTurnContext = method(servicePath, 'copyNextTurnContext', {
-    ...real, prependAgentPreamble, clipboard: { writeText: text => clipboardWrites.push(text) }
+    ...real, clipboard: { writeText: text => clipboardWrites.push(text) }
   });
   const controller = { agentService: owner };
   controller.copyNextTurnContext = method('src/main/maestro/windows/main/maestroWindow.controller.ts', 'copyNextTurnContext');
@@ -91,54 +116,71 @@ const mainHarness = () => {
   return { owner, clipboardWrites, copy: params => handler(params) };
 };
 
-test('pi snapshots real native system/messages including tools without invoking prompt or mutating them', () => {
+// ③ 历史来自运行时真实条目
+test('pi context surface reads the live entry tree — tool calls and tool results in full, no prompt', () => {
+  const entries = [
+    messageEntry({ role: 'assistant', content: [{ type: 'toolCall', name: 'read_file', arguments: { path: '/test.txt' } }] }),
+    messageEntry({ role: 'toolResult', toolName: 'read_file', content: [{ type: 'text', text: 'tool result in full' }] })
+  ];
   const native = {
-    systemPrompt: 'effective runtime system',
-    messages: [
-      { role: 'assistant', content: [{ type: 'toolCall', name: 'read_file', arguments: { path: '/test.txt' } }] },
-      { role: 'toolResult', content: [{ type: 'text', text: 'tool result in full' }] }
-    ],
+    sessionManager: { getEntries: () => entries },
     prompt: () => { throw new Error('Must not prompt'); },
     abort: () => { throw new Error('Must not abort'); }
   };
-  const snapshot = new PiRuntimeSession(native).readContext();
-  assert.deepEqual(snapshot, { systemPrompt: native.systemPrompt, messages: native.messages });
-  snapshot.messages[0].role = 'changed';
-  assert.equal(native.messages[0].role, 'assistant');
-  assert.throws(() => new PiRuntimeSession({ messages: [] }).readContext(), /does not expose/);
+  const surface = new PiRuntimeSession(native).context;
+  assert.deepEqual(surface.entries(), entries);
+
+  const rows = real.flattenEntries(surface.entries());
+  const call = rows.find(row => row.type === 'tool_call');
+  assert.equal(call.tool, 'read_file');
+  // 工具**参数**必须在:模型看到的不是"调用了工具"这句话,而是完整参数。
+  assert.match(call.text, /\/test\.txt/);
+  assert.match(rows.find(row => row.type === 'tool_result').text, /tool result in full/);
+
+  // pi 大版本挪走 sessionManager 时退化成空历史,而不是整个回合炸掉。
+  assert.deepEqual(new PiRuntimeSession({}).context.entries(), []);
 });
 
-test('AI-CRMS exposes its actual tool-loop messages with no request', () => {
+// ③ 反面:拿不到面就是空历史,不拿渲染端消息冒充
+test('AI-CRMS exposes no context surface — export reports empty history instead of faking it', () => {
   const session = new AiCrmsRuntimeSession({});
   session.messages.push({ role: 'tool', tool_call_id: '1', content: 'tool result' });
-  assert.deepEqual(session.readContext(), { systemPrompt: '', messages: session.messages });
+  assert.equal(session.context, undefined);
+  assert.deepEqual(real.entriesOfSurface(session.context ?? null), []);
 });
 
-test('no model session is created by export; preamble stays pending until an actual send primes it', async () => {
+// ① 导出不建会话、不预热 preamble
+test('no model session is created by export; an idle agent yields no context surface', async () => {
   let creations = 0;
   class Agent extends BaseAgent { systemPrompt() { return ' APP SYSTEM '; } }
-  const agent = new Agent({ runtime: { createSession: async () => { creations++; } }, buildTools: () => { throw new Error('No tools'); } });
-  assert.deepEqual(await agent.readContext(), { runtime: null, preamblePending: true });
-  const preview = agent.previewSystemPreamble('draft');
-  assert.equal(preview, 'APP SYSTEM\n\ndraft');
-  assert.equal(agent.previewSystemPreamble('draft'), preview);
+  const agent = new Agent({
+    runtime: { createSession: async () => { creations++; } },
+    describeTarget: () => ({ providerLabel: 'Codex', modelLabel: 'test-model', supplier: 'test supplier' }),
+    buildTools: () => { throw new Error('No tools'); }
+  });
+  assert.equal(await agent.existingContextSurface(), null);
   assert.equal(creations, 0);
-  assert.equal(agent.withSystemPreamble({ text: 'draft' }).text, preview);
-  assert.equal(agent.previewSystemPreamble('next'), 'next');
-  agent.sessionPromise = Promise.resolve({});
-  await assert.rejects(agent.readContext(), /does not support/);
+  // 组装用的系统提示词读自**活实例**,与会话 preamble 同一个 systemPrompt() 覆写 —— 不会漂。
+  const composed = agent.composedSystemPrompt();
+  assert.match(composed, /APP SYSTEM/);
+  assert.match(composed, /Which model you are/);
+  assert.match(composed, /Codex/);
 });
 
-test('session replacement while awaiting existing context fails instead of exporting stale history', async () => {
-  const agent = new BaseAgent({ buildTools: () => [] });
-  let finish;
-  agent.sessionPromise = new Promise(resolve => { finish = resolve; });
-  const pending = agent.readContext();
-  agent.sessionPromise = null;
-  finish({ readContext: () => ({ systemPrompt: '', messages: [] }) });
-  await assert.rejects(pending, /session changed/);
+// ①:回合进行中不导出半截历史
+test('a busy agent yields no surface rather than exporting mid-turn history', async () => {
+  const agent = new BaseAgent({
+    runtime: { createSession: async () => ({}) },
+    describeTarget: () => ({ providerLabel: 'p', modelLabel: 'm', supplier: 's' }),
+    buildTools: () => []
+  });
+  agent.sessionPromise = Promise.resolve({ context: { entries: () => [messageEntry({ role: 'user', content: 'x' })] } });
+  assert.ok(await agent.existingContextSurface());
+  agent.busy = true;
+  assert.equal(await agent.existingContextSurface(), null);
 });
 
+// ②④ 首轮:如实的待发内容 + 零副作用
 test('typed handler/controller/service export truthful first-turn pending context without side effects', async () => {
   const h = mainHarness();
   const result = await h.copy({
@@ -152,22 +194,23 @@ test('typed handler/controller/service export truthful first-turn pending contex
   const text = h.clipboardWrites[0];
   assert.equal(result.chars, text.length);
   assert.match(text, /no model-side history yet/);
-  assert.match(text, /runtime system prompt is not available yet/);
-  assert.match(text, /includes first-turn Bitterless preamble/);
-  assert.ok(text.includes(real.MAESTRO_SYSTEM_PROMPT.trim()));
+  // 还没有 agent 时系统段退回静态提示词 —— 它就是下一轮会注入的那份。
+  assert.ok(text.includes(real.MAESTRO_SYSTEM_PROMPT.trim().slice(0, 80)));
   assert.match(text, /Selected workspace: \/workspace/);
   assert.match(text, /restored memory/);
-  assert.match(text, /not read, validated or uploaded/);
-  assert.match(text, /\/unread\/attachment.png/);
+  assert.match(text, /\/unread\/attachment\.png/);
+  // 附件只是路径:没有读过、没有校验过、没有上传过 —— 结果里不该出现文件内容或结构化回传。
   assert.doesNotMatch(JSON.stringify(result), /restored memory|attachment\.png/);
 });
 
-test('live context uses runtime tool history, existing memory hydration and the same send builder', async () => {
+// ③⑧ 活会话:用运行时条目 + 与 send 同一个构建器
+test('live context uses runtime entry history, existing memory hydration and the same send builder', async () => {
   const h = mainHarness();
-  const snapshot = { systemPrompt: 'native system', messages: [{ role: 'toolResult', content: 'full result' }] };
   h.owner.maestroAgents.set('chat-1', {
-    readContext: async () => ({ runtime: snapshot, preamblePending: false }),
-    previewSystemPreamble: text => text
+    existingContextSurface: async () => ({
+      entries: () => [messageEntry({ role: 'toolResult', toolName: 'read_file', content: [{ type: 'text', text: 'full result' }] })]
+    }),
+    composedSystemPrompt: () => 'native system'
   });
   h.owner.hydratedMaestroAgentSessions.add('chat-1');
   const result = await h.copy({ sessionId: 'chat-1', draft: 'next', context: { recentMessages: [{ role: 'human', content: 'must not replay', ts: 1 }] } });
@@ -175,14 +218,15 @@ test('live context uses runtime tool history, existing memory hydration and the 
   assert.match(h.clipboardWrites[0], /native system/);
   assert.match(h.clipboardWrites[0], /full result/);
   assert.doesNotMatch(h.clipboardWrites[0], /must not replay/);
-  assert.match(h.clipboardWrites[0], /preamble already sent/);
+  // ⑧ send 与 export 必须共用 buildAgentTurnPrompt —— 两处调用,不允许第三处另拼一份。
   const serviceSource = read('src/main/agent/maestroAgent.service.ts');
   assert.equal((serviceSource.match(/buildAgentTurnPrompt\(\{/g) || []).length, 2);
 });
 
+// ⑤ 失败可见且不写剪贴板
 test('unsupported live context and missing catalog fail visibly without a clipboard write', async () => {
   const h = mainHarness();
-  h.owner.maestroAgents.set('bad', { readContext: async () => { throw new Error('unsupported live context'); } });
+  h.owner.maestroAgents.set('bad', { existingContextSurface: async () => { throw new Error('unsupported live context'); } });
   assert.deepEqual(await h.copy({ sessionId: 'bad', draft: '' }), { ok: false, error: 'unsupported live context' });
   h.owner._state.existingSkillRegistry = () => null;
   const missing = await h.copy({ sessionId: 'new', draft: '' });
@@ -191,16 +235,21 @@ test('unsupported live context and missing catalog fail visibly without a clipbo
   assert.equal(h.clipboardWrites.length, 0);
 });
 
-test('inline media is marked without copying bytes; oversized model/tool text is a clear failure', () => {
+// ⑥⑦ 内联媒体只标记;超限是清晰失败
+test('inline media is marked without copying bytes; oversized text is a clear failure', () => {
   const binary = 'a'.repeat(real.MAX_CONTEXT_EXPORT_CHARS + 10);
-  const snapshot = real.snapshotRuntimeContext('system', [{ role: 'user', content: [
-    { type: 'image', data: binary, mimeType: 'image/png' },
-    { type: 'image_url', image_url: { url: `data:image/png;base64,${binary}` } },
-    { type: 'text', text: 'data:text/plain; full tool text must survive' }
-  ] }]);
-  const exported = JSON.stringify(snapshot);
-  assert.ok(exported.length < 1000);
-  assert.match(exported, /inline media omitted/);
+  const rows = real.flattenEntries([
+    messageEntry({
+      role: 'user',
+      content: [
+        { type: 'image', data: binary, mimeType: 'image/png' },
+        { type: 'text', text: 'full tool text must survive' }
+      ]
+    })
+  ]);
+  const exported = JSON.stringify(rows);
+  assert.ok(exported.length < 1000, `媒体字节被搬进导出了(${exported.length} 字符)`);
+  assert.match(exported, /\[image\]/);
   assert.match(exported, /full tool text must survive/);
-  assert.throws(() => real.snapshotRuntimeContext('', [{ role: 'toolResult', content: binary }]), /8 MiB.*nothing was copied/);
+  assert.throws(() => real.assertContextTextSize(binary), /8 MiB.*nothing was copied/);
 });

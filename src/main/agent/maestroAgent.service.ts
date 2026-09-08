@@ -8,9 +8,9 @@ import { mkdirSync, statSync, writeFileSync } from 'fs'
 import { fetch } from 'undici'
 import { injectable } from 'inversify'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
-import { BaseAgent, prependAgentPreamble, STEER_NOT_STREAMING, type PiToolSpec } from '@main/agent/BaseAgent'
-import { formatContextExport } from './contextExport.service'
-import { assertContextTextSize } from './runtime/contextSnapshot.service'
+import { BaseAgent, STEER_NOT_STREAMING, type PiToolSpec } from '@main/agent/BaseAgent'
+import { buildContextRecord, entriesOfSurface, renderContextText } from '@main/agent/contextExport.service'
+import { assertContextTextSize } from './runtime/contextExportLimit.service'
 import { MAESTRO_SYSTEM_PROMPT } from './prompt/maestroSysPrompt'
 import type { ContextExportRequest, ContextExportSummary } from '@maestro-shared/coach.api'
 import { MaestroAgent } from '@main/agent/MaestroAgent'
@@ -76,7 +76,8 @@ import { maestroDataRoot } from '@maestro-main/data/maestroDataRoot'
 import { buildUnknownConfirmPayload } from '@maestro-main/drive/confirmPayload'
 import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
 import { maestroAgentDir, maestroAuthPath, maestroModelsPath } from '@maestro-main/llm/llmPaths'
-import { providerLabel, type LlmStoredTarget } from '@maestro-main/llm/llmModels'
+import { describeLlmTarget, providerLabel, type LlmStoredTarget } from '@maestro-main/llm/llmModels'
+import { CoachRuntimeAdapter } from './runtime/coachRuntimeAdapter'
 import { uploadFileThroughAiCrmsCore } from '@maestro-main/networking/api/aiCrmsCoreFileUpload.api'
 import { uploadMediaRefsForProvider } from '@maestro-main/networking/api/mediaUpload.api'
 import { resolveAiCrmsRelayEndpoint } from '@maestro-main/networking/clients/relay.client'
@@ -166,6 +167,20 @@ interface MaestroAgentRuntimeServices {
   registry: SkillRegistryService
   generator: SkillGeneratorService
 }
+
+
+/**
+ * SDK `BaseAgent` 的两个**必填端口**。两个都刻意没有默认值 —— 见
+ * `@main/agent/BaseAgent` 里 `BaseAgentOptions.runtime` / `describeTarget` 的注释:
+ * 给默认值等于让宿主"忘了传"也能编译过,于是 agent 又静默分叉一次。
+ *
+ * 每个 agent 一个 `CoachRuntimeAdapter`,和接入 SDK 之前 BaseAgent 构造里
+ * `opts.runtime ?? new CoachRuntimeAdapter()` 的语义一致,不在这次搬迁里顺手改成共享。
+ */
+const agentPorts = (): { runtime: CoachRuntimeAdapter; describeTarget: typeof describeLlmTarget } => ({
+  runtime: new CoachRuntimeAdapter(),
+  describeTarget: describeLlmTarget
+})
 
 export interface MaestroAgentServiceState {
   browserWindow: BrowserWindow | null
@@ -270,6 +285,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!this.piGen) {
       this.piGen = this.configureAgent(
         new BaseAgent({
+          ...agentPorts(),
           buildTools: () => [],
           scope: 'summarize',
           authPath: maestroAuthPath(),
@@ -282,6 +298,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!this.pi) {
       this.pi = this.configureAgent(
         new MaestroAgent({
+          ...agentPorts(),
           buildTools: () => this._state.buildPiTools({ ingest: true, sessionKey: 'default' }),
           authPath: maestroAuthPath(),
           modelsPath: maestroModelsPath(),
@@ -296,6 +313,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!this.piTrainer) {
       this.piTrainer = this.configureAgent(
         new CoachAgent({
+          ...agentPorts(),
           buildTools: () => this.buildTrainerTools(),
           authPath: maestroAuthPath(),
           modelsPath: maestroModelsPath(),
@@ -307,6 +325,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!this.piDelegate) {
       this.piDelegate = this.configureAgent(
         new DelegateAgent({
+          ...agentPorts(),
           buildTools: () => this._state.buildPiTools({ sessionKey: 'default' }),
           authPath: maestroAuthPath(),
           modelsPath: maestroModelsPath(),
@@ -406,7 +425,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         ...this.delegateAgents.values()
       ].filter((agent): agent is BaseAgent => Boolean(agent))
     )
-    await Promise.allSettled([...agents].map((agent) => agent.dispose()))
+    // SDK 的 BaseAgent 没有 dispose() —— 带排空的销毁属于 bitterless 独有的 15 项生命周期机制,
+    // abort() 是等价出口:有界等待 + finally 里 reset() 清掉会话与 busy。
+    await Promise.allSettled([...agents].map((agent) => agent.abort()))
 
     this.attachedPaths.clear()
     this.maestroAgents.clear()
@@ -1050,7 +1071,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       if (!Array.isArray(attachmentPaths) || attachmentPaths.some((path) => typeof path !== 'string')) {
         throw new Error('Attachment references must be paths.')
       }
-      const snapshot = agent ? await agent.readContext() : { runtime: null, preamblePending: true }
+      const surface = agent ? await agent.existingContextSurface() : null
       if (agent !== (sessionKey === 'default' ? this.pi : this.maestroAgents.get(sessionKey))) {
         throw new Error('The model session changed during context export. Retry.')
       }
@@ -1066,16 +1087,27 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         currentUrl: this._state.currentUrl,
         briefs: this.agentSkillBriefs(message, recordings, registry)
       })
-      const exported = formatContextExport({
+      // 组装走 SDK 的 entry 级实现(`@main/agent/contextExport.service`),与 cowork 同一份:
+      // 条目分型、工具调用参数单独成行、逐条字符数,图片只写 `[image]` 不展开 base64。
+      // 原来 bitterless 这条路是 `JSON.stringify(messages)` 平铺 —— 拿不到工具调用参数,
+      // 而那正是上下文里最容易被忽略的一块。
+      const record = buildContextRecord({
         sessionId: sessionKey,
         provider: this.activeLlmProvider,
         model: this.activeLlmModel,
-        ...snapshot,
-        pending: agent ? agent.previewSystemPreamble(pending) : prependAgentPreamble(pending, MAESTRO_SYSTEM_PROMPT),
-        attachmentPaths
+        // 活实例的组装结果,和会话 preamble 用的是同一个 systemPrompt() 覆写 —— 不会漂。
+        // 还没有 agent 时退回静态系统提示词:此刻它就是下一轮会注入的那份。
+        systemPrompt: agent ? agent.composedSystemPrompt() : MAESTRO_SYSTEM_PROMPT,
+        entries: entriesOfSurface(surface),
+        pending: { attachments: attachmentPaths, draft: pending },
+        timestamp: new Date().toISOString()
       })
-      clipboard.writeText(exported.text)
-      return { ok: true, chars: exported.text.length, entries: exported.entries }
+      const text = renderContextText(record)
+      // 尺寸闸是**宿主策略**(见 contextExportLimit.service):一次往剪贴板塞多大算过分,
+      // 不该由 SDK 替宿主决定。
+      assertContextTextSize(text)
+      clipboard.writeText(text)
+      return { ok: true, chars: text.length, entries: record.entries.length }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
@@ -1327,6 +1359,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!agent) {
       agent = this.configureAgent(
         new MaestroAgent({
+          ...agentPorts(),
           buildTools: () => this._state.buildPiTools({ ingest: true, sessionKey: key }),
           authPath: maestroAuthPath(),
           modelsPath: maestroModelsPath(),
@@ -1350,6 +1383,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!agent) {
       agent = this.configureAgent(
         new CoachAgent({
+          ...agentPorts(),
           buildTools: () => this.buildTrainerTools(),
           authPath: maestroAuthPath(),
           modelsPath: maestroModelsPath(),
@@ -1370,6 +1404,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     if (!agent) {
       agent = this.configureAgent(
         new DelegateAgent({
+          ...agentPorts(),
           buildTools: () => this._state.buildPiTools({ sessionKey: key }),
           authPath: maestroAuthPath(),
           modelsPath: maestroModelsPath(),
@@ -1622,7 +1657,10 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       error: 'aborted'
     })
     if (options?.isCancelled?.()) return cancelledReply()
-    const steered = await agent.steerActiveTurn(message, Boolean(options?.steeringOnly))
+    // SDK 的 steerActiveTurn 只收一个参数:非流式时**当场**报 failed,不等回合起来
+    // (它那段长注释讲了为什么不能在非流式窗口里投 —— 会变成角色反转 + 孤儿 run)。
+    // bitterless 原来的 waitForStreaming 轮询随之取消;idle 仍由下面的 steeringOnly 分支兜。
+    const steered = await agent.steerActiveTurn(message)
     if (options?.isCancelled?.()) return cancelledReply()
     if (steered.outcome === 'delivered') {
       return { ok: true, text: '', ts: Date.now(), mergedIntoTurn: true }

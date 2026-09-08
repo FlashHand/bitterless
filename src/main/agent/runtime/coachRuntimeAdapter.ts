@@ -1,6 +1,6 @@
-import type { AgentRuntimeAdapter, AgentRuntimeSession, AgentRuntimeSessionOptions } from './agentRuntime.types'
+import type { AgentRuntimeAdapter, AgentRuntimeSession, AgentRuntimeSessionOptions } from '@main/agent/runtime/agentRuntime.types'
 import { AiCrmsRuntimeAdapter } from './aiCrmsRuntimeAdapter'
-import { PiRuntimeAdapter } from './piRuntimeAdapter'
+import { PiRuntimeAdapter } from '@main/agent/runtime/piRuntimeAdapter'
 
 export class CoachRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly aiCrms = new AiCrmsRuntimeAdapter()

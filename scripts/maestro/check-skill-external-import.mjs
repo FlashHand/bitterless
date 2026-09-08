@@ -13,6 +13,8 @@ const moduleCache = new Map()
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  // 交给 SDK 的模块要在这里显式指路,否则守卫报的是 `Cannot find module '@main/agent/...'`,
+  // 看着像桥坏了,其实只是解析器没跟上搬迁。
   if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
