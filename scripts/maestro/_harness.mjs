@@ -19,6 +19,10 @@ export const assert = (condition, message) => {
 export const readProject = (path) => readFileSync(join(projectRoot, path), 'utf8')
 export const resolveMaestroPath = (relativePath) => {
   const [processName, ...rest] = relativePath.split('/')
+  // `agent/` was hoisted out of Maestro to `src/<process>/agent/` — agents are not
+  // Maestro-specific. Callers still name it `main/agent/...`, so resolve it at the host
+  // root rather than inserting the `maestro` segment.
+  if (rest[0] === 'agent') return join(projectRoot, 'src', processName, ...rest)
   const root = maestroRoots.get(processName)
   assert(root, `unknown Maestro process boundary: ${processName}`)
   return join(root, ...rest)
@@ -56,6 +60,11 @@ const resolveAliasImport = (specifier) => {
   return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) || null
 }
 
+/**
+ * 逐文件放行 —— 这里每一条都是**真实的宿主耦合**,不是跨切面服务。列在这里是为了让它们
+ * 可见、可数,而不是假装不存在;抽 SDK 时这些就是要逐条消解的债。
+ * (i18n / 主题已改由 hostAliasPrefixAllowlist 覆盖,不再逐文件列。)
+ */
 const hostAliasAllowlist = new Map([
   ['main/security/sqliteKey.service.ts', new Set(['@main/security/safeStorage.runtime'])],
   ['main/update/update.service.ts', new Set(['@main/updateHelper/update.service'])],
@@ -63,22 +72,31 @@ const hostAliasAllowlist = new Map([
     '@main/windows/windowState.service',
     '@shared/window/window.types'
   ])],
-  ['renderer/control/src/control.ts', new Set([
-    '@renderer/common/i18n/i18n.helper',
-    '@renderer/common/i18n/rendererLanguage'
+  // 债:main 侧 Maestro 直接用宿主的出站 HTTP 分发器,而不是经由自己的端口。
+  ['main/net/proxy.ts', new Set(['@main/networking/outboundHttpDispatcher.service'])],
+  // 债:localHome / workbench 直接用宿主的 home shell bridge(登录态与外壳通信)。
+  ['renderer/localHome/src/localHomeAuth.store.ts', new Set([
+    '@renderer/common/homeShellBridge.client',
+    '@shared/home/homeShellBridge.contract'
   ])],
-  ['renderer/home/src/components/MenuBar/MenuBar.vue', new Set([
-    '@renderer/common/i18n/i18n.helper'
-  ])],
-  ['renderer/home/src/main.ts', new Set([
-    '@renderer/common/i18n/i18n.helper',
-    '@renderer/common/i18n/rendererLanguage'
-  ])],
-  ['renderer/workbench/src/workbench.ts', new Set([
-    '@renderer/common/i18n/i18n.helper',
-    '@renderer/common/i18n/rendererLanguage'
+  ['renderer/workbench/src/views/WorkbenchAppsView.vue', new Set([
+    '@renderer/common/homeShellBridge.client'
   ])]
 ])
+
+// Not a per-file exception but a boundary that moved: the agent runtime now lives at
+// `src/main/agent/`, outside Maestro, because agents are not Maestro-specific. Maestro code
+// reaches it through the host alias by design, so listing each consumer would just be a
+// second copy of the import graph.
+const hostAliasPrefixAllowlist = [
+  // 已抽出的 agent 树(Maestro 反向引用它是允许的)。
+  '@main/agent/',
+  // 宿主的 i18n 与主题是**跨切面服务**,Maestro 的 renderer 合法依赖它们。
+  // 以前这是逐文件放行(4 条),而守卫自 2026 年某时起整套没执行过 ⇒ 漂移到 13 处没人发现。
+  // 改成前缀:是规则就不会随文件增加而腐烂。
+  '@renderer/common/i18n/',
+  '@renderer/common/assets/style/'
+]
 
 export const assertMaestroAliasBoundary = () => {
   const failures = []
@@ -89,7 +107,9 @@ export const assertMaestroAliasBoundary = () => {
       const legacy = [...source.matchAll(/["'](@(?:main|shared|renderer|preload)\/[^"']+)["']/g)].map((match) => match[1])
       const allowed = hostAliasAllowlist.get(relative) || new Set()
       for (const specifier of legacy) {
-        if (!allowed.has(specifier)) failures.push(`${relative}: forbidden host alias ${specifier}`)
+        if (allowed.has(specifier)) continue
+        if (hostAliasPrefixAllowlist.some((prefix) => specifier.startsWith(prefix))) continue
+        failures.push(`${relative}: forbidden host alias ${specifier}`)
       }
       for (const specifier of [...source.matchAll(/["'](@maestro-(?:main|shared|renderer|preload)\/[^"']+)["']/g)].map((match) => match[1])) {
         if (!resolveAliasImport(specifier)) failures.push(`${relative}: unresolved alias ${specifier}`)
