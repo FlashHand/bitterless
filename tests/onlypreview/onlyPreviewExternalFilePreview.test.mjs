@@ -104,9 +104,9 @@ test('workspace revocation fences a pending text preparation before it can publi
 
 test('external Preview wiring keeps Project state separate and revokes exact reader authority', () => {
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
-  const explicitOpen = source('src/main/onlypreview/onlyPreviewExplicitOpen.service.ts');
-  const previewRegion = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const workspaceRegistry = source('src/main/onlypreview/onlyPreviewWorkspace.registry.ts');
+  const explicitOpen = source('src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts');
+  const previewRegion = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const workspaceRegistry = source('src/main/miniapps/onlypreview/onlyPreviewWorkspace.registry.ts');
 
   assert.match(
     previewRegion,

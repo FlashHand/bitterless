@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const onlyPreviewMainRoot = join(projectRoot, 'src/main/onlypreview');
+const onlyPreviewMainRoot = join(projectRoot, 'src/main/miniapps/onlypreview');
 const retiredIndexPath = join(onlyPreviewMainRoot, 'onlyPreviewIndex.service.ts');
 const source = (relativePath) => readFileSync(join(projectRoot, relativePath), 'utf8');
 
@@ -109,14 +109,14 @@ test('potentially large Project-content routes delegate real reads to bounded hi
     'src/main/fileSearch/fileSearchWindow.service.ts',
     'src/main/fileSearch/fileSearchOfficeReadClient.service.ts',
     'src/main/fileSearch/fileSearchPreviewReadClient.service.ts',
-    'src/main/onlypreview/onlyPreviewWorkspace.registry.ts',
-    'src/main/onlypreview/onlyPreviewClassifier.service.ts',
-    'src/main/onlypreview/onlyPreviewAsset.registry.ts',
-    'src/main/onlypreview/onlyPreviewDocument.registry.ts',
-    'src/main/onlypreview/onlyPreviewProjectNativeAction.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewReadBroker.service.ts',
-    'src/main/onlypreview/views/onlyPreviewSelectionDelivery.service.ts'
+    'src/main/miniapps/onlypreview/onlyPreviewWorkspace.registry.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewAsset.registry.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewReadBroker.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewSelectionDelivery.service.ts'
   ];
   const forbiddenProjectContentIo =
     /from ['"]node:fs(?:\/promises)?['"]|require\(['"]node:fs(?:\/promises)?['"]\)|\breadFile(?:Sync)?\s*\(|\bcreateReadStream\s*\(|\bcreateWriteStream\s*\(|\bwriteFile(?:Sync)?\s*\(|\bappendFile(?:Sync)?\s*\(|\breaddir(?:Sync)?\s*\(|\bopendir\s*\(|\bunlink(?:Sync)?\s*\(|\bBuffer\.concat\s*\(/;
@@ -128,11 +128,11 @@ test('potentially large Project-content routes delegate real reads to bounded hi
     );
   }
 
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const delivery = source('src/main/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
-  const asset = source('src/main/onlypreview/onlyPreviewAsset.registry.ts');
-  const document = source('src/main/onlypreview/onlyPreviewDocument.registry.ts');
-  const broker = source('src/main/onlypreview/views/onlyPreviewPreviewReadBroker.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const delivery = source('src/main/miniapps/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
+  const asset = source('src/main/miniapps/onlypreview/onlyPreviewAsset.registry.ts');
+  const document = source('src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts');
+  const broker = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewReadBroker.service.ts');
   const runtimeWindow = source('src/main/fileSearch/fileSearchWindow.service.ts');
   const officeClient = source('src/main/fileSearch/fileSearchOfficeReadClient.service.ts');
   const previewClient = source('src/main/fileSearch/fileSearchPreviewReadClient.service.ts');
@@ -191,7 +191,7 @@ test('potentially large Project-content routes delegate real reads to bounded hi
 });
 
 test('the large-content guard intentionally leaves bounded Main configuration I/O unchanged', () => {
-  const agentSkill = source('src/main/onlypreview/onlyPreviewAgentSkill.service.ts');
+  const agentSkill = source('src/main/miniapps/onlypreview/onlyPreviewAgentSkill.service.ts');
   const windowHelper = source('src/main/windows/onlyPreviewWindow.helper.ts');
   const logSetup = source('src/main/logging/log.setup.ts');
 

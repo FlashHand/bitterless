@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Button, Message, Notification, Spin, Trigger } from '@arco-design/web-vue'
 import { IconLogin2, IconSparkle2, IconX } from '@tabler/icons-vue'
 import { createXpcRendererEmitter, xpcRenderer } from 'electron-xpc/renderer'
@@ -20,7 +20,6 @@ import type {
 } from '@maestro-shared/coach.api'
 import { AUTH_BROADCAST } from '@maestro-shared/session.api'
 import type { AuthBroadcast } from '@maestro-shared/session.api'
-import { CLAUDE_SUBSCRIPTION_SNAPSHOT_CHANGED_EVENT } from '@shared/claudeSubscription/claudeSubscription.contract'
 import ChatPanel from './ChatPanel.vue'
 import ResponseStatus from './ResponseStatus.vue'
 import ChatConfirmSheet from './task/ChatConfirmSheet.vue'
@@ -63,15 +62,20 @@ const syncLlmContextWindow = (cfg: LlmConfig): void => {
 
 const firstEffort = (model: LlmTarget): LlmEffort => model.efforts[0]?.id || model.effort
 
+const isControlProviderAllowed = (provider: string): boolean => provider !== 'ai-crms'
+
 const getLlmProviderGroups = (cfg: LlmConfig | null): ControlLlmProviderGroup[] => {
   if (!cfg) return []
-  const groups: ControlLlmProviderGroup[] = cfg.providers.map((provider) => ({
-    provider: provider.provider,
-    label: provider.label,
-    ready: provider.ready,
-    models: []
-  }))
+  const groups: ControlLlmProviderGroup[] = cfg.providers
+    .filter((provider) => isControlProviderAllowed(provider.provider))
+    .map((provider) => ({
+      provider: provider.provider,
+      label: provider.label,
+      ready: provider.ready,
+      models: []
+    }))
   for (const preset of cfg.presets) {
+    if (!isControlProviderAllowed(preset.provider)) continue
     let group = groups.find((item) => item.provider === preset.provider)
     if (!group) {
       group = {
@@ -88,24 +92,24 @@ const getLlmProviderGroups = (cfg: LlmConfig | null): ControlLlmProviderGroup[] 
 }
 
 const llmProviderGroups = computed(() => getLlmProviderGroups(llmConfig.value))
-const activeLlmGroup = computed(() => llmProviderGroups.value.find((item) => item.provider === llmConfig.value?.provider) || llmProviderGroups.value[0])
+const activeLlmGroup = computed(() => llmProviderGroups.value.find((item) => item.provider === llmConfig.value?.provider))
+const activeLlmProviderAllowed = computed(() => Boolean(llmConfig.value && isControlProviderAllowed(llmConfig.value.provider)))
 const activeLlmPreset = computed(() =>
   llmConfig.value?.presets.find((item) => item.provider === llmConfig.value?.provider && item.model === llmConfig.value?.model)
 )
-const activeLlmEfforts = computed(() => activeLlmPreset.value?.efforts || [])
+const activeLlmEfforts = computed(() => activeLlmProviderAllowed.value ? activeLlmPreset.value?.efforts || [] : [])
 const activeLlmProvider = computed(() => llmConfig.value?.providers.find((item) => item.provider === llmConfig.value?.provider))
-const activeLlmIsLocal = computed(() => llmConfig.value?.provider === 'local')
 const activeLlmEffortLabel = computed(() => {
   const effort = llmConfig.value?.effort
   if (!effort) return ''
   return activeLlmPreset.value?.efforts.find((item) => item.id === effort)?.label || effort
 })
 const llmEffortValue = computed(() => llmConfig.value?.effort || activeLlmPreset.value?.effort || 'default')
-const llmEffortDisabled = computed(() => activeLlmEfforts.value.length <= 1 && activeLlmEfforts.value[0]?.id === 'default')
+const llmEffortDisabled = computed(() => !activeLlmProviderAllowed.value || (activeLlmEfforts.value.length <= 1 && activeLlmEfforts.value[0]?.id === 'default'))
 const llmAvailable = computed(() =>
-  Boolean(llmConfig.value?.ready && activeLlmPreset.value?.efforts.some((item) => item.id === llmConfig.value?.effort))
+  Boolean(activeLlmProviderAllowed.value && llmConfig.value?.ready && activeLlmPreset.value?.efforts.some((item) => item.id === llmConfig.value?.effort))
 )
-const needsLlmLogin = computed(() => Boolean(llmConfig.value && activeLlmPreset.value && !activeLlmProvider.value?.ready))
+const needsLlmLogin = computed(() => Boolean(activeLlmProviderAllowed.value && activeLlmPreset.value && !activeLlmProvider.value?.ready))
 const activeProviderLabel = computed(() => activeLlmProvider.value?.label || activeLlmPreset.value?.providerLabel || llmConfig.value?.provider || '')
 const llmLoginLoading = computed(() => Boolean(llmLoginProvider.value && llmLoginProvider.value === llmConfig.value?.provider))
 const activeModelLabel = computed(() => activeLlmPreset.value?.shortLabel || activeLlmPreset.value?.label || llmConfig.value?.model || '')
@@ -137,7 +141,7 @@ const onSwitchLlmTarget = async (
   target: { provider: string; model: string; effort: LlmEffort },
   closePicker: 'provider' | 'model' | false = false
 ): Promise<void> => {
-  if (!target || llmLocked.value) return
+  if (!target || !isControlProviderAllowed(target.provider) || llmLocked.value) return
   llmSwitching.value = true
   status.value = 'switching model'
   try {
@@ -170,7 +174,7 @@ const onSwitchLlmModel = async (model: LlmTarget): Promise<void> => {
 
 const onSwitchLlmEffort = async (value: unknown): Promise<void> => {
   const cfg = llmConfig.value
-  if (!cfg || llmLocked.value) return
+  if (!cfg || !activeLlmProviderAllowed.value || llmLocked.value) return
   const effort = toLlmEffort(value)
   if (effort === cfg.effort) return
   llmSwitching.value = true
@@ -194,26 +198,74 @@ const onSwitchLlmEffort = async (value: unknown): Promise<void> => {
 
 const loginActiveProvider = async (): Promise<void> => {
   const cfg = llmConfig.value
-  if (!cfg || llmLoginProvider.value) return
+  if (!cfg || !activeLlmProviderAllowed.value || llmLoginProvider.value) return
   const next = await coach.loginLlm({ provider: cfg.provider, method: 'browser' })
   llmConfig.value = next
   syncLlmContextWindow(next)
 }
 
-const configureLocalProvider = async (): Promise<void> => {
-  await coach.setWorkbenchVisible({ visible: true })
-  xpcRenderer.broadcast('coach/workbench-pane', { pane: 'sub2api' })
-}
-
 // The Home renderer owns sidebar geometry. Ask its layout store to collapse the placeholder;
 // main stays out of this renderer-to-renderer UI preference.
 const closePanel = (): void => {
+  onResizeEnd()
   xpcRenderer.broadcast('coach/sidebar-close', { ts: Date.now() })
 }
+
+const panelFocused = ref(false)
+const resizing = ref(false)
+let resizePointerId: number | null = null
+let dragStartScreenX = 0
+let dragStartWidth = 0
+
+const sendWidth = (width: number | undefined, active: boolean): void => {
+  xpcRenderer.broadcast('coach/sidebar-width', { width, resizing: active, ts: Date.now() })
+}
+
+const onResizeDown = (event: PointerEvent): void => {
+  if (event.button !== 0 || resizing.value) return
+  const target = event.currentTarget as HTMLElement | null
+  if (!target) return
+  // Capture belongs to the Chat view, which covers Home's DOM at this edge.
+  target.setPointerCapture(event.pointerId)
+  resizePointerId = event.pointerId
+  dragStartWidth = window.innerWidth
+  dragStartScreenX = event.screenX
+  resizing.value = true
+  event.preventDefault()
+  sendWidth(undefined, true)
+}
+
+const onResizeMove = (event: PointerEvent): void => {
+  if (!resizing.value || event.pointerId !== resizePointerId) return
+  // The native view moves left as it grows; screen coordinates do not move with its origin.
+  sendWidth(dragStartWidth + dragStartScreenX - event.screenX, true)
+}
+
+const onResizeEnd = (event?: PointerEvent): void => {
+  if (!resizing.value || (event && event.pointerId !== resizePointerId)) return
+  resizing.value = false
+  resizePointerId = null
+  sendWidth(undefined, false)
+}
+
+const onPanelFocus = (): void => { panelFocused.value = true }
+const onPanelBlur = (): void => {
+  panelFocused.value = false
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', onPanelFocus)
+  window.removeEventListener('blur', onPanelBlur)
+  onResizeEnd()
+})
 
 const triggerInjectedSkill = async (trigger: InjectedSkillTrigger): Promise<void> => {
   const message = trigger.message?.trim()
   if (!message) return
+  if (llmConfig.value && !activeLlmProviderAllowed.value) {
+    Message.warning(i18nHelper.menuBar.maestro.providerUnavailable)
+    return
+  }
   channelStore.selectSource('cowork')
   await nextTick()
   const session = activeSession.value || (await channelStore.startFreshMaestroSession('Maestro'))
@@ -281,6 +333,9 @@ const loadControlConfig = async (): Promise<void> => {
 }
 
 onMounted(async () => {
+  panelFocused.value = document.hasFocus()
+  window.addEventListener('focus', onPanelFocus)
+  window.addEventListener('blur', onPanelBlur)
   xpcRenderer.subscribe('coach/codex-log', (payload) => {
     logCodexDebug(payload.params as CodexDebugEvent)
   })
@@ -325,11 +380,6 @@ onMounted(async () => {
       })
       .catch((err) => console.error('[coach control] refresh llm after auth failed:', err))
   })
-  xpcRenderer.subscribe(CLAUDE_SUBSCRIPTION_SNAPSHOT_CHANGED_EVENT, () => {
-    void coach.getLlmConfig().then(applyLlmConfig).catch((err) => {
-      console.error('[coach control] refresh Local provider state failed:', err)
-    })
-  })
   xpcRenderer.subscribe('coach/agent-activity', (payload) => {
     messageStore.pushActivity(payload.params as AgentActivityStep)
   })
@@ -352,7 +402,24 @@ onMounted(async () => {
 
 <template>
   <div class="control-app">
-    <div id="control-card" class="control-app__card">
+    <div
+      name="maestroControl__resizeHandle"
+      class="control-app__resize-handle"
+      :class="{ 'control-app__resize-handle--resizing': resizing }"
+      :title="i18nHelper.menuBar.maestro.resizePanel"
+      :aria-label="i18nHelper.menuBar.maestro.resizePanel"
+      @pointerdown="onResizeDown"
+      @pointermove="onResizeMove"
+      @pointerup="onResizeEnd"
+      @pointercancel="onResizeEnd"
+      @lostpointercapture="onResizeEnd"
+    ></div>
+    <div
+      id="control-card"
+      name="maestroControl__card"
+      class="control-app__card"
+      :class="{ 'control-app__card--focused': panelFocused }"
+    >
       <div class="control-app__toolbar">
         <div class="control-app__channels">
           <button
@@ -402,16 +469,24 @@ onMounted(async () => {
           <ChatConfirmSheet :session="activeSession" />
           <ResponseStatus :session="activeSession" />
           <div
-            v-if="needsLlmLogin"
+            v-if="llmConfig && !activeLlmProviderAllowed"
+            name="control__llm__unavailable"
+            class="control-app__login-card"
+            role="status"
+          >
+            <div class="control-app__login-message">{{ i18nHelper.menuBar.maestro.providerUnavailable }}</div>
+          </div>
+          <div
+            v-else-if="needsLlmLogin"
             name="control__llm__login_card"
             class="control-app__login-card"
           >
             <div class="control-app__login-message">
-              {{ activeLlmIsLocal ? 'Connect a Claude subscription account to use this local model.' : `Sign in to ${activeProviderLabel} to use this model.` }}
+              {{ `Sign in to ${activeProviderLabel} to use this model.` }}
             </div>
-            <Button size="small" type="primary" :loading="llmLoginLoading" :disabled="Boolean(llmLoginProvider && !llmLoginLoading)" @click="activeLlmIsLocal ? configureLocalProvider() : loginActiveProvider()">
+            <Button size="small" type="primary" :loading="llmLoginLoading" :disabled="Boolean(llmLoginProvider && !llmLoginLoading)" @click="loginActiveProvider">
               <template #icon><IconLogin2 :size="15" /></template>
-              {{ activeLlmIsLocal ? 'Configure' : 'Login' }}
+              Login
             </Button>
           </div>
         </template>
@@ -462,7 +537,7 @@ onMounted(async () => {
               trigger="click"
               position="top"
               :popup-offset="6"
-              :disabled="llmLocked"
+              :disabled="llmLocked || !activeLlmProviderAllowed"
               :unmount-on-close="true"
               :content-style="{ padding: '0' }"
             >
@@ -470,7 +545,7 @@ onMounted(async () => {
                 name="control__llm__model_button"
                 type="button"
                 class="control-app__text-button"
-                :disabled="llmLocked"
+                :disabled="llmLocked || !activeLlmProviderAllowed"
                 :title="controlLlmTitle"
               >
                 {{ activeModelLabel }}

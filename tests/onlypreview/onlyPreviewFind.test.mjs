@@ -65,6 +65,11 @@ test('find registry is exhaustive and maps every preview adapter to one truthful
   assert.deepEqual(Object.keys(registry.ONLY_PREVIEW_ADAPTERS).sort(), [
     'audio',
     'chromium-pdf',
+    // Added 2026-09-08. `'directory'` had been declared in `OnlyPreviewPreviewAdapterId` while
+    // nothing constructed it, so the registry — and the exhaustive switch in
+    // `onlyPreviewPreviewView.service.ts` — were both missing it. Only tsc complained, and this
+    // repo's typecheck ran `--noCheck` (docs/issues/typecheck-is-a-false-green.md), so nothing did.
+    'directory',
     'drawio-viewer',
     'html-page',
     'image',
@@ -88,6 +93,10 @@ test('find registry is exhaustive and maps every preview adapter to one truthful
     image: { surface: 'vue', find: { mode: 'none' } },
     audio: { surface: 'vue', find: { mode: 'none' } },
     video: { surface: 'vue', find: { mode: 'none' } },
+    // `find: 'none'` restates the adapter id's own declaration ("no Find coverage") rather than
+    // deferring a capability, and `surface: 'vue'` because a directory has no asset URL, so there
+    // is nothing to navigate a Chromium content view to.
+    directory: { surface: 'vue', find: { mode: 'none' } },
     unsupported: { surface: 'vue', find: { mode: 'none' } }
   });
 });
@@ -233,7 +242,7 @@ const presentation = ({
 
 const createFindServiceHarness = () => {
   const broadcasts = [];
-  const findModule = loadTypeScriptModule('src/main/onlypreview/views/onlyPreviewFind.service.ts', {
+  const findModule = loadTypeScriptModule('src/main/miniapps/onlypreview/views/onlyPreviewFind.service.ts', {
     'electron-xpc/main': {
       xpcMain: {
         broadcast: (eventName, params) => broadcasts.push({ eventName, params })

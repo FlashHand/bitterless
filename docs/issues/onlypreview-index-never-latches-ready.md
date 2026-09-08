@@ -2,6 +2,12 @@
 
 Status: implemented; owner verification pending
 
+2026-09-08 clarification: the returned-snapshot fix below remains valid, but its acceptance row
+requiring the first ready index snapshot is superseded by
+[Project listing readiness](../features/onlypreview-project-loading-state.md#current-contract--2026-09-08).
+The preview now must retire Loading project as soon as the root listing is available, even while
+the index is still building.
+
 ## Observed behavior
 
 Ral 2026-09-04: on the first open of OnlyPreview the pane shows `Loading project`, and it **stays**

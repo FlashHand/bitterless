@@ -16,8 +16,8 @@ const legacyIconBtnPath = join(root, 'renderer/maestro/common/components/IconBtn
 const controlApp = readFileSync(join(root, 'renderer/maestro/control/src/ControlApp.vue'), 'utf8')
 const messageStore = readFileSync(join(root, 'renderer/maestro/control/src/store/message.store.ts'), 'utf8')
 const maestroWindow = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
-const maestroAgent = readFileSync(join(root, 'main/maestro/agent/maestroAgent.service.ts'), 'utf8')
-const agentPrompt = readFileSync(join(root, 'main/maestro/agent/runtime/agentPrompt.ts'), 'utf8')
+const maestroAgent = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
+const agentPrompt = readFileSync(join(root, 'main/agent/runtime/agentPrompt.ts'), 'utf8')
 const aiCrmsCoreUpload = readFileSync(join(root, 'main/maestro/networking/api/aiCrmsCoreFileUpload.api.ts'), 'utf8')
 
 const assert = (condition, message) => {
@@ -50,8 +50,18 @@ assert(!chatPanel.includes('<style'), 'ChatPanel voice and layout styles should 
 assert(chatPanelLess.includes('.chat-panel {'), 'ChatPanel Less should own the chat-panel BEM block')
 assert(chatPanelLess.includes('.chat-panel__voice-wave-bar'), 'ChatPanel Less should own voice wave styling')
 assert(chatPanelLess.includes('padding-right: 132px'), 'recording state should retain textarea space for the timer')
-assert(chatPanelLess.includes('container-type: inline-size'), 'ChatPanel responsive controls should follow the panel width')
-assert(chatPanelLess.includes('@container (max-width: 480px)'), 'narrow ChatPanel actions should wrap without relying on viewport width')
+// 原来这里盯的是 `container-type: inline-size` + `@container (max-width: 480px)` 那对窄宽度容器查询。
+// composer footer 后来改成了 column-first(竖排 + stretch),在**任何**宽度下 tools/actions 都各占一行,
+// 比"窄于 480px 才折行"更强,容器查询随之删掉。守卫改盯真正在生效的机制;文件里残留的
+// `container-type` 已无人使用,不再由守卫钉住。
+assert(
+  /\.chat-panel__composer-footer \{[^}]*flex-direction: column[^}]*\}/.test(chatPanelLess),
+  'ChatPanel composer footer should stack column-first so actions never depend on viewport width'
+)
+assert(
+  /\.chat-panel__composer-actions \{[^}]*justify-content: flex-end[^}]*\}/.test(chatPanelLess),
+  'stacked composer actions should stay right-aligned'
+)
 assert(chatPanelLess.includes('.chat-panel .chat-panel__send-button.icon-btn.arco-btn') && chatPanelLess.includes('background: #4e5882'), 'send IconBtn should retain the Royal Blue action treatment over Arco defaults')
 assert(!existsSync(legacyIconBtnPath), 'Maestro-local Tailwind IconBtn should be removed')
 

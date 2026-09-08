@@ -13,7 +13,7 @@ const bundlePath = join(buildRoot, 'deleteDialog.mjs');
 const source = (path) => readFileSync(join(projectRoot, path), 'utf8');
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/onlyPreviewDeleteDialog.service.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewDeleteDialog.service.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',
@@ -21,7 +21,7 @@ await build({
   target: 'node22',
   tsconfig: join(projectRoot, 'tsconfig.node.json'),
   alias: {
-    '@main/onlypreview/views/onlyPreviewAlertWindow.service': join(
+    '@main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service': join(
       projectRoot,
       'tests/onlypreview/fixtures/alertWindow.stub.mjs'
     ),
@@ -185,7 +185,7 @@ test('the authority accepts a folder and removes it as a tree', () => {
 });
 
 test('Main drives one delete surface and keeps the two-phase grant', () => {
-  const actions = source('src/main/onlypreview/onlyPreviewProjectNativeAction.service.ts');
+  const actions = source('src/main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service.ts');
   // The native message box is gone; the alert dialog covers every delete.
   assert.doesNotMatch(actions, /deleteConfirmTitle|deleteConfirmDetail|destructiveId/);
   assert.match(actions, /presentOnlyPreviewDeleteDialog\(/);

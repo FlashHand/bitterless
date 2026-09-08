@@ -196,14 +196,15 @@ interface OnlyPreviewGlobalSearchResponse {
   immediately clears rows and preview issued for the previous scope, and immediately reruns the
   current non-empty query without the typing debounce. It does not derive an anchor from result
   selection.
-- After the existing priority, promotion, and first-build readiness gates, the authoritative Files
+- After the existing priority and promotion gates, the authoritative committed Files
   metadata branch and Contents SQLite branch start cooperatively. Either section may publish first;
   the terminal response waits for both. Cancellation or branch failure drains both branches before
   active-index ownership is released.
-- During first build, the latest manually opened eligible file may publish a complete early Files
-  and/or Contents row, and scoped Contents may stream from its bounded traversal. The request
-  remains pending until the existing project candidate supplies complete Files metadata; the
-  authoritative terminal response then replaces both sections without a duplicate project walk.
+- During first build, reuse the existing metadata-only count traversal's complete tree to stream
+  Files/folders before body indexing completes. This cold metadata snapshot is separate from the
+  committed SQLite/tree pair and is released after promotion/cancellation. Priority rows and scoped
+  Contents run cooperatively beside it. The request remains pending for the complete content index;
+  the authoritative terminal response replaces both sections without a duplicate project walk.
 - The hidden preload keeps only the latest request's bounded `{ resultToken → exact result }` map.
   Query change, cancellation, workspace/generation change, refresh, promotion/failure, and shutdown
   revoke old result tokens.
@@ -291,12 +292,16 @@ type OnlyPreviewGlobalSearchPreview =
 | Contents scope selector                         | immediately retire the prior request/results and rerun the current non-empty query for Current directory or Project; Files remains project-wide |
 | drag/keyboard separator                         | resize result/preview split within 25–70%                                                                                                       |
 | click any transparent area outside the workspace | close Global Search in its own renderer, consume the click, and restore its live opener                                                         |
-| `Esc`                                           | first clear a non-empty query; second close Global Search and restore prior Preview bounds                                                      |
+| `Esc`                                           | close Global Search once, including with a non-empty query; restore prior Preview bounds and opener focus                                      |
 
 Focus stays inside the search workspace while active. Project-tree interaction resumes after an
 outside-workspace click closes Search; that dismissal click itself is never forwarded. Closing Search restores
 focus to the surface that opened it when still valid, otherwise the current Project row, otherwise
 the main Preview.
+
+Task157: bare Escape is also routed from the active OnlyPreview host's native search surface so
+body/blank-area/embedded Office-document focus cannot bypass dismissal. A higher-priority alert
+keeps its own Escape handling. Query clearing remains a separate Clear action, not a first Escape.
 
 ## State And Performance
 
@@ -314,6 +319,10 @@ the main Preview.
   for `agent-runtime`. Stale/cancelled batches cannot mutate either section or the preview token map.
 - Counting/indexing remains the existing 2px Project-bottom rail. Search shows no percentage or
   duplicate indexing explanation.
+- Task156: initialize/refresh acknowledge their first real snapshot and deliver background ready
+  or fenced failure events afterward. BL's search deadline tracks inactivity during a build:
+  validated, advancing current-generation build progress renews it; duplicate/stale progress cannot.
+  No cache deletion or timeout-constant increase. See [cold-index issue](../issues/onlypreview-cold-index-blocks-search.md).
 - Files, Contents, and preview each have distinct empty/error states. A failure in one preview does
   not turn the search request into an error.
 - Priority, one Files/Folder metadata pass, and Contents SQLite share one request fence but execute

@@ -17,19 +17,19 @@ import {
   interceptionRuleSummary,
   type NetworkInterceptionRule
 } from '@maestro-main/capture/networkInterception'
-import type { PiToolSpec } from '@maestro-main/agent/BaseAgent'
-import { buildFileTools } from '@maestro-main/agent/tools/fileTools'
-import { buildArchiveTools } from '@maestro-main/agent/tools/archiveTools'
-import { MaestroAgent } from '@maestro-main/agent/MaestroAgent'
-import { CoachAgent } from '@maestro-main/agent/CoachAgent'
-import { DelegateAgent } from '@maestro-main/agent/DelegateAgent'
+import type { PiToolSpec } from '@main/agent/BaseAgent'
+import { buildFileTools } from '@main/agent/tools/fileTools'
+import { buildArchiveTools } from '@main/agent/tools/archiveTools'
+import { MaestroAgent } from '@main/agent/MaestroAgent'
+import { CoachAgent } from '@main/agent/CoachAgent'
+import { DelegateAgent } from '@main/agent/DelegateAgent'
 import {
   MaestroAgentService,
   type MaestroAgentServiceState
-} from '@maestro-main/agent/maestroAgent.service'
+} from '@main/agent/maestroAgent.service'
 import {
   broadcastCodexDebug
-} from '@maestro-main/agent/runtime/agentBroadcast'
+} from '@main/agent/runtime/agentBroadcast'
 import { BookingDemoService } from '@maestro-main/demo/bookingDemo.service'
 import { ReplayEngine } from '@maestro-main/drive/replayEngine'
 import {
@@ -83,6 +83,9 @@ import {
   MAESTRO_HOME_READY_TOKEN_QUERY
 } from '@maestro-shared/coach.api'
 import type {
+  CoachXpcContract,
+  ContextExportRequest,
+  ContextExportSummary,
   AgentConversationContext,
   AgentActivityStep,
   AgentCompactReply,
@@ -368,7 +371,7 @@ class MaestroWindowController
     // Workbench overlays the operation area. Hide it only after Home is active so teardown never
     // reveals the previous browser tab between the Account action and window destruction.
     try {
-      this.workbenchView.setVisible({ visible: false })
+      this.workbenchView.closeTab()
     } catch (err) {
       this.emit({ kind: 'error', msg: 'auth workbench hide: ' + (err as Error).message, ts: Date.now() })
     }
@@ -533,12 +536,20 @@ class MaestroWindowController
     return this.ensureServices().settings.hasCustomStartUrl()
   }
 
-  async getWorkbenchVisible(): Promise<{ visible: boolean }> {
-    return this.workbenchView.getVisible()
+  async getWorkbenchTab(): ReturnType<CoachXpcContract['getWorkbenchTab']> {
+    return this.workbenchView.getState()
   }
 
-  async setWorkbenchVisible(params: { visible: boolean }): Promise<{ visible: boolean }> {
-    return this.workbenchView.setVisible(params)
+  async openWorkbenchTab(): ReturnType<CoachXpcContract['openWorkbenchTab']> {
+    return this.workbenchView.openTab()
+  }
+
+  async backgroundWorkbenchTab(): ReturnType<CoachXpcContract['backgroundWorkbenchTab']> {
+    return this.workbenchView.backgroundTab()
+  }
+
+  async closeWorkbenchTab(): ReturnType<CoachXpcContract['closeWorkbenchTab']> {
+    return this.workbenchView.closeTab()
   }
 
   async navigate(params: { url: string }): Promise<void> {
@@ -1017,6 +1028,10 @@ class MaestroWindowController
 
   async sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply> {
     return await this.agentService.sendAgentMessage(params)
+  }
+
+  async copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary> {
+    return await this.agentService.copyNextTurnContext(params)
   }
 
   async compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply> {
@@ -1648,12 +1663,13 @@ class MaestroWindowController
   }
 
   async newTab(): Promise<void> {
+    this.workbenchView.backgroundTab()
     await this.browserView.newTab()
   }
 
   async closeActiveTab(): Promise<void> {
     if (this.workbenchView.isVisible()) {
-      await this.setWorkbenchVisible({ visible: false })
+      await this.closeWorkbenchTab()
       return
     }
     await this.browserView.closeActiveTab()
@@ -1689,6 +1705,10 @@ class MaestroWindowController
 
   async getTabs(): Promise<TabInfo[]> {
     return await this.browserView.getTabs()
+  }
+
+  existingSkillRegistry(): SkillRegistryService | null {
+    return this.skillRegistry
   }
 
   ensureServices(): {

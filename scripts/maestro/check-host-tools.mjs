@@ -12,6 +12,7 @@ const moduleCache = new Map()
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
     const base = join(parentDir, specifier)
@@ -72,9 +73,9 @@ const tool = (name, output) => {
   }
 }
 
-const { readHostToolCatalog } = loadTsModule('@maestro-main/agent/hostToolCatalog')
-const { HostToolRegistry } = loadTsModule('@maestro-main/agent/runtime/hostToolRegistry')
-const { HostApprovalHistory } = loadTsModule('@maestro-main/agent/runtime/hostApprovalHistory')
+const { readHostToolCatalog } = loadTsModule('@main/agent/hostToolCatalog')
+const { HostToolRegistry } = loadTsModule('@main/agent/runtime/hostToolRegistry')
+const { HostApprovalHistory } = loadTsModule('@main/agent/runtime/hostApprovalHistory')
 
 const disabledTool = tool('write_file', 'write-ok')
 const readTool = tool('read_file', 'read-ok')

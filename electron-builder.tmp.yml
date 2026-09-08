@@ -120,6 +120,15 @@ fileAssociations:
       - xml
       - zsh
       - pdf
+      - doc
+      - docx
+      - xls
+      - xlsx
+      - xlsm
+      - ppt
+      - pptx
+      - drawio
+      - dio
       - png
       - jpg
       - jpeg
@@ -166,17 +175,42 @@ mac:
   gatekeeperAssess: false
   notarize: false
   extendInfo:
+    # Native Finder Open With; optional viewer, never claim ownership/default status.
+    # public.data also accepts ordinary unknown-extension files, not directory bundles.
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Preview Documents
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Alternate
+        LSItemContentTypes:
+          - public.data
+          - public.text
+          - public.source-code
+          - public.html
+          - public.image
+          - public.audio
+          - public.movie
+          - com.adobe.pdf
+          - org.openxmlformats.wordprocessingml.document
+          - org.openxmlformats.spreadsheetml.sheet
+          - org.openxmlformats.presentationml.presentation
+      - CFBundleTypeName: Office and Diagram Documents
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Alternate
+        CFBundleTypeExtensions:
+          - doc
+          - docx
+          - xls
+          - xlsx
+          - xlsm
+          - ppt
+          - pptx
+          - drawio
+          - dio
     NSCameraUsageDescription: Application requests access to the device's camera.
     NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
     NSDesktopFolderUsageDescription: Application requests access to the user's Desktop folder.
-    CFBundleDocumentTypes:
-      - CFBundleTypeName: All Documents
-        CFBundleTypeRole: Viewer
-        LSHandlerRank: Alternate
-        LSItemContentTypes:
-          - public.data
 dmg:
   artifactName: ARTIFACT_STEM-${version}.${ext}
 npmRebuild: false

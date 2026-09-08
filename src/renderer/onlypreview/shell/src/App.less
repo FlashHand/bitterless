@@ -321,6 +321,12 @@ select {
   color: var(--onlypreview-muted);
 }
 
+// Selection remains visible across native preview renderers; Shell focus only changes emphasis.
+.onlypreview-shell--focused .onlypreview-shell__tree-row--selected {
+  background: #a9c9ff;
+  color: #1e345e;
+}
+
 .onlypreview-shell__tree-chevron-hit {
   width: 17px;
   height: 21px;

@@ -899,15 +899,13 @@ test('linear selection follows Contents then Files and each collapsed pane remai
   assert.equal(store.contentsCollapsed, false);
 });
 
-test('Shell, Vue, and Chrome entries keep the first Escape for clear and the second for close', async () => {
+test('Shell, Vue, and Chrome entries close on the first Escape even with a query', async () => {
   for (const origin of ['shell', 'vue', 'chrome']) {
     store.exit();
     store.enter(origin);
     store.setQuery('needle');
     await store.handleEscape();
-    assert.equal(store.active, true);
     assert.equal(store.query, '');
-    await store.handleEscape();
     assert.equal(store.active, false);
   }
 });

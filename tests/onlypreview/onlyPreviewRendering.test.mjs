@@ -199,7 +199,17 @@ test('the Markdown component and renderer expose no front-matter presentation mo
   assert.doesNotMatch(i18n, /frontMatterTitle|frontMatterTruncated/);
   assert.doesNotMatch(service, /parseYaml|stringifyYaml|OnlyPreviewMarkdownFrontMatter/);
   assert.match(service, /stripOnlyPreviewFrontMatter/);
-  assert.match(service, /\| \{ ok: true; html: string; links: string\[\] \}/);
+  // 成功分支的字段就这三个。2026-09-08 加了 `codeBlocks`(代码块高亮 hl-003)——
+  // 它是**渲染产物**,不是 front matter 的表现模型,所以这一组的意图没变。
+  assert.match(
+    service,
+    /\| \{ ok: true; html: string; links: string\[\]; codeBlocks: OnlyPreviewMarkdownCodeBlock\[\] \}/
+  );
+  // `codeBlocks` 只带原文与语言 —— 不是一个可以塞进 front matter 的口子。
+  assert.match(
+    service,
+    /interface OnlyPreviewMarkdownCodeBlock \{\s*code: string;\s*language: string;\s*\}/
+  );
   assert.match(service, /ALLOWED_ATTR: interactiveLinks/);
   assert.match(service, /ALLOW_DATA_ATTR: false/);
 });

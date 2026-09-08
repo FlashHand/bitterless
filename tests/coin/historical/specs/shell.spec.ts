@@ -8,7 +8,7 @@ const screenshotRoot = join(projectRoot, 'out', 'playwright', 'coin', 'screensho
 const coinPagePattern = /\/coin\/index\.html(?:$|[?#])/;
 
 const openButton = (page: Page) =>
-  page.locator('[data-mini-app-id="coin"]').getByRole('button', { name: /Open|打开/ });
+  page.locator('[data-mini-app-id="coin"]').getByRole('button');
 
 const coinTab = (page: Page, name: string) =>
   page.locator('.arco-tabs-tab').filter({ hasText: name });
@@ -111,7 +111,7 @@ test('delivers a secure singleton Coin shell at both supported sizes', async ({ 
   const card = hostPage.locator('[data-mini-app-id="coin"]');
   await expect(card).toBeVisible();
   await expect(
-    card.locator('[name="miniApp__card__title"]').getByText('trench', { exact: true }),
+    card.locator('[name="miniApp__name"]').getByText('TRENCH', { exact: true }),
   ).toBeVisible();
   await openButton(hostPage).click();
 

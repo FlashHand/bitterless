@@ -13,7 +13,7 @@ const root = join(projectRoot, 'src')
 const workspaceRoot = projectRoot
 const moduleCache = new Map()
 const maestroWindowSource = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
-const maestroAgentSource = readFileSync(join(root, 'main/maestro/agent/maestroAgent.service.ts'), 'utf8')
+const maestroAgentSource = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
 const chatPanelSource = readFileSync(join(root, 'renderer/maestro/control/src/ChatPanel.vue'), 'utf8')
 const runtimeRefsDoc = readFileSync(join(workspaceRoot, 'docs/features/maestro.md'), 'utf8')
 
@@ -23,6 +23,7 @@ const assert = (condition, message) => {
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
     const base = join(parentDir, specifier)
@@ -131,7 +132,7 @@ assert(/await this\.attachFiles\(\{\s*sessionId: params\?\.sessionId,\s*paths: \
 assert(runtimeRefsDoc.includes('Attach/drop/paste for supported text, image, PDF'), 'embedded feature contract should preserve media attachments')
 assert(runtimeRefsDoc.includes('No credential value is written into the Bitterless repository or log output.'), 'embedded feature contract should preserve credential boundaries')
 
-const { resolveRuntimeMediaRefs, isDownloadableMediaUrl } = loadTsModule('@maestro-main/agent/runtime/mediaRefResolver')
+const { resolveRuntimeMediaRefs, isDownloadableMediaUrl } = loadTsModule('@main/agent/runtime/mediaRefResolver')
 assert(isDownloadableMediaUrl('https://cdn.example.test/clip.png'), 'http(s) media URLs should be accepted')
 assert(!isDownloadableMediaUrl('data:image/png;base64,abc'), 'inline data URLs should not be treated as downloadable media URLs')
 const inlineOnly = resolveRuntimeMediaRefs({

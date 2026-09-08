@@ -7,7 +7,7 @@ const root = join(projectRoot, 'src')
 const controllerSource = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
 const browserViewSource = readFileSync(join(root, 'main/maestro/windows/main/maestroBrowserView.service.ts'), 'utf8')
 const captureServiceSource = readFileSync(join(root, 'main/maestro/capture/capture.service.ts'), 'utf8')
-const hostToolCatalog = readFileSync(join(root, 'main/maestro/agent/hostToolCatalog.ts'), 'utf8')
+const hostToolCatalog = readFileSync(join(root, 'main/agent/hostToolCatalog.ts'), 'utf8')
 const debuggerCapture = readFileSync(join(root, 'main/maestro/capture/debuggerCapture.ts'), 'utf8')
 const workbenchStore = readFileSync(join(root, 'renderer/maestro/workbench/src/workbench.store.ts'), 'utf8')
 

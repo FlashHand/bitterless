@@ -457,12 +457,12 @@ test('find UI source keeps one shell input, IME safety, narrow-pane layout, and 
   const globalSearchApp = source('src/renderer/onlypreview/globalSearch/src/App.vue');
   const app = source('src/renderer/onlypreview/shell/src/App.vue');
   const previewStore = source('src/renderer/onlypreview/preview/src/onlyPreviewPreview.store.ts');
-  const findService = source('src/main/onlypreview/views/onlyPreviewFind.service.ts');
+  const findService = source('src/main/miniapps/onlypreview/views/onlyPreviewFind.service.ts');
   const monacoFind = source(
     'src/renderer/onlypreview/preview/src/onlyPreviewMonacoFind.service.ts'
   );
-  const previewRegion = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const previewViewService = source('src/main/onlypreview/views/onlyPreviewPreviewView.service.ts');
+  const previewRegion = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const previewViewService = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts');
   const windowHelper = source('src/main/windows/onlyPreviewWindow.helper.ts');
 
   assert.equal((findBar.match(/<input\b/g) ?? []).length, 1);
@@ -532,9 +532,9 @@ test('Main shortcut predicates reserve Shift+CommandOrControl+F for Global Searc
   assert.match(findMenu, /process\.platform !== 'darwin'/);
   assert.match(findMenu, /if \(handled\) return;\s*forwardToFocusedContents/);
   for (const path of [
-    'src/main/onlypreview/views/onlyPreviewFind.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewFind.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts',
     'src/main/xpc/onlyPreview.handler.ts'
   ]) {
     assert.doesNotMatch(source(path), /globalShortcut|Menu\.setApplicationMenu/);

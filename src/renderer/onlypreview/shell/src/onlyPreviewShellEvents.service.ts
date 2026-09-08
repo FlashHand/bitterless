@@ -19,16 +19,19 @@ import {
 } from '@shared/onlypreview/onlyPreview.types';
 import {
   ONLY_PREVIEW_BROWSE_LISTING_EVENT,
+  ONLY_PREVIEW_SEARCH_FAILURE_EVENT,
   ONLY_PREVIEW_SEARCH_PROGRESS_EVENT,
   ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT,
   type OnlyPreviewBrowseListing,
   type OnlyPreviewSearchBuildProgress,
+  type OnlyPreviewSearchFailure,
   type OnlyPreviewSearchSnapshot
 } from '@shared/onlypreview/onlyPreviewSearch.type';
 import { isOnlyPreviewBrowseListingEvent } from './onlyPreviewBrowseListing.service';
 import { isOnlyPreviewPresentationNudge } from '../../common/onlyPreviewPresentation.service';
 import { isOnlyPreviewSearchProgressEvent } from './onlyPreviewSearchProgress.service';
 import { isOnlyPreviewSearchSnapshotEvent } from './onlyPreviewSearchSnapshot.service';
+import { isOnlyPreviewSearchFailureEvent } from '@shared/onlypreview/onlyPreviewSearchFailure.contract';
 
 interface OnlyPreviewShellEventHandlers {
   workspaceChanged: () => void;
@@ -40,6 +43,7 @@ interface OnlyPreviewShellEventHandlers {
   browseListing: (listing: OnlyPreviewBrowseListing) => void;
   searchProgress: (progress: OnlyPreviewSearchBuildProgress) => void;
   searchSnapshot: (snapshot: OnlyPreviewSearchSnapshot) => void;
+  searchFailure: (failure: OnlyPreviewSearchFailure) => void;
   settingsChanged: () => void;
   hostToggleChanged: () => void;
   focusProject: () => void;
@@ -151,6 +155,11 @@ export const subscribeOnlyPreviewShellEvents = (
   xpcRenderer.subscribe(ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT, ({ params }) => {
     if (isOnlyPreviewSearchSnapshotEvent(params) && isCurrentHost(params)) {
       handlers.searchSnapshot(params.snapshot);
+    }
+  });
+  xpcRenderer.subscribe(ONLY_PREVIEW_SEARCH_FAILURE_EVENT, ({ params }) => {
+    if (isOnlyPreviewSearchFailureEvent(params) && isCurrentHost(params)) {
+      handlers.searchFailure(params.failure);
     }
   });
   xpcRenderer.subscribe(ONLY_PREVIEW_SETTINGS_CHANGED_EVENT, handlers.settingsChanged);

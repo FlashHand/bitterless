@@ -1,5 +1,5 @@
 import { registerMaestroPreviewOpener } from '@maestro-main/windows/main/previewOpener.registry';
-import { openRegisteredOnlyPreviewExplicitTarget } from '@main/onlypreview/onlyPreviewExplicitTarget.registry';
+import { openRegisteredOnlyPreviewExplicitTarget } from '@main/miniapps/onlypreview/onlyPreviewExplicitTarget.registry';
 
 /**
  * Make OnlyPreview the application Cowork's workspace tools show files in.

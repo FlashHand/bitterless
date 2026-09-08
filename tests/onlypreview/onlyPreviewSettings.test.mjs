@@ -8,7 +8,7 @@ import { after, test } from 'node:test';
 import { build } from 'esbuild';
 
 const projectRoot = resolve(dirname(new URL(import.meta.url).pathname), '..', '..');
-const servicePath = join(projectRoot, 'src/main/onlypreview/onlyPreviewSettings.service.ts');
+const servicePath = join(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewSettings.service.ts');
 const buildRoot = mkdtempSync(join(tmpdir(), 'bitterless-onlypreview-settings-unit-'));
 const bundlePath = join(buildRoot, 'settings.mjs');
 

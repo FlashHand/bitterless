@@ -1,5 +1,5 @@
 import { reactive } from 'vue';
-import { unwrapOnlyPreviewResult } from '@shared/onlypreview/onlyPreview.contract';
+import { OnlyPreviewContractError, unwrapOnlyPreviewResult } from '@shared/onlypreview/onlyPreview.contract';
 import {
   type OnlyPreviewBounds,
   type OnlyPreviewFileRef,
@@ -17,10 +17,12 @@ import {
 import {
   type OnlyPreviewBrowseListing,
   type OnlyPreviewSearchBuildProgress,
+  type OnlyPreviewSearchFailure,
   type OnlyPreviewSearchSnapshot
 } from '@shared/onlypreview/onlyPreviewSearch.type';
 import { onlyPreviewClient } from '../../common/onlyPreviewClient';
 import { describeOnlyPreviewError, onlyPreviewErrorDetail } from './onlyPreviewErrorDetail.store';
+import type { OnlyPreviewErrorDetail } from './onlyPreviewErrorDetail.service';
 import { onlyPreviewEnv } from '../../common/contextBridge/onlyPreviewEnv.bridge';
 import { onlyPreviewI18n } from '../../common/onlyPreviewI18n';
 import { OnlyPreviewCharacterCountHostGate } from '../../common/onlyPreviewCharacterCountGate.service';
@@ -30,6 +32,8 @@ import { onlyPreviewSearchClient } from './onlyPreviewSearch.client';
 import { dispatchOnlyPreviewSelectedFilePriority } from './onlyPreviewSelectedFilePriority.service';
 import { onlyPreviewGlobalSearchShellClient } from './onlyPreviewGlobalSearchShell.client';
 import { handleOnlyPreviewGlobalSearchDirectoryReveal } from './onlyPreviewGlobalSearchShell.service';
+import { revealOnlyPreviewGlobalSearchDirectory } from './onlyPreviewGlobalSearchTree.service';
+import type { OnlyPreviewBookmark } from '@shared/onlypreview/onlyPreviewBookmarks.type';
 import {
   copyOnlyPreviewProjectRoot,
   showOnlyPreviewProjectRootContextMenu
@@ -87,6 +91,7 @@ export class OnlyPreviewShellStore {
   projectWidth = projectWidthPersistence.restore(window.innerWidth);
   indexLoading = false;
   targetLoading = false;
+  previewFileMenuOpen = false;
   errorMessage = '';
   focusProjectRevision = 0;
   centerProjectRevision = 0;
@@ -95,7 +100,10 @@ export class OnlyPreviewShellStore {
   private restoreGeneration = 0;
   private workspaceGeneration = 0;
   private selectionGeneration = 0;
+  private bookmarkGeneration = 0;
   private searchWorkspaceGeneration = 0;
+  private searchSnapshotRevision = 0;
+  private indexErrorDetail: OnlyPreviewErrorDetail | null = null;
   private previewPresentationFetchGeneration = 0;
   readonly browseProjection = new OnlyPreviewBrowseProjectionService();
   private indexProgressState: OnlyPreviewSearchProgressState = createOnlyPreviewSearchProgressState();
@@ -232,6 +240,9 @@ export class OnlyPreviewShellStore {
     return relativePath;
   }
   async locateSelectedFile(): Promise<string> {
+    const fileRef = this.previewFileRef;
+    if (!fileRef || fileRef.workspaceId !== this.workspace?.workspaceId) return '';
+    this.selectedRelativePath = fileRef.relativePath;
     return await this.treeExpansion.locate(this, () => this.loadSelectedParentListings());
   }
   async showFileContextMenu(entry: OnlyPreviewIndexEntry | string): Promise<void> {
@@ -272,6 +283,27 @@ export class OnlyPreviewShellStore {
   }
   async revealPreviewInFolder(): Promise<void> {
     await this.runPreviewFileAction('reveal');
+  }
+  async showPreviewFileMenu(): Promise<void> {
+    const hostToken = onlyPreviewEnv.hostToken;
+    const presentation = this.previewPresentation;
+    if (!hostToken || !presentation?.fileRef || this.previewFileMenuOpen) return;
+    const revision = presentation.selectionRevision;
+    this.previewFileMenuOpen = true;
+    this.previewActionError = '';
+    try {
+      const action = unwrapOnlyPreviewResult(
+        await onlyPreviewClient.showPreviewFileMenu({ hostToken, selectionRevision: revision })
+      );
+      if (this.previewPresentation?.selectionRevision !== revision) return;
+      if (action === 'open' || action === 'reveal') await this.runPreviewFileAction(action);
+    } catch (error) {
+      if (this.previewPresentation?.selectionRevision === revision) {
+        this.previewActionError = describeOnlyPreviewError(error);
+      }
+    } finally {
+      this.previewFileMenuOpen = false;
+    }
   }
   moveTreeFocus(key: OnlyPreviewTreeNavigationKey): string {
     const rows = this.visibleRows;
@@ -352,6 +384,7 @@ export class OnlyPreviewShellStore {
       browseListing: (listing) => this.applyBrowseListing(listing),
       searchProgress: (progress) => this.applySearchProgress(progress),
       searchSnapshot: (snapshot) => void this.applySearchSnapshot(snapshot),
+      searchFailure: (failure) => this.applySearchFailure(failure),
       settingsChanged: () => void this.refreshSettings(),
       hostToggleChanged: () => void this.refreshHostToggleState(),
       focusProject: () => {
@@ -501,6 +534,7 @@ export class OnlyPreviewShellStore {
     if (!hostToken || !workspace) return;
     const workspaceId = workspace.workspaceId;
     const generation = this.searchWorkspaceGeneration;
+    const snapshotRevision = this.searchSnapshotRevision;
     this.indexLoading = true;
     this.errorMessage = '';
     try {
@@ -511,7 +545,8 @@ export class OnlyPreviewShellStore {
           generation
         })
       );
-      await this.applySearchSnapshot(snapshot);
+      // A broadcast may already have advanced past the first (building) RPC snapshot.
+      if (snapshotRevision === this.searchSnapshotRevision) await this.applySearchSnapshot(snapshot);
     } catch (error) {
       if (
         generation === this.searchWorkspaceGeneration &&
@@ -528,13 +563,14 @@ export class OnlyPreviewShellStore {
     if (!hostToken || !workspace) return;
     const workspaceId = workspace.workspaceId;
     const generation = this.searchWorkspaceGeneration;
+    const snapshotRevision = this.searchSnapshotRevision;
     this.indexLoading = true;
     this.errorMessage = '';
     try {
       const snapshot = unwrapOnlyPreviewResult(
         await onlyPreviewSearchClient.refresh({ hostToken, workspaceId, generation })
       );
-      await this.applySearchSnapshot(snapshot);
+      if (snapshotRevision === this.searchSnapshotRevision) await this.applySearchSnapshot(snapshot);
     } catch (error) {
       if (
         generation === this.searchWorkspaceGeneration &&
@@ -544,11 +580,19 @@ export class OnlyPreviewShellStore {
       }
     }
   }
+  private applySearchFailure(failure: OnlyPreviewSearchFailure): void {
+    const hostToken = onlyPreviewEnv.hostToken;
+    if (!hostToken || failure.workspaceId !== this.workspace?.workspaceId ||
+      failure.generation !== this.searchWorkspaceGeneration) return;
+    this.failIndex(hostToken, failure.workspaceId,
+      new OnlyPreviewContractError(failure.error.code, failure.error.message));
+  }
   private failIndex(hostToken: string, workspaceId: string, error: unknown): void {
     this.indexLoading = false;
     this.errorMessage = describeOnlyPreviewError(error);
+    this.indexErrorDetail = onlyPreviewErrorDetail.detail;
     this.indexProgressState = settleOnlyPreviewSearchProgress(this.indexProgressState);
-    void onlyPreviewClient.reportProjectIndexFailed({ hostToken, workspaceId });
+    void onlyPreviewClient.reportProjectIndexFailed({ hostToken, workspaceId }).catch(() => undefined);
   }
   private async applySearchSnapshot(snapshot: OnlyPreviewSearchSnapshot): Promise<void> {
     const workspace = this.workspace;
@@ -560,8 +604,14 @@ export class OnlyPreviewShellStore {
     ) {
       return;
     }
+    this.searchSnapshotRevision += 1;
     this.indexLoading = snapshot.state !== 'ready';
     if (snapshot.state !== 'ready') return;
+    if (this.indexErrorDetail && onlyPreviewErrorDetail.detail === this.indexErrorDetail) {
+      this.errorMessage = '';
+      onlyPreviewErrorDetail.clear();
+    }
+    this.indexErrorDetail = null;
     this.indexProgressState = settleOnlyPreviewSearchProgress(this.indexProgressState);
     this.reportGlobalSearchContext();
     this.treeExpansion.expandSelectedParents(this);
@@ -718,6 +768,36 @@ export class OnlyPreviewShellStore {
     }
   }
 
+  async openBookmark(bookmark: OnlyPreviewBookmark): Promise<void> {
+    const generation = ++this.bookmarkGeneration;
+    if (!this.workspace || !bookmark.relativePath) return;
+    if (bookmark.nodeKind === 'file') {
+      this.collapseTreeSelection();
+      await this.selectFile(bookmark.relativePath);
+      return;
+    }
+    const context = this.browseProjectionContext();
+    if (!context) return;
+    const workspaceId = this.workspace.workspaceId;
+    const treeRevision = this.treeExpansion.revision;
+    const isCurrent = (): boolean => generation === this.bookmarkGeneration &&
+      workspaceId === this.workspace?.workspaceId && treeRevision === this.treeExpansion.revision;
+    try {
+      const revealed = await revealOnlyPreviewGlobalSearchDirectory({
+        relativePath: bookmark.relativePath, projection: this.browseProjection,
+        context, expandedPaths: this.expandedPaths, isCurrent,
+        applyResult: (result) => {
+          if (isCurrent()) this.commitBrowseProjectionResult(result, context);
+        }
+      });
+      if (!isCurrent()) return;
+      if (revealed) this.centerTreeRow(bookmark.relativePath);
+      else this.errorMessage = onlyPreviewI18n.bookmarks.unavailable;
+    } catch (error) {
+      if (isCurrent()) this.errorMessage = describeOnlyPreviewError(error);
+    }
+  }
+
   private async syncPreviewPresentation(): Promise<void> {
     const hostToken = onlyPreviewEnv.hostToken;
     if (!hostToken) return;
@@ -765,6 +845,7 @@ export class OnlyPreviewShellStore {
   private async runPreviewFileAction(action: 'open' | 'reveal'): Promise<void> {
     const hostToken = onlyPreviewEnv.hostToken;
     const fileRef = this.previewFileRef;
+    const revision = this.previewPresentation?.selectionRevision;
     if (!hostToken || !fileRef) return;
     this.previewActionError = '';
     try {
@@ -774,7 +855,9 @@ export class OnlyPreviewShellStore {
           : await onlyPreviewClient.revealInFolder({ hostToken, ...fileRef });
       unwrapOnlyPreviewResult(result);
     } catch (error) {
-      this.previewActionError = describeOnlyPreviewError(error);
+      if (this.previewPresentation?.selectionRevision === revision) {
+        this.previewActionError = describeOnlyPreviewError(error);
+      }
     }
   }
 

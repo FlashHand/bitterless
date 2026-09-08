@@ -27,7 +27,6 @@ import './diagnostics.handler';
 import './notification.handler';
 import './onlyPreview.handler';
 import './onlyPreviewAlert.handler';
-import './claudeSubscription.handler';
 import { initMaestroXpc } from '@maestro-main/xpc/xpc.helper';
 // import { ptyManager } from '../ptyHelper/ptyManager';
 // import { PtyService } from '../ptyHelper/ptyXpc';

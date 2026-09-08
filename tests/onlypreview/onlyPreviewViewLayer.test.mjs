@@ -12,7 +12,7 @@ const buildRoot = mkdtempSync(join(tmpdir(), 'bitterless-onlypreview-view-layer-
 const bundlePath = join(buildRoot, 'layers.mjs');
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/views/onlyPreviewViewLayer.service.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/views/onlyPreviewViewLayer.service.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',
@@ -179,12 +179,12 @@ test('OnlyPreview child-view stacking lives in exactly one file', () => {
   // one service calling another back after the fact, and any attach path that missed the callback
   // left the overlay buried. Only the layer service may add a child view.
   assert.match(
-    source('src/main/onlypreview/views/onlyPreviewViewLayer.service.ts'),
+    source('src/main/miniapps/onlypreview/views/onlyPreviewViewLayer.service.ts'),
     /container\.addChildView\(occupant\.view\)/
   );
   for (const path of [
-    'src/main/onlypreview/views/onlyPreviewPreviewView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts'
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts'
   ]) {
     assert.doesNotMatch(source(path), /contentView\.addChildView\(/, `${path} must not raise views`);
   }
@@ -205,10 +205,10 @@ test('OnlyPreview child-view stacking lives in exactly one file', () => {
   );
   // And nothing may reach back into the overlay to re-raise it after a preview attach.
   for (const path of [
-    'src/main/onlypreview/views/onlyPreviewPreviewView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts',
     'src/main/windows/onlyPreviewWindow.helper.ts'
   ]) {
     assert.doesNotMatch(source(path), /raiseAfterPreviewAttach|onActiveViewAttached\s*[(:]/);

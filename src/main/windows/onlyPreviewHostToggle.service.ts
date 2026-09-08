@@ -15,16 +15,16 @@ import {
 } from '@shared/onlypreview/onlyPreview.types';
 import { onlyPreviewWindowHelper } from './onlyPreviewWindow.helper';
 import { ONLY_PREVIEW_COWORK_TAB_ID } from './onlyPreviewCoworkTab';
-import type { OnlyPreviewMountKind } from '@main/onlypreview/onlyPreviewSurface.mount';
-import type { OnlyPreviewHostCapability } from '@main/onlypreview/onlyPreviewHost.registry';
-import { onlyPreviewWorkspaceRegistry } from '@main/onlypreview/onlyPreviewWorkspace.registry';
-import { onlyPreviewRecentDirectoryService } from '@main/onlypreview/onlyPreviewRecentDirectory.service';
-import { onlyPreviewPreviewRegionService } from '@main/onlypreview/views/onlyPreviewPreviewRegion.service';
+import type { OnlyPreviewMountKind } from '@main/miniapps/onlypreview/onlyPreviewSurface.mount';
+import type { OnlyPreviewHostCapability } from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
+import { onlyPreviewWorkspaceRegistry } from '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry';
+import { onlyPreviewRecentDirectoryService } from '@main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
+import { onlyPreviewPreviewRegionService } from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
 import {
   onlyPreviewTargetMutations,
   presentOnlyPreviewExplicitFile
-} from '@main/onlypreview/onlyPreviewExplicitOpen.service';
-import { onlyPreviewLogService } from '@main/onlypreview/onlyPreviewLog.runtime';
+} from '@main/miniapps/onlypreview/onlyPreviewExplicitOpen.service';
+import { onlyPreviewLogService } from '@main/miniapps/onlypreview/onlyPreviewLog.runtime';
 import { fileSearchWindowService } from '@main/fileSearch/fileSearchWindow.service';
 
 // Only native targets survive this one transition. All workspace/file capabilities are reissued.

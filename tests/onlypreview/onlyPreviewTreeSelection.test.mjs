@@ -214,7 +214,7 @@ test('the Shift anchor is the controller own state, not the tree highlight', () 
 });
 
 test('actions that only make sense for one row are inert while several are selected', () => {
-  const actions = source('src/main/onlypreview/onlyPreviewProjectNativeAction.service.ts');
+  const actions = source('src/main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service.ts');
   const menuBody = actions.slice(
     actions.indexOf('async showFileContextMenu('),
     actions.indexOf('async showProjectRootContextMenu(')

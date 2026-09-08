@@ -20,7 +20,7 @@
 [`onlypreview.md`](../features/onlypreview.md)（已接受的产品与安全合同）、
 [`onlypreview.md`](../plan/analysis/onlypreview.md)（现有交付分解）。核对日期 2026-08-10，
 依据：实码 `src/main/windows/onlyPreviewWindow.helper.ts`、
-`src/main/onlypreview/onlyPreviewIndex.service.ts`、`src/renderer/onlypreview/`。
+`src/main/miniapps/onlypreview/onlyPreviewIndex.service.ts`、`src/renderer/onlypreview/`。
 
 ## #0 · 总纲：搜索不是一个输入框
 
@@ -38,7 +38,7 @@
 
 | 现状事实 | 实码依据 | 对搜索的影响 |
 |---|---|---|
-| Main 的 `buildIndex()` 只生成名称、相对路径、类型、大小和修改时间 | `src/main/onlypreview/onlyPreviewIndex.service.ts`、`src/shared/onlypreview/onlyPreview.types.ts` | 项目全文搜索没有内容数据源；这与 Preview 在哪个 View 无关 |
+| Main 的 `buildIndex()` 只生成名称、相对路径、类型、大小和修改时间 | `src/main/miniapps/onlypreview/onlyPreviewIndex.service.ts`、`src/shared/onlypreview/onlyPreview.types.ts` | 项目全文搜索没有内容数据源；这与 Preview 在哪个 View 无关 |
 | `resolveNativeCommand()` 没有 `Cmd+F` 或 `Shift+Cmd+F` | `src/main/windows/onlyPreviewWindow.helper.ts` | 当前快捷键不响应是未定义命令，不是 Electron 无法跨 View |
 | 双击 Shift 只把焦点送到 Shell 的路径搜索框 | `OnlyPreviewWindowHelper.bindNativeShortcuts()`、`ONLY_PREVIEW_FOCUS_SEARCH_EVENT` | 现有“搜索”实际是 bounded path search，不是全文搜索 |
 | Shell 与 Preview 使用同一个 content host capability | `OnlyPreviewWindowHelper.ensureStandalone()`、`createView(host, mode)` | 分 View 没有形成更窄的文件读取权限边界 |
@@ -164,7 +164,7 @@ Settings BrowserWindow
 
 ---
 
-实现侧路径：`src/main/windows/onlyPreviewWindow.helper.ts`、`src/main/onlypreview/`、
+实现侧路径：`src/main/windows/onlyPreviewWindow.helper.ts`、`src/main/miniapps/onlypreview/`、
 `src/shared/onlypreview/`、`src/renderer/onlypreview/shell/`、
 `src/renderer/onlypreview/preview/`。本文只负责搜索与 View 边界决策；已接受的安全和产品合同仍以
 `docs/features/onlypreview.md` 为准，定案后的具体交付由 `docs/plan/tasks/` 承接。

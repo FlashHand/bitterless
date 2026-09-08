@@ -16,6 +16,25 @@ import {
   withFakeTimeouts
 } from './onlyPreviewPreviewRegionTest.helper.mjs';
 
+test('late preview pulls current workspace listing readiness independently of its index', () => {
+  const { service } = createHarness();
+  service.updateBounds(host.hostToken, bounds);
+  state.projectIndexState = { 'workspace-id': 'building' };
+  state.projectBrowseState = { 'workspace-id': 'pending' };
+  service.clearWorkspace(host.hostToken, 'workspace-id');
+  assert.equal(service.snapshot(host.hostToken).projectBrowseState, 'pending');
+  state.projectBrowseState['workspace-id'] = 'ready';
+  const vue = acknowledgeCurrentVue(service);
+  const snapshot = service.snapshotForVue(host.hostToken, vue.previewRuntimeToken);
+  assert.equal(snapshot.projectBrowseState, 'ready');
+  assert.equal(snapshot.projectIndexState, 'building');
+  service.clearWorkspace(host.hostToken, 'workspace-b');
+  state.projectBrowseState['workspace-b'] = 'pending';
+  assert.equal(service.snapshot(host.hostToken).projectBrowseState, 'pending');
+  delete state.projectIndexState;
+  delete state.projectBrowseState;
+});
+
 test('Markdown target fragments survive public and Vue snapshots without reopening same-document anchors', async () => {
   const { service } = createHarness();
   service.updateBounds(host.hostToken, bounds);
@@ -128,7 +147,7 @@ test('presentation broadcasts are host-only nudges and reject forged renderer st
     }),
     false
   );
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
   const shellStore = source('src/renderer/onlypreview/shell/src/onlyPreviewShell.store.ts');
   const vueStore = source('src/renderer/onlypreview/preview/src/onlyPreviewPreview.store.ts');
   assert.match(region, /broadcast\(ONLY_PREVIEW_PREVIEW_PRESENTATION_EVENT, \{\s*hostId:/);

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { after, test } from 'node:test';
 import { build } from 'esbuild';
@@ -119,14 +120,14 @@ const stubs = {
 const bundled = await build({
   stdin: {
     contents: `
-      export * from './src/main/onlypreview/onlyPreviewRecentNavigation.service.ts';
-      export { resolveOnlyPreviewMarkdownLink } from './src/main/onlypreview/onlyPreviewMarkdownLink.service.ts';
-      export { openOnlyPreviewAbsoluteTarget, onlyPreviewTargetMutations } from './src/main/onlypreview/onlyPreviewExplicitOpen.service.ts';
-      export { selectOnlyPreviewFile } from './src/main/onlypreview/onlyPreviewSelectFile.service.ts';
-      export { onlyPreviewHostRegistry } from './src/main/onlypreview/onlyPreviewHost.registry.ts';
-      export { onlyPreviewWorkspaceRegistry } from './src/main/onlypreview/onlyPreviewWorkspace.registry.ts';
-      export { onlyPreviewRecentsService } from './src/main/onlypreview/onlyPreviewRecents.runtime.ts';
-      export { onlyPreviewRecentDirectoryService } from './src/main/onlypreview/onlyPreviewRecentDirectory.service.ts';
+      export * from './src/main/miniapps/onlypreview/onlyPreviewRecentNavigation.service.ts';
+      export { resolveOnlyPreviewMarkdownLink } from './src/main/miniapps/onlypreview/onlyPreviewMarkdownLink.service.ts';
+      export { openOnlyPreviewAbsoluteTarget, onlyPreviewTargetMutations } from './src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts';
+      export { selectOnlyPreviewFile } from './src/main/miniapps/onlypreview/onlyPreviewSelectFile.service.ts';
+      export { onlyPreviewHostRegistry } from './src/main/miniapps/onlypreview/onlyPreviewHost.registry.ts';
+      export { onlyPreviewWorkspaceRegistry } from './src/main/miniapps/onlypreview/onlyPreviewWorkspace.registry.ts';
+      export { onlyPreviewRecentsService } from './src/main/miniapps/onlypreview/onlyPreviewRecents.runtime.ts';
+      export { onlyPreviewRecentDirectoryService } from './src/main/miniapps/onlypreview/onlyPreviewRecentDirectory.service.ts';
       export { OnlyPreviewContractError } from './src/shared/onlypreview/onlyPreview.contract.ts';
     `,
     resolveDir: root
@@ -664,4 +665,237 @@ test('a Recent selected in A cannot update B after its inspection completes', as
     release.resolve();
     await Promise.allSettled([opening, rejected]);
   }
+});
+
+test('quiet agent opens keep Project authority and persistence but emit no tree selection event, including repeats', async () => {
+  const { host, project, projectPath } = await reset();
+  await runtime.openOnlyPreviewAbsoluteTarget(`${projectPath}/anchor.md`);
+  env.events.length = 0;
+  const expected = { workspaceId: project.workspaceId, relativePath: 'docs/agent.md' };
+  for (let count = 0; count < 2; count += 1) {
+    await runtime.openOnlyPreviewAbsoluteTarget(`${projectPath}/docs/agent.md`, {
+      preserveTreeSelection: true
+    });
+    assert.deepEqual(env.presentation.fileRef, expected);
+    assert.deepEqual(
+      runtime.onlyPreviewWorkspaceRegistry.getProjectAuthorityItemRef(host.hostToken, expected)
+        .workspace.rootRealPath,
+      projectPath
+    );
+    const workspace = runtime.onlyPreviewWorkspaceRegistry.restore(host.hostToken);
+    assert.equal(workspace.workspaceId, project.workspaceId);
+    assert.equal(workspace.selectedRelativePath, 'docs/agent.md');
+    assert.deepEqual(names(await recents()), ['agent.md', 'anchor.md']);
+    assert.equal(
+      env.events.some(({ event }) => event === 'onlypreview/selectionChanged'),
+      false
+    );
+  }
+  assert.equal(env.calls.filter(({ method }) => method === 'bind-project').length, 0);
+  assert.deepEqual(env.calls.filter(({ method }) => method === 'present').at(-1).fileRef, expected);
+  assert.ok(
+    env.calls.some(
+      ({ method, relativePath }) => method === 'authorize' && relativePath === 'docs/agent.md'
+    )
+  );
+  assert.ok(
+    env.events.some(
+      ({ event, payload }) =>
+        event === 'onlypreview/recentsChanged' && payload.hostId === host.hostId
+    )
+  );
+  await runtime.onlyPreviewRecentDirectoryService.flushPendingWrites();
+  assert.deepEqual(
+    JSON.parse(env.rows.get(storageKey({ key: 'onlypreview_workspace', sub_key: 'last_file' }))),
+    {
+      version: 1,
+      directoryPath: projectPath,
+      relativePath: 'docs/agent.md'
+    }
+  );
+});
+
+test('quiet external and initially unbound files do not select, bind or index another Project', async () => {
+  for (const withProject of [true, false]) {
+    const { host, projectPath } = await reset(withProject);
+    if (withProject) await runtime.openOnlyPreviewAbsoluteTarget(`${projectPath}/anchor.md`);
+    const before = runtime.onlyPreviewWorkspaceRegistry.restore(host.hostToken);
+    env.events.length = 0;
+    await runtime.openOnlyPreviewAbsoluteTarget('/navigation-fixture/agent/quiet-external.md', {
+      preserveTreeSelection: true
+    });
+    assert.deepEqual(runtime.onlyPreviewWorkspaceRegistry.restore(host.hostToken), before);
+    assert.equal(
+      runtime.onlyPreviewWorkspaceRegistry.isExternalPreviewFileRef(
+        host.hostToken,
+        env.presentation.fileRef
+      ),
+      true
+    );
+    assert.throws(
+      () =>
+        runtime.onlyPreviewWorkspaceRegistry.getPreviewAuthorityItemRef(host.hostToken, {
+          ...env.presentation.fileRef,
+          relativePath: 'unauthorized-sibling.md'
+        }),
+      (error) => error.code === 'WORKSPACE_ACCESS_DENIED'
+    );
+    assert.equal(
+      env.events.some(({ event }) => event === 'onlypreview/selectionChanged'),
+      false
+    );
+    assert.equal(
+      env.calls.some(({ method }) => method === 'bind-project'),
+      false
+    );
+    assert.equal(
+      env.calls.filter(({ method }) => method === 'authorize').length,
+      withProject ? 1 : 0
+    );
+    const snapshot = await recents();
+    assert.equal(names(snapshot)[0], 'quiet-external.md');
+    assert.equal(snapshot.canLocate, false);
+    assert.equal(names(snapshot).includes('anchor.md'), withProject);
+    assert.ok(
+      env.events.some(
+        ({ event, payload }) =>
+          event === 'onlypreview/recentsChanged' && payload.hostId === host.hostId
+      )
+    );
+  }
+});
+
+test('a queued quiet open does not suppress the next ordinary explicit selection event', async () => {
+  const { host, projectPath } = await reset();
+  const entered = deferred();
+  const release = deferred();
+  env.inspectHook = async (path) => {
+    if (path.endsWith('/quiet.md')) {
+      entered.resolve();
+      await release.promise;
+    }
+  };
+  const quiet = runtime.openOnlyPreviewAbsoluteTarget(`${projectPath}/quiet.md`, {
+    preserveTreeSelection: true
+  });
+  await entered.promise;
+  const ordinary = runtime.openOnlyPreviewAbsoluteTarget(`${projectPath}/ordinary.md`);
+  try {
+    release.resolve();
+    await Promise.all([quiet, ordinary]);
+    assert.deepEqual(
+      env.calls
+        .filter(({ method }) => method === 'present')
+        .map(({ fileRef }) => fileRef.relativePath),
+      ['quiet.md', 'ordinary.md']
+    );
+    assert.deepEqual(
+      env.events.filter(({ event }) => event === 'onlypreview/selectionChanged'),
+      [{ event: 'onlypreview/selectionChanged', payload: { hostId: host.hostId } }]
+    );
+    assert.equal(
+      runtime.onlyPreviewWorkspaceRegistry.restore(host.hostToken).selectedRelativePath,
+      'ordinary.md'
+    );
+    assert.deepEqual(names(await recents()), ['ordinary.md', 'quiet.md']);
+  } finally {
+    release.resolve();
+    await Promise.allSettled([quiet, ordinary]);
+  }
+});
+
+test('quiet options do not change explicit directory switching or its workspace notification', async () => {
+  const { host, project, projectPath } = await reset();
+  const target = `${projectPath}-directory`;
+  env.directories.add(target);
+  const clearWorkspace = env.preview.clearWorkspace;
+  env.preview.clearWorkspace = (token, workspaceId) => {
+    requireHost(token);
+    env.calls.push({ method: 'clear-workspace', workspaceId });
+  };
+  try {
+    await runtime.openOnlyPreviewAbsoluteTarget(target, { preserveTreeSelection: true });
+    const workspace = runtime.onlyPreviewWorkspaceRegistry.restore(host.hostToken);
+    assert.notEqual(workspace.workspaceId, project.workspaceId);
+    assert.equal(workspace.displayPath, target);
+    assert.ok(
+      env.calls.some(
+        ({ method, workspaceId }) =>
+          method === 'bind-project' && workspaceId === workspace.workspaceId
+      )
+    );
+    assert.ok(
+      env.calls.some(
+        ({ method, workspaceId }) =>
+          method === 'clear-workspace' && workspaceId === workspace.workspaceId
+      )
+    );
+    assert.deepEqual(
+      env.events.filter(({ event }) => event === 'onlypreview/workspaceChanged'),
+      [{ event: 'onlypreview/workspaceChanged', payload: { hostId: host.hostId } }]
+    );
+    assert.equal(
+      env.calls.some(({ method }) => method === 'present'),
+      false
+    );
+    assert.deepEqual((await recents()).entries, []);
+  } finally {
+    env.preview.clearWorkspace = clearWorkspace;
+  }
+});
+
+test('a quiet agent request inspected under A cannot update B after a Project switch', async () => {
+  const { host, projectPath } = await reset();
+  await runtime.openOnlyPreviewAbsoluteTarget(`${projectPath}/anchor.md`);
+  env.events.length = 0;
+  const entered = deferred();
+  const release = deferred();
+  env.inspectHook = async () => {
+    entered.resolve();
+    await release.promise;
+  };
+  const presentations = env.calls.filter(({ method }) => method === 'present').length;
+  const writes = recentWrites().length;
+  const opening = runtime.openOnlyPreviewAbsoluteTarget('/navigation-fixture/agent/stale.md', {
+    preserveTreeSelection: true
+  });
+  const rejected = assert.rejects(opening, invalid);
+  try {
+    await entered.promise;
+    const replacement = replaceActiveProject(`${projectPath}-replacement`);
+    release.resolve();
+    await rejected;
+    assert.equal(
+      runtime.onlyPreviewWorkspaceRegistry.restore(host.hostToken).workspaceId,
+      replacement.workspaceId
+    );
+    assert.equal(env.presentation.fileRef, null);
+    assert.equal(env.calls.filter(({ method }) => method === 'present').length, presentations);
+    assert.equal(recentWrites().length, writes);
+    assert.deepEqual((await recents()).entries, []);
+    assert.equal(
+      env.events.some(({ event }) => event === 'onlypreview/selectionChanged'),
+      false
+    );
+  } finally {
+    release.resolve();
+    await Promise.allSettled([opening, rejected]);
+  }
+});
+
+test('MCP and OS file opening preserve tree selection without changing the public path-only schema', () => {
+  const main = readFileSync(resolve(root, 'src/main/app.main.ts'), 'utf8');
+  assert.match(main, /new OnlyPreviewOpenQueue\(\(target\) =>\s*openOnlyPreviewAbsoluteTarget\(target, \{ preserveTreeSelection: true \}\)/);
+  assert.match(
+    main,
+    /configurePreviewOpener\(\s*\(?\w+\)?\s*=>\s*openOnlyPreviewAbsoluteTarget\(\w+,\s*\{\s*preserveTreeSelection:\s*true\s*\}\)/
+  );
+  const bridge = readFileSync(resolve(root, 'src/main/mcp/mcpBridge.server.ts'), 'utf8');
+  assert.match(bridge, /assertOnlyKeys\(params,\s*\['path'\],\s*'preview\.open'\)/);
+  assert.match(bridge, /await this\.previewOpener\(target\)/);
+  assert.doesNotMatch(bridge, /preserveTreeSelection/);
+  assert.doesNotMatch(
+    readFileSync(resolve(root, 'src/main/mcp/mcpStdio.helper.ts'), 'utf8'),
+    /preserveTreeSelection/
+  );
 });

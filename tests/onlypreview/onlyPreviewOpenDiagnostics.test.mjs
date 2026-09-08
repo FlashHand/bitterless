@@ -225,7 +225,7 @@ test('Shell mount acknowledgement is post-Vue, capability fenced, and never awai
   const handler = readFileSync('src/main/xpc/onlyPreview.handler.ts', 'utf8');
   const helper = readFileSync('src/main/windows/onlyPreviewWindow.helper.ts', 'utf8');
   const rendererTarget = readFileSync(
-    'src/main/onlypreview/views/onlyPreviewRendererTarget.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewRendererTarget.service.ts',
     'utf8'
   );
   assert.match(

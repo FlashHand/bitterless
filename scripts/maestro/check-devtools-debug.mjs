@@ -9,8 +9,8 @@ const browserViewSource = readFileSync(join(root, 'main/maestro/windows/main/mae
 const controlViewSource = readFileSync(join(root, 'main/maestro/windows/main/maestroControlView.service.ts'), 'utf8')
 const workbenchViewSource = readFileSync(join(root, 'main/maestro/windows/main/maestroWorkbenchView.service.ts'), 'utf8')
 const windowHelperSource = readFileSync(join(root, 'main/maestro/windows/window.helper.ts'), 'utf8')
-const agentServiceSource = readFileSync(join(root, 'main/maestro/agent/maestroAgent.service.ts'), 'utf8')
-const agentBroadcastSource = readFileSync(join(root, 'main/maestro/agent/runtime/agentBroadcast.ts'), 'utf8')
+const agentServiceSource = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
+const agentBroadcastSource = readFileSync(join(root, 'main/agent/runtime/agentBroadcast.ts'), 'utf8')
 const skillServiceSource = readFileSync(join(root, 'main/maestro/skills/skill.service.ts'), 'utf8')
 const controlApp = readFileSync(join(root, 'renderer/maestro/control/src/ControlApp.vue'), 'utf8')
 const coachApi = readFileSync(join(root, 'shared/maestro/coach.api.ts'), 'utf8')
@@ -67,8 +67,10 @@ assert(
   /view\.webContents\.openDevTools\(\{\s*mode: 'detach',\s*activate: false\s*\}\)/.test(workbenchViewSource),
   'workbench devtools should open detached without stealing focus'
 )
+// 别把边界锚在邻居方法名上 —— 原来锚的 `getVisible` 已被重构成 `getState`(open/visible 双态),
+// 守卫就跟着失效了。改成"到第一个方法级收尾 + 下一个成员"为止,重命名邻居不会再让它变哑。
 const workbenchCreateMatch = workbenchViewSource.match(
-  /create\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  getVisible/
+  /create\(\): Promise<void> \{([\s\S]*?)\n  \}\n\n  [A-Za-z]/
 )
 assert(workbenchCreateMatch, 'workbench service should keep a bounded create flow')
 assert(

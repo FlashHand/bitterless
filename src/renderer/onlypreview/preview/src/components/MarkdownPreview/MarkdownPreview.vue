@@ -8,7 +8,12 @@
     >
       {{ linkError }}
     </div>
-    <!-- eslint-disable vue/no-v-html -- only generated link/anchor metadata survives sanitization. -->
+    <!-- eslint-disable vue/no-v-html -- 两类内容进这里,都不是文档给的原始标记:
+         ① 过完 DOMPurify 的文档内容,只有我们生成的 link/anchor 元数据能活下来;
+         ② sanitize **之后**替换进去的 shiki 代码块 —— 外层标记由我们提供,代码文本由 shiki
+            转义。之所以在之后替换:shiki 靠 inline style 上色,而白名单里没有 style/class,
+            在之前替换会被剥成无色。见 onlyPreviewMarkdown.service 的
+            highlightOnlyPreviewMarkdownCode。 -->
     <article
       v-if="renderResult.ok"
       ref="documentRef"
@@ -16,7 +21,7 @@
       class="onlypreview-markdown__document"
       @click="handleLink"
       @keydown="handleLinkKeydown"
-      v-html="renderResult.html"
+      v-html="documentHtml"
     ></article>
     <div v-else name="onlypreview__markdownError" class="onlypreview-markdown__error" role="alert">
       {{ markdownError }}
@@ -33,7 +38,10 @@ import { onlyPreviewI18n } from '../../../../common/onlyPreviewI18n';
 import { onlyPreviewClient } from '../../../../common/onlyPreviewClient';
 import { onlyPreviewEnv } from '../../../../common/contextBridge/onlyPreviewEnv.bridge';
 import { countOnlyPreviewDomSelection } from '../../onlyPreviewCharacterCount.service';
-import { renderOnlyPreviewMarkdown } from '../../onlyPreviewMarkdown.service';
+import {
+  highlightOnlyPreviewMarkdownCode,
+  renderOnlyPreviewMarkdown
+} from '../../onlyPreviewMarkdown.service';
 import {
   findOnlyPreviewMarkdownLink,
   scrollOnlyPreviewMarkdownAnchor
@@ -51,6 +59,37 @@ let linkGeneration = 0;
 
 const renderResult = computed(() =>
   renderOnlyPreviewMarkdown(props.content.text, props.content.size, window, true)
+);
+
+/**
+ * 先渲染,再上色 —— 与 Monaco 那一面**刻意相反**。
+ *
+ * `MonacoTextPreview` 等语法就位再建 model,因为那里屏幕上**全部**是代码,先无色后上色
+ * 是整屏跳变。markdown 反过来:正文是主体,代码块是其中一部分,让整篇文档等一个语法加载
+ * 才显示是更差的取舍。所以这里立刻显示 `result.html`(占位符本身就是可用的纯代码块),
+ * 颜色随后到达,只有代码块那几块会变。
+ *
+ * 代次围栏:切文件会连续触发,而上色是异步的 —— 没有它,后到的那次可能被先发的那次覆盖。
+ */
+const documentHtml = ref('');
+let highlightGeneration = 0;
+
+watch(
+  renderResult,
+  (result) => {
+    const generation = ++highlightGeneration;
+    if (!result.ok) {
+      documentHtml.value = '';
+      return;
+    }
+    documentHtml.value = result.html;
+    if (result.codeBlocks.length === 0) return;
+    void highlightOnlyPreviewMarkdownCode(result.html, result.codeBlocks).then((decorated) => {
+      if (generation !== highlightGeneration) return;
+      documentHtml.value = decorated;
+    });
+  },
+  { immediate: true }
 );
 
 const handleLink = async (event: MouseEvent | KeyboardEvent): Promise<void> => {

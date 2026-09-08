@@ -26,30 +26,32 @@ import { OnlyPreviewContractError } from '@shared/onlypreview/onlyPreview.contra
 import {
   onlyPreviewHostRegistry,
   type OnlyPreviewHostCapability
-} from '@main/onlypreview/onlyPreviewHost.registry';
-import { resolveOnlyPreviewSettingsBounds } from '@main/onlypreview/onlyPreviewWindowBounds.service';
-import { clampOnlyPreviewSurfaceLayout } from '@main/onlypreview/onlyPreviewSurfaceLayout';
+} from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
+import { resolveOnlyPreviewSettingsBounds } from '@main/miniapps/onlypreview/onlyPreviewWindowBounds.service';
+import { clampOnlyPreviewSurfaceLayout } from '@main/miniapps/onlypreview/onlyPreviewSurfaceLayout';
 import { OnlyPreviewStandaloneMount } from '@main/windows/onlyPreviewStandaloneMount';
 import type {
   OnlyPreviewMount,
   OnlyPreviewMountKind
-} from '@main/onlypreview/onlyPreviewSurface.mount';
-import { onlyPreviewSearchBootstrapRegistry } from '@main/onlypreview/onlyPreviewSearchBootstrap.registry';
-import { onlyPreviewProjectIndexStateService } from '@main/onlypreview/onlyPreviewProjectIndexState.service';
-import { onlyPreviewViewLayerService } from '@main/onlypreview/views/onlyPreviewViewLayer.service';
+} from '@main/miniapps/onlypreview/onlyPreviewSurface.mount';
+import { onlyPreviewSearchBootstrapRegistry } from '@main/miniapps/onlypreview/onlyPreviewSearchBootstrap.registry';
+import { onlyPreviewProjectIndexStateService } from '@main/miniapps/onlypreview/onlyPreviewProjectIndexState.service';
+import { onlyPreviewViewLayerService } from '@main/miniapps/onlypreview/views/onlyPreviewViewLayer.service';
 import { fileSearchWindowService } from '@main/fileSearch/fileSearchWindow.service';
-import { onlyPreviewPreviewRegionService } from '@main/onlypreview/views/onlyPreviewPreviewRegion.service';
-import { onlyPreviewGlobalSearchFocusService } from '@main/onlypreview/onlyPreviewGlobalSearchFocus.service';
-import { onlyPreviewAlertWindowService } from '@main/onlypreview/views/onlyPreviewAlertWindow.service';
-import { onlyPreviewGlobalSearchWindowService } from '@main/onlypreview/views/onlyPreviewGlobalSearchWindow.service';
+import { onlyPreviewPreviewRegionService } from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
+import { onlyPreviewGlobalSearchFocusService } from '@main/miniapps/onlypreview/onlyPreviewGlobalSearchFocus.service';
+import { onlyPreviewAlertWindowService } from '@main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service';
+import { onlyPreviewGlobalSearchWindowService } from '@main/miniapps/onlypreview/views/onlyPreviewGlobalSearchWindow.service';
 import {
   configureOnlyPreviewNavigationFence,
   getOnlyPreviewRendererArguments,
   getOnlyPreviewRendererTarget
-} from '@main/onlypreview/views/onlyPreviewRendererTarget.service';
+} from '@main/miniapps/onlypreview/views/onlyPreviewRendererTarget.service';
 import {
+  ONLY_PREVIEW_BROWSE_LISTING_EVENT,
   ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT,
   ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT,
+  type OnlyPreviewBrowseListingEvent,
   type OnlyPreviewSearchSnapshotEvent,
   type OnlyPreviewSearchWatchCommitEvent
 } from '@shared/onlypreview/onlyPreviewSearch.type';
@@ -63,7 +65,7 @@ import {
   createOnlyPreviewWindowOpenCoordinator,
   type OnlyPreviewOpenTrace
 } from '@shared/onlypreview/onlyPreviewOpenDiagnostics.mjs';
-import { onlyPreviewOpenDiagnostics } from '@main/onlypreview/onlyPreviewOpenDiagnostics.runtime';
+import { onlyPreviewOpenDiagnostics } from '@main/miniapps/onlypreview/onlyPreviewOpenDiagnostics.runtime';
 
 const DEFAULT_WIDTH = 1180;
 const DEFAULT_HEIGHT = 760;
@@ -77,6 +79,7 @@ type OnlyPreviewNativeCommand =
   | 'refresh'
   | 'focus-project'
   | 'focus-search'
+  | 'close-global-search'
   | 'find-in-file'
   | 'close-find-in-file'
   | 'copy-project-path'
@@ -85,6 +88,13 @@ type OnlyPreviewNativeCommand =
 interface OnlyPreviewNativeCommandPayload {
   hostToken: string;
   command: OnlyPreviewNativeCommand;
+}
+
+interface OnlyPreviewSurfaceOpening {
+  hostToken: string;
+  ready: Promise<void>;
+  reject(error: unknown): void;
+  releaseHostListener?: () => void;
 }
 
 const closeView = (view: WebContentsView | null): void => {
@@ -235,6 +245,7 @@ export class OnlyPreviewWindowHelper {
   settingsWindow: BrowserWindow | null = null;
   agentSkillGuideWindow: BrowserWindow | null = null;
   private standaloneHost: OnlyPreviewHostCapability | null = null;
+  private surfaceOpening: OnlyPreviewSurfaceOpening | null = null;
   private settingsHost: OnlyPreviewHostCapability | null = null;
   private agentSkillGuideHost: OnlyPreviewHostCapability | null = null;
   private searchBootstrapToken: string | null = null;
@@ -335,6 +346,10 @@ export class OnlyPreviewWindowHelper {
         onlyPreviewPreviewRegionService.focusActiveContent(host.hostToken);
         return;
       }
+      if (command === 'close-global-search') {
+        onlyPreviewGlobalSearchWindowService.close(host.hostToken);
+        return;
+      }
       if (command === 'focus-search') {
         onlyPreviewPreviewRegionService.closeFind(host.hostToken);
         onlyPreviewGlobalSearchWindowService.open(host, origin, opener);
@@ -414,6 +429,11 @@ export class OnlyPreviewWindowHelper {
   }
 
   async ensureStandalone(route: 'api' | 'explicit' = 'api'): Promise<OnlyPreviewHostCapability> {
+    if (this.surfaceOpening) {
+      const opening = this.surfaceOpening;
+      await opening.ready;
+      this.requireReadySurface(opening.hostToken);
+    }
     const currentWindow = this.baseWindow;
     const currentHost = this.getStandaloneHost();
     const mode = currentWindow && !currentWindow.isDestroyed() && currentHost ? 'existing' : 'cold';
@@ -433,8 +453,12 @@ export class OnlyPreviewWindowHelper {
       phase: 'start',
       elapsedMs: 0
     });
+    const opening = this.startSurfaceOpening(host, () =>
+      this.createStandaloneWindow(host, diagnostic, openTrace)
+    );
     try {
-      await this.createStandaloneWindow(host, diagnostic, openTrace);
+      await opening.ready;
+      this.requireReadySurface(host.hostToken);
       this.diagnostics.emit('visible-window-terminal', {
         tag: diagnostic.tag,
         outcome: 'success',
@@ -448,8 +472,11 @@ export class OnlyPreviewWindowHelper {
         elapsedMs: this.diagnostics.elapsed(diagnostic.startedAt)
       });
       this.finishShellOpenTrace(openTrace.tag, 'failure', 'fail');
-      this.destroyStandalone();
+      if (this.standaloneHost?.hostToken === host.hostToken) this.destroyStandalone();
       throw error;
+    } finally {
+      opening.releaseHostListener?.();
+      if (this.surfaceOpening === opening) this.surfaceOpening = null;
     }
   }
 
@@ -465,6 +492,11 @@ export class OnlyPreviewWindowHelper {
     mount: OnlyPreviewMount,
     route: 'api' | 'explicit' = 'api'
   ): Promise<OnlyPreviewHostCapability> {
+    if (this.surfaceOpening) {
+      const opening = this.surfaceOpening;
+      await opening.ready;
+      this.requireReadySurface(opening.hostToken);
+    }
     const current = this.getStandaloneHost();
     if (current && this.standaloneMount?.isAlive()) {
       this.show();
@@ -476,8 +508,12 @@ export class OnlyPreviewWindowHelper {
     this.standaloneHost = host;
     const diagnostic = { tag: this.diagnostics.nextTag('v'), startedAt: this.diagnostics.now() };
     this.diagnostics.emit('visible-window', { tag: diagnostic.tag, phase: 'start', elapsedMs: 0 });
+    const opening = this.startSurfaceOpening(host, () =>
+      this.attachSurface(host, mount, diagnostic, openTrace)
+    );
     try {
-      await this.attachSurface(host, mount, diagnostic, openTrace);
+      await opening.ready;
+      this.requireReadySurface(host.hostToken);
       this.diagnostics.emit('visible-window-terminal', {
         tag: diagnostic.tag,
         outcome: 'success',
@@ -491,8 +527,42 @@ export class OnlyPreviewWindowHelper {
         elapsedMs: this.diagnostics.elapsed(diagnostic.startedAt)
       });
       this.finishShellOpenTrace(openTrace.tag, 'failure', 'fail');
-      this.destroyStandalone();
+      if (this.standaloneHost?.hostToken === host.hostToken) this.destroyStandalone();
       throw error;
+    } finally {
+      opening.releaseHostListener?.();
+      if (this.surfaceOpening === opening) this.surfaceOpening = null;
+    }
+  }
+
+  private startSurfaceOpening(
+    host: OnlyPreviewHostCapability,
+    create: () => Promise<void>
+  ): OnlyPreviewSurfaceOpening {
+    let resolveReady!: () => void;
+    let rejectReady!: (error: unknown) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    const opening = { hostToken: host.hostToken, ready, reject: rejectReady };
+    this.surfaceOpening = opening;
+    // Publish the pending readiness before creation publishes a partially usable host/window.
+    void Promise.resolve().then(() => {
+      if (this.surfaceOpening !== opening || this.getStandaloneHost()?.hostToken !== host.hostToken) {
+        throw new OnlyPreviewContractError('HOST_NOT_FOUND', 'OnlyPreview host closed before it was ready.');
+      }
+      return create();
+    }).then(resolveReady, rejectReady);
+    return opening;
+  }
+
+  private requireReadySurface(hostToken: string): void {
+    if (
+      this.getStandaloneHost()?.hostToken !== hostToken ||
+      !this.baseWindow || this.baseWindow.isDestroyed() || !this.standaloneMount?.isAlive()
+    ) {
+      throw new OnlyPreviewContractError('HOST_NOT_FOUND', 'OnlyPreview host closed before it was ready.');
     }
   }
 
@@ -793,6 +863,10 @@ export class OnlyPreviewWindowHelper {
   }
 
   destroyStandalone(): void {
+    const opening = this.surfaceOpening;
+    this.surfaceOpening = null;
+    opening?.releaseHostListener?.();
+    opening?.reject(new OnlyPreviewContractError('HOST_NOT_FOUND', 'OnlyPreview host closed before it was ready.'));
     this.destroySettings();
     this.destroyAgentSkillGuide();
     const window = this.baseWindow;
@@ -951,6 +1025,12 @@ export class OnlyPreviewWindowHelper {
     if (!window) throw new Error('OnlyPreview mount has no window to build into.');
     this.baseWindow = window;
     this.standaloneMount = mount;
+    const opening = this.surfaceOpening;
+    if (opening?.hostToken === host.hostToken) {
+      opening.releaseHostListener = mount.onHostGone(() => {
+        if (this.surfaceOpening === opening) this.destroyStandalone();
+      });
+    }
     const searchBootstrap = onlyPreviewSearchBootstrapRegistry.issue(host.hostToken);
     this.searchBootstrapToken = searchBootstrap.searchToken;
     // Adopt the live runtime when a transition preserved it — its index build keeps going.
@@ -961,6 +1041,14 @@ export class OnlyPreviewWindowHelper {
       host,
       bootstrapToken: searchBootstrap.searchToken,
       broadcast: (eventName, params) => {
+        // The relay already validated the listing and fenced its workspace/generation. Root
+        // availability is independent of index completion; an empty successful listing counts.
+        if (eventName === ONLY_PREVIEW_BROWSE_LISTING_EVENT) {
+          const event = params as OnlyPreviewBrowseListingEvent;
+          if (event.hostId === host.hostId && event.listing.relativePath === '') {
+            onlyPreviewProjectIndexStateService.markBrowseReady(host.hostId, event.listing.workspaceId);
+          }
+        }
         if (eventName === ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT) {
           const event = params as OnlyPreviewSearchWatchCommitEvent;
           if (event.hostId === host.hostId) {
@@ -985,6 +1073,7 @@ export class OnlyPreviewWindowHelper {
         xpcMain.broadcast(eventName, params);
       },
       onUnexpectedExit: (reason) => {
+        if (this.baseWindow !== window || this.standaloneHost?.hostToken !== host.hostToken) return;
         console.warn(`[OnlyPreview] ${reason} Closing the standalone window.`);
         this.destroyStandalone();
       },
@@ -1334,10 +1423,14 @@ export class OnlyPreviewWindowHelper {
       !input.alt &&
       !input.control &&
       !input.meta &&
-      this.standaloneHost?.hostToken === host.hostToken &&
-      onlyPreviewPreviewRegionService.isFindOpen(host.hostToken)
+      this.standaloneHost?.hostToken === host.hostToken
     ) {
-      return 'close-find-in-file';
+      if (onlyPreviewAlertWindowService.isOpen(host.hostToken)) return null;
+      // Native routing also covers body/iframe focus, outside the search panel's DOM handler.
+      if (onlyPreviewGlobalSearchWindowService.isActive(host.hostToken)) {
+        return 'close-global-search';
+      }
+      if (onlyPreviewPreviewRegionService.isFindOpen(host.hostToken)) return 'close-find-in-file';
     }
     if (input.type === 'keyDown' && key === 'f5') return 'refresh';
     if (input.type !== 'keyDown' || !isCommandModifier(input)) return null;

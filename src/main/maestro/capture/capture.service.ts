@@ -31,7 +31,7 @@ import {
   type PersistedCaptureRecordOptions,
   normalizePersistedCaptureRecordOptions
 } from './captureRecordSource'
-import type { PiToolSpec } from '@maestro-main/agent/BaseAgent'
+import type { PiToolSpec } from '@main/agent/BaseAgent'
 import type { OperationTab } from '@maestro-main/windows/main/maestroBrowserView.service'
 import type {
   AgentActivityStep,

@@ -41,7 +41,7 @@ import { CodexAppServerSupervisor } from '../eyesOnAgents/codexAppServer.supervi
 import { EyesOnAgentsService } from '../eyesOnAgents/eyesOnAgents.service';
 import { LastUserPromptPreferenceService } from '../eyesOnAgents/lastUserPromptPreference.service';
 import { notifyHelper } from '../notificationcenter/notify.helper';
-import { openRegisteredOnlyPreviewExplicitTarget } from '../onlypreview/onlyPreviewExplicitTarget.registry';
+import { openRegisteredOnlyPreviewExplicitTarget } from '../miniapps/onlypreview/onlyPreviewExplicitTarget.registry';
 import {
   resolveAutomaticClaudeConfigDirectory,
   resolveClaudeDirectory

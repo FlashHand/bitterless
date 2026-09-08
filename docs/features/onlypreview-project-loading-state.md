@@ -1,6 +1,36 @@
-# The Preview Pane Says "Loading project" While the Index Builds
+# The Preview Pane Says "Loading project" Until the Project Listing Is Available
 
 Status: implemented; owner verification pending
+
+## Current contract — 2026-09-08
+
+Ral clarified that directory browsing and indexing are independent. When the root listing has
+loaded, including a successfully loaded empty directory, an unselected preview says **Select a
+file**. Only a Project whose root listing has not loaded shows **Loading project**. Background
+indexing continues to use the existing bottom-left progress rail; it must not occupy the preview.
+
+```text
+Project root listing pending    | Loading project
+Project root listing available  | Select a file       (index rail may still be busy)
+File selected                  | Existing file preview
+```
+
+Readiness belongs to the bound workspace and survives later index reconciliation; rebinding a
+different workspace resets it. Late reports from an old host/workspace cannot ready the new one.
+Deliver the state through the pullable presentation, so a lazy preview renderer does not depend on
+having received an earlier broadcast. Root-listing failure must terminate the placeholder and
+retain a meaningful Project error. This supersedes the index-ready condition described below and
+in tasks119/125, without changing the search engine's actual state or index-reuse policy.
+
+Main keeps a separate `projectBrowseState` (`pending` / `ready` / `failed`) alongside the existing
+index state. Bind starts `pending`; the authenticated current root `browse-listing` event sets
+`ready`, even when its entries are empty. The existing initialization failure report terminates
+only a pending listing. Preview presentations pull that state; background index snapshots do not
+overwrite it. No second traversal, timer or renderer polling is introduced.
+
+Delivery: [onlypreview-project-browse-ready-152](../plan/tasks/onlypreview-project-browse-ready-152.md).
+
+## Historical implementation — index readiness (superseded for the placeholder)
 
 Owner request, 2026-09-03: 「再目录列表完成加载前，这个组件显示为 loading project 吧 做个好看的 loading 动画就行」 —
 before the Project listing finishes loading, the empty preview pane should say it is loading the

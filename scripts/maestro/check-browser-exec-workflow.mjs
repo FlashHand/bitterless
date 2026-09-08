@@ -8,8 +8,8 @@ const replayEngine = readFileSync(join(root, 'main/maestro/drive/replayEngine.ts
 const maestro = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
 const requestExec = readFileSync(join(root, 'main/maestro/drive/requestExec.service.ts'), 'utf8')
 const requestHelper = readFileSync(join(root, 'main/maestro/drive/requestExec.helper.ts'), 'utf8')
-const skillPrompt = readFileSync(join(root, 'main/maestro/agent/prompt/skillExecution.ts'), 'utf8')
-const catalog = readFileSync(join(root, 'main/maestro/agent/hostToolCatalog.ts'), 'utf8')
+const skillPrompt = readFileSync(join(root, 'main/agent/prompt/skillExecution.ts'), 'utf8')
+const catalog = readFileSync(join(root, 'main/agent/hostToolCatalog.ts'), 'utf8')
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message)

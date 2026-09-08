@@ -30,7 +30,7 @@ await build({
   entryPoints: {
     service: join(
       projectRoot,
-      'src/main/onlypreview/onlyPreviewAgentSkill.service.ts'
+      'src/main/miniapps/onlypreview/onlyPreviewAgentSkill.service.ts'
     ),
     version: join(
       projectRoot,

@@ -7,9 +7,7 @@ import test from 'node:test'
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const source = (relativePath) => readFileSync(join(projectRoot, relativePath), 'utf8')
 
-const menuSource = source(
-  'src/renderer/maestro/localHome/src/components/LocalHomeMenu.vue'
-)
+const localHomeSource = source('src/renderer/maestro/localHome/src/LocalHomeApp.vue')
 const localHomeStyleSource = source('src/renderer/maestro/localHome/src/localHome.less')
 const localHomeRouterSource = source('src/renderer/maestro/localHome/src/localHome.router.ts')
 const menuBarSource = source(
@@ -27,13 +25,11 @@ const bitterlessAssetPath = join(
 )
 const generatedIconPath = join(projectRoot, 'doc/app_icons/icon64.png')
 
-test('fixed local Home rail hides only the Settings footer action', () => {
-  assert.doesNotMatch(menuSource, /maestro-local-home-menu__footer/)
-  assert.doesNotMatch(menuSource, /maestro-local-home-menu__setting/)
-  assert.doesNotMatch(menuSource, /navigate\('setting'\)/)
-  assert.doesNotMatch(localHomeStyleSource, /maestro-local-home-menu__footer/)
-  assert.match(menuSource, /navigate\('mini-app'\)/)
-  assert.match(menuSource, /openConnectors/)
+test('fixed local Home has no left navigation rail and retains its routed content', () => {
+  assert.doesNotMatch(localHomeSource, /LocalHomeMenu|a-layout-sider|maestro-local-home__rail/)
+  assert.doesNotMatch(localHomeStyleSource, /maestro-local-home-menu|maestro-local-home__rail/)
+  assert.match(localHomeSource, /<RouterView/)
+  assert.match(localHomeSource, /maestro-local-home__content/)
 })
 
 test('dedicated local Settings route remains registered', () => {

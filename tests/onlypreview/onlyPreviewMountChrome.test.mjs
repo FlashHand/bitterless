@@ -22,7 +22,7 @@ writeFileSync(electronStub, 'export const shell = { openExternal: () => undefine
 writeFileSync(toolkitStub, 'export const is = { dev: false };\n');
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/views/onlyPreviewRendererTarget.service.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/views/onlyPreviewRendererTarget.service.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',

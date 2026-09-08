@@ -20,9 +20,9 @@ Ral 真实 Office 文件验证 ·
 开题 2026-08-18 · Ral 于 2026-08-20 指定本文
 已定内容为持续交付目标 · 未定且非阻塞的结论仍以 [#pending-questions](#pending-questions--待定项) 为准。**
 
-核对日期 2026-08-20，依据实码：`src/main/onlypreview/onlyPreviewClassifier.service.ts`、
-`src/main/onlypreview/onlyPreviewProtocol.service.ts`、
-`src/main/onlypreview/onlyPreviewAsset.registry.ts`、
+核对日期 2026-08-20，依据实码：`src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts`、
+`src/main/miniapps/onlypreview/onlyPreviewProtocol.service.ts`、
+`src/main/miniapps/onlypreview/onlyPreviewAsset.registry.ts`、
 `src/renderer/onlypreview/preview/src/components/`、`package.json`；外部依据：Electron Process Model /
 Performance、历史 `docx-preview` / ExcelJS 与当前 `@silurus/ooxml` 官方文档，见 [#1](#1--读取与解析执行边界-已定-2026-08-20-已通过独立复核等待-ral-真实-docx-验证)、
 [#2](#2--xlsx--xlsm-已定-2026-08-20-已通过独立复核等待-ral-手测)、

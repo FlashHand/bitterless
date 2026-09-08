@@ -8,8 +8,8 @@ const projectRoot = resolve(dirname(new URL(import.meta.url).pathname), '..', '.
 const source = (relativePath) => readFileSync(join(projectRoot, relativePath), 'utf8');
 
 const TYPES = 'src/shared/onlypreview/onlyPreview.types.ts';
-const NATIVE_ACTION = 'src/main/onlypreview/onlyPreviewProjectNativeAction.service.ts';
-const NEW_FOLDER = 'src/main/onlypreview/onlyPreviewNewFolderDialog.service.ts';
+const NATIVE_ACTION = 'src/main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service.ts';
+const NEW_FOLDER = 'src/main/miniapps/onlypreview/onlyPreviewNewFolderDialog.service.ts';
 const AUTHORING = 'src/renderer/onlypreview/shell/src/onlyPreviewProjectAuthoring.store.ts';
 
 // New Folder and Rename hand their result back through a broadcast, because the native menu and the

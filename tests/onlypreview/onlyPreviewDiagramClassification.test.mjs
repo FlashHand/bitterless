@@ -12,7 +12,7 @@ const buildRoot = mkdtempSync(join(tmpdir(), 'onlypreview-diagram-classification
 const bundlePath = join(buildRoot, 'classifier.mjs');
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/onlyPreviewClassifier.service.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',

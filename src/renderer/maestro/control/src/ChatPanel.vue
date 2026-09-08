@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { IconFolder, IconFolderOpen, IconFolderSearch, IconListDetails, IconLoader2, IconMicrophone, IconPaperclip, IconPlayerPause, IconPlayerStop, IconPlus, IconSend2, IconX } from '@tabler/icons-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { IconArrowRight, IconFolderOpen, IconFolderSearch, IconListDetails, IconLoader2, IconMicrophone, IconPaperclip, IconPlayerPause, IconPlayerStop, IconPlus, IconSend2, IconX } from '@tabler/icons-vue'
 import AttachmentCard from './AttachmentCard.vue'
 import { Button, Drawer, Message, Modal, Tooltip } from '@arco-design/web-vue'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
@@ -9,6 +9,8 @@ import type { CoachXpcContract } from '@maestro-shared/coach.api'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
 import IconBtn from '../../../common/components/IconBtn/IconBtn.vue'
 import MessageList from './MessageList.vue'
+import SlashMenu from './SlashMenu.vue'
+import { ShortcutStore, slashTokenAt } from './store/shortcut.store'
 import { channelStore } from './store/channel.store'
 import { messageStore } from './store/message.store'
 import type { ChatAttachment, MessageSession } from './store/message.type'
@@ -27,8 +29,25 @@ const input = ref('')
 const selectedFiles = ref<ChatAttachment[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerRef = ref<HTMLTextAreaElement | null>(null)
+const composerCaret = ref(0)
+const shortcutStore = reactive(new ShortcutStore([
+  { name: '/clear', get hint() { return i18nHelper.maestroControl.chat.slashClear } },
+  { name: '/view_context', get hint() { return i18nHelper.maestroControl.chat.slashViewContext } }
+]))
+const slashToken = computed(() => slashTokenAt(input.value, composerCaret.value))
+const slashVisible = computed(() => shortcutStore.open && shortcutStore.matches.length > 0)
+let draftRevision = 0
+let composerDisposed = false
+let newChatPending = false
+watch(input, () => { draftRevision += 1 }, { flush: 'sync' })
+watch([input, composerCaret], () => shortcutStore.update(slashToken.value), { flush: 'post' })
+watch(() => props.session.id, () => { draftRevision += 1; shortcutStore.close() }, { flush: 'sync' })
+onBeforeUnmount(() => { composerDisposed = true; shortcutStore.close() })
 const historyVisible = ref(false)
 const historyContainer = ref<HTMLElement | null>(null)
+const historyList = ref<HTMLElement | null>(null)
+const historyCursor = ref(0)
+const shortcut = (key: string): string => `${navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+'}${key}`
 const voiceRecording = ref(false)
 const voiceBusy = ref(false)
 
@@ -47,11 +66,6 @@ const voiceRecordingElapsedMs = ref(0)
 let voiceRecordingTimer: ReturnType<typeof setInterval> | undefined
 const turnLocked = computed(() => Boolean(messageStore.turnService.activeTurn()))
 
-const contextPercent = computed(() => Math.min(100, Math.max(0, props.session.contextUsage.percent)))
-const contextMeterColor = computed(() => (props.session.contextUsage.compressionTriggered ? '#f59e0b' : '#4e5882'))
-const contextMeterStyle = computed(() => ({
-  background: `conic-gradient(${contextMeterColor.value} ${contextPercent.value}%, #e2e4eb 0)`
-}))
 const workspace = computed(() => props.session.detail.workspace)
 const workspaceLabel = computed(() => workspace.value?.name || 'Workspace')
 const workspaceTitle = computed(() => workspace.value?.path || 'Set workspace')
@@ -60,24 +74,6 @@ const voiceRecordingLabel = computed(() => {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-})
-
-const formatCompactTokens = (tokens: number): string => {
-  const n = Math.max(0, Math.round(tokens || 0))
-  if (n >= 1024 * 1024) {
-    const value = n / (1024 * 1024)
-    return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}M`
-  }
-  if (n >= 1024) return `${Math.round(n / 1024)}k`
-  return n.toLocaleString()
-}
-
-const contextTooltipLines = computed(() => {
-  const usage = props.session.contextUsage
-  return [
-    `Context window: ${usage.percent}% full`,
-    `${formatCompactTokens(usage.usedTokens)} / ${formatCompactTokens(usage.maxTokens)} tokens used`
-  ]
 })
 
 const formatSessionTime = (ts: number): string => {
@@ -280,6 +276,8 @@ async function toggleVoiceScribe(): Promise<void> {
 onBeforeUnmount(() => cleanupVoiceRecorder())
 
 async function send(): Promise<void> {
+  if (shortcutStore.pending) return
+  if (slashVisible.value) { await commitShortcut(); return }
   const message = input.value.trim()
   // Text is REQUIRED to send, even when files are attached.
   if (!message || props.sendDisabled || props.session.turn?.aborting) return
@@ -406,28 +404,165 @@ function removeFile(i: number): void {
   selectedFiles.value.splice(i, 1)
 }
 
-async function startNewChat(): Promise<void> {
-  if (turnLocked.value) return
-  input.value = ''
-  selectedFiles.value = []
-  await nextTick()
-  resetComposerHeight()
-  await channelStore.startNewMaestroSession(props.session.id)
+async function startNewChat(): Promise<boolean> {
+  if (newChatPending) return false
+  if (turnLocked.value || props.session.archivedAt) {
+    Message.warning(i18nHelper.maestroControl.chat.newChatUnavailable)
+    return false
+  }
+  const sessionId = props.session.id
+  const revision = draftRevision
+  newChatPending = true
+  try {
+    const opened = await channelStore.startNewMaestroSession(sessionId)
+    if (!opened) { Message.warning(i18nHelper.maestroControl.chat.newChatUnavailable); return false }
+    if (!composerDisposed && props.session.id === sessionId && draftRevision === revision) {
+      input.value = ''
+      selectedFiles.value = []
+      await nextTick()
+      resetComposerHeight()
+    }
+    return true
+  } catch (error) {
+    Message.error(error instanceof Error ? error.message : String(error))
+    return false
+  } finally {
+    newChatPending = false
+  }
 }
 
 async function selectHistory(sessionId: string): Promise<void> {
+  if (sessionId === props.session.id) return
   await channelStore.selectMaestroHistorySession(sessionId)
   historyVisible.value = false
 }
+
+function focusComposer(): void {
+  if (!props.session.archivedAt) composerRef.value?.focus()
+}
+
+function closeHistory(): void {
+  historyVisible.value = false
+  void nextTick(focusComposer)
+}
+
+function scrollHistoryCursor(): void {
+  void nextTick(() => historyList.value?.querySelector<HTMLElement>('[data-history-cursor="true"]')?.scrollIntoView({ block: 'nearest' }))
+}
+
+function toggleHistory(): void {
+  if (historyVisible.value) {
+    closeHistory()
+    return
+  }
+  const index = messageStore.historySessions.findIndex((item) => item.id === props.session.id)
+  historyCursor.value = Math.max(index, 0)
+  historyVisible.value = true
+  scrollHistoryCursor()
+}
+
+function onPanelKeydown(event: KeyboardEvent): void {
+  if (!document.hasFocus() || event.defaultPrevented || event.isComposing || event.keyCode === 229) return
+  const command = (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+  const key = event.key.toLowerCase()
+  if (command && (key === 'h' || key === 'n')) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.repeat) return
+    if (key === 'h') toggleHistory()
+    else void startNewChat()
+    return
+  }
+  if (!historyVisible.value || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+  if (!['Escape', 'ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.key === 'Escape') closeHistory()
+  else if (event.key === 'Enter') {
+    if (event.repeat) return
+    const item = messageStore.historySessions[historyCursor.value]
+    if (item) void selectHistory(item.id)
+  } else {
+    const count = messageStore.historySessions.length
+    if (!count) return
+    historyCursor.value = (historyCursor.value + (event.key === 'ArrowDown' ? 1 : -1) + count) % count
+    scrollHistoryCursor()
+  }
+}
+
+onMounted(() => {
+  // Capture before the textarea can turn History's Enter into a message send.
+  window.addEventListener('keydown', onPanelKeydown, true)
+  void nextTick(focusComposer)
+})
+onBeforeUnmount(() => window.removeEventListener('keydown', onPanelKeydown, true))
 
 async function stop(): Promise<void> {
   await messageStore.turnService.stop(props.session.id)
 }
 
 function onComposerKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) return
+  if (slashVisible.value && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+    if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.key === 'Escape') shortcutStore.close()
+      else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') shortcutStore.move(event.key === 'ArrowUp' ? -1 : 1)
+      else if (event.key === 'Tab') completeShortcut()
+      else void commitShortcut()
+      return
+    }
+  }
   if (event.key !== 'Enter' || event.shiftKey) return
   event.preventDefault()
   void send()
+}
+
+function updateComposerCaret(): void {
+  composerCaret.value = composerRef.value?.selectionStart ?? input.value.length
+}
+
+function onComposerInput(): void { resizeComposer(); updateComposerCaret() }
+
+function completeShortcut(): void {
+  const token = slashToken.value
+  const item = shortcutStore.active
+  if (!token || !item || shortcutStore.pending) return
+  input.value = input.value.slice(0, token.start) + item.name + input.value.slice(token.end)
+  composerCaret.value = token.start + item.name.length
+  void nextTick(() => composerRef.value?.setSelectionRange(composerCaret.value, composerCaret.value))
+}
+
+async function commitShortcut(): Promise<void> {
+  const token = slashToken.value
+  if (!token || shortcutStore.pending) return
+  const revision = draftRevision
+  const sessionId = props.session.id
+  const draft = input.value.slice(0, token.start) + input.value.slice(token.end)
+  const result = await shortcutStore.commit({
+    newChat: startNewChat,
+    copyContext: async () => {
+      const context = messageStore.buildAgentContext(props.session, undefined, selectedFiles.value.map((file) => file.path))
+      const summary = await coach.copyNextTurnContext({ sessionId, draft, context })
+      if (!summary.ok) throw new Error(summary.error)
+      if (!composerDisposed && props.session.id === sessionId) {
+        Message.success(i18nHelper.maestroControl.chat.slashCopied.replace('{chars}', String(summary.chars)).replace('{entries}', String(summary.entries)))
+      }
+    }
+  })
+  if (composerDisposed || props.session.id !== sessionId) return
+  if (!result.ok && result.error) Message.error(result.error)
+  if (draftRevision !== revision) return
+  if (!result.ok) {
+    shortcutStore.update(slashToken.value)
+    return
+  }
+  input.value = draft
+  composerCaret.value = token.start
+  await nextTick()
+  resizeComposer()
+  composerRef.value?.setSelectionRange(token.start, token.start)
 }
 
 /**
@@ -451,7 +586,16 @@ async function chooseWorkspace(): Promise<void> {
 
 async function clearWorkspace(): Promise<void> {
   if (turnLocked.value || props.session.archivedAt) return
-  await messageStore.clearWorkspace(props.session.id)
+  Modal.confirm({
+    title: i18nHelper.maestroControl.chat.clearWorkspaceTitle,
+    content: i18nHelper.maestroControl.chat.clearWorkspaceContent.replace('{name}', workspaceLabel.value),
+    okText: i18nHelper.maestroControl.chat.clearWorkspace,
+    cancelText: i18nHelper.maestroControl.chat.keepWorkspace,
+    onOk: async () => {
+      if (turnLocked.value || props.session.archivedAt) return
+      await messageStore.clearWorkspace(props.session.id)
+    }
+  })
 }
 
 function setHistoryContainer(el: HTMLElement | null): void {
@@ -476,29 +620,32 @@ function setHistoryContainer(el: HTMLElement | null): void {
       </div>
     </div>
     <div class="chat-panel__toolbar">
-      <IconBtn
+      <Tooltip :content="shortcut('H')" position="bottom" mini>
+        <IconBtn
         class="chat-panel__history-button"
         name="maestro__history"
-        title="Chat history"
-        aria-label="Chat history"
-        @click="historyVisible = !historyVisible"
+        :aria-label="i18nHelper.maestroControl.chat.history"
+        @click="toggleHistory"
       >
         <IconListDetails class="chat-panel__button-icon" :size="16" stroke="1.8" />
       </IconBtn>
-      <Button
+      </Tooltip>
+      <Tooltip :content="shortcut('N')" position="bottom" mini>
+        <Button
         name="maestro__new_chat"
         class="chat-panel__new-chat"
         type="text"
         size="mini"
         :disabled="turnLocked"
-        title="New chat"
+        :aria-label="i18nHelper.maestroControl.chat.newChat"
         @click="startNewChat"
       >
         <template #icon>
           <IconPlus class="chat-panel__button-icon" :size="15" stroke="1.8" />
         </template>
-        New chat
+        {{ i18nHelper.maestroControl.chat.newChat }}
       </Button>
+      </Tooltip>
     </div>
     <MessageList :messages="session.messages" @container-ready="setHistoryContainer" />
     <Drawer
@@ -511,32 +658,40 @@ function setHistoryContainer(el: HTMLElement | null): void {
       :footer="false"
       :body-style="{ padding: '0', overflow: 'hidden' }"
       unmount-on-close
+      @cancel="closeHistory"
     >
       <div class="chat-panel__history">
         <div class="chat-panel__history-header">
-          <div class="chat-panel__history-title">Chat history</div>
+          <div class="chat-panel__history-title">{{ i18nHelper.maestroControl.chat.history }}</div>
           <IconBtn
             class="chat-panel__history-close"
-            title="Close"
-            aria-label="Close"
-            @click="historyVisible = false"
+            :title="i18nHelper.maestroControl.chat.closeHistory"
+            :aria-label="i18nHelper.maestroControl.chat.closeHistory"
+            @click="closeHistory"
           >
             <IconX class="chat-panel__button-icon" :size="16" stroke="1.8" />
           </IconBtn>
         </div>
-        <div class="chat-panel__history-list">
+        <div ref="historyList" name="maestro__history-list" class="chat-panel__history-list">
           <div v-if="!messageStore.historySessions.length" class="chat-panel__history-empty">
-            No history
+            {{ i18nHelper.maestroControl.chat.noHistory }}
           </div>
           <Button
-            v-for="item in messageStore.historySessions"
+            v-for="(item, index) in messageStore.historySessions"
             :key="item.id"
             class="chat-panel__history-item"
-            :class="{ 'chat-panel__history-item--active': item.id === session.id }"
+            :class="{
+              'chat-panel__history-item--active': item.id === session.id,
+              'chat-panel__history-item--cursor': index === historyCursor
+            }"
+            name="maestro__history-item"
+            :data-history-cursor="index === historyCursor"
+            :aria-current="item.id === session.id ? 'true' : undefined"
             type="text"
             long
             @click="selectHistory(item.id)"
           >
+            <IconArrowRight v-if="item.id === session.id" class="chat-panel__history-current" :size="12" stroke="2.4" />
             <span class="chat-panel__history-item-title">{{ item.title || 'Maestro' }}</span>
             <span class="chat-panel__history-item-preview">{{ item.preview || formatSessionTime(item.updatedAt) }}</span>
           </Button>
@@ -568,6 +723,7 @@ function setHistoryContainer(el: HTMLElement | null): void {
         </div>
       </div>
       <div class="chat-panel__input-wrap">
+        <SlashMenu :store="shortcutStore" @select="shortcutStore.activeIndex = $event" @commit="commitShortcut" />
         <textarea
           ref="composerRef"
           v-model="input"
@@ -576,7 +732,13 @@ function setHistoryContainer(el: HTMLElement | null): void {
           rows="1"
           class="chat-panel__textarea"
           :class="{ 'chat-panel__textarea--recording': voiceRecording }"
-          @input="resizeComposer"
+          aria-autocomplete="list"
+          :aria-expanded="slashVisible"
+          :aria-controls="slashVisible ? 'maestro-slash-menu' : undefined"
+          :aria-activedescendant="slashVisible ? `maestro-slash-${shortcutStore.activeIndex}` : undefined"
+          @input="onComposerInput"
+          @click="updateComposerCaret"
+          @keyup="updateComposerCaret"
           @keydown="onComposerKeydown"
           @paste="onComposerPaste"
         ></textarea>
@@ -596,12 +758,69 @@ function setHistoryContainer(el: HTMLElement | null): void {
         </div>
       </div>
       <div class="chat-panel__composer-footer">
-        <div class="chat-panel__composer-tools">
+        <div v-if="session.allowFiles" name="maestro__composer__context" class="chat-panel__composer-tools">
           <!-- The duplicate Skills shortcut is intentionally hidden. The Workbench Skills pane
                and its internal coach/workbench-pane broadcast remain available in Workbench. -->
-          <!-- File attach — bottom-left. Opens a multi-select file picker. -->
+          <Tooltip v-if="session.allowFiles && !workspace" content="Set workspace" position="top">
+            <Button
+              name="maestro__composer__choose-workspace"
+              class="chat-panel__choose-workspace"
+              type="text"
+              size="small"
+              :disabled="turnLocked || Boolean(session.archivedAt)"
+              :aria-label="i18nHelper.maestroControl.chat.chooseWorkspace"
+              @click="chooseWorkspace"
+            >
+              {{ i18nHelper.maestroControl.chat.chooseWorkspace }}
+            </Button>
+          </Tooltip>
+          <div
+            v-else-if="session.allowFiles && workspace"
+            name="maestro__composer__workspace"
+            class="chat-panel__workspace"
+          >
+            <Tooltip :content="workspaceTitle" position="top" mini>
+              <Button
+                name="maestro__composer__workspace-open"
+                class="chat-panel__workspace-select"
+                type="text"
+                html-type="button"
+                :disabled="turnLocked || Boolean(session.archivedAt)"
+                aria-label="Open workspace in OnlyPreview"
+                @click="revealWorkspace"
+              >
+                <span name="maestro__composer__workspace-content" class="chat-panel__workspace-content">
+                  <IconFolderOpen class="chat-panel__workspace-icon" :size="16" stroke="1.8" />
+                  <span class="chat-panel__workspace-label">{{ workspaceLabel }}</span>
+                </span>
+              </Button>
+            </Tooltip>
+            <Tooltip content="Switch workspace" position="top" mini>
+              <IconBtn
+                name="maestro__composer__workspace-switch"
+                class="chat-panel__workspace-action"
+                :disabled="turnLocked || Boolean(session.archivedAt)"
+                aria-label="Switch workspace"
+                @click="chooseWorkspace"
+              >
+                <IconFolderSearch class="chat-panel__button-icon" :size="14" stroke="1.8" />
+              </IconBtn>
+            </Tooltip>
+            <Tooltip content="Clear workspace" position="top" mini>
+              <IconBtn
+                name="maestro__composer__workspace-clear"
+                class="chat-panel__workspace-action chat-panel__workspace-action--danger"
+                :disabled="turnLocked || Boolean(session.archivedAt)"
+                aria-label="Clear workspace"
+                @click="clearWorkspace"
+              >
+                <IconX class="chat-panel__button-icon" :size="13" stroke="2" />
+              </IconBtn>
+            </Tooltip>
+          </div>
           <IconBtn
             v-if="session.allowFiles"
+            name="maestro__composer__attach"
             class="chat-panel__tool-button"
             :disabled="turnLocked"
             title="Attach files (PDF, Excel, Word, text…)"
@@ -610,74 +829,9 @@ function setHistoryContainer(el: HTMLElement | null): void {
           >
             <IconPaperclip class="chat-panel__button-icon" :size="18" stroke="1.8" />
           </IconBtn>
-          <Tooltip v-if="session.allowFiles && !workspace" content="Set workspace" position="top">
-            <IconBtn
-              class="chat-panel__tool-button"
-              :disabled="turnLocked || Boolean(session.archivedAt)"
-              title="Set workspace"
-              aria-label="Set workspace"
-              @click="chooseWorkspace"
-            >
-              <IconFolder class="chat-panel__button-icon" :size="18" stroke="1.8" />
-            </IconBtn>
-          </Tooltip>
-          <Tooltip v-else-if="session.allowFiles && workspace" :content="workspaceTitle" position="top">
-            <div
-              name="maestro__composer__workspace"
-              class="chat-panel__workspace"
-            >
-              <Button
-                class="chat-panel__workspace-select"
-                type="text"
-                size="mini"
-                :disabled="turnLocked || Boolean(session.archivedAt)"
-                title="Open workspace in OnlyPreview"
-                @click="revealWorkspace"
-              >
-                <template #icon>
-                  <IconFolderOpen class="chat-panel__workspace-icon" :size="16" stroke="1.8" />
-                </template>
-                <span class="chat-panel__workspace-label">{{ workspaceLabel }}</span>
-              </Button>
-              <IconBtn
-                class="chat-panel__workspace-action"
-                :disabled="turnLocked || Boolean(session.archivedAt)"
-                title="Switch workspace"
-                aria-label="Switch workspace"
-                @click="chooseWorkspace"
-              >
-                <IconFolderSearch class="chat-panel__button-icon" :size="13" stroke="2" />
-              </IconBtn>
-              <IconBtn
-                class="chat-panel__workspace-action chat-panel__workspace-action--danger"
-                :disabled="turnLocked || Boolean(session.archivedAt)"
-                title="Clear workspace"
-                aria-label="Clear workspace"
-                @click="clearWorkspace"
-              >
-                <IconX class="chat-panel__button-icon" :size="13" stroke="2" />
-              </IconBtn>
-            </div>
-          </Tooltip>
         </div>
         <div class="chat-panel__composer-actions">
-          <slot name="before-actions"></slot>
-          <Tooltip position="top">
-            <template #content>
-              <div class="chat-panel__context-tooltip">
-                <div class="chat-panel__context-tooltip-label">{{ contextTooltipLines[0] }}</div>
-                <div class="chat-panel__context-tooltip-value">{{ contextTooltipLines[1] }}</div>
-              </div>
-            </template>
-            <div
-              name="maestro__composer__context"
-              class="chat-panel__context-meter"
-              :style="contextMeterStyle"
-              title="Context usage"
-            >
-              <div class="chat-panel__context-meter-core"></div>
-            </div>
-          </Tooltip>
+          <div class="chat-panel__model-controls"><slot name="before-actions"></slot></div>
           <IconBtn
             class="chat-panel__voice-button"
             :class="{
@@ -711,6 +865,7 @@ function setHistoryContainer(el: HTMLElement | null): void {
             {{ i18nHelper.maestroControl.chat.stop }}
           </Button>
           <IconBtn
+            v-else
             name="maestro__composer__send"
             class="chat-panel__send-button"
             :disabled="!input.trim() || Boolean(session.archivedAt) || sendDisabled || Boolean(session.turn?.aborting)"

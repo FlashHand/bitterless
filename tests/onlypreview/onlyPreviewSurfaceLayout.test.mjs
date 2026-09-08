@@ -12,7 +12,7 @@ const buildRoot = mkdtempSync(join(tmpdir(), 'bitterless-onlypreview-surface-lay
 const bundlePath = join(buildRoot, 'layout.mjs');
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/onlyPreviewSurfaceLayout.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewSurfaceLayout.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',
@@ -136,7 +136,7 @@ test('the overlay is exactly the composite rect, rounded to a native rect', () =
 test('the composite never imports a host', () => {
   // The mount seam exists so the dependency points one way. A host implements `OnlyPreviewMount`
   // and hands it in; if OnlyPreview reached back for Maestro, the seam would be decoration.
-  const root = join(projectRoot, 'src/main/onlypreview');
+  const root = join(projectRoot, 'src/main/miniapps/onlypreview');
   const walk = (directory) =>
     readdirSync(directory).flatMap((entry) => {
       const path = join(directory, entry);

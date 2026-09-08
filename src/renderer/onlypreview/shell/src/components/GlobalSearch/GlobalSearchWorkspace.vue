@@ -236,7 +236,14 @@ const moveResultFocus = (offset: -1 | 1): void => {
 
 const handleWorkspaceKeydown = (event: KeyboardEvent): void => {
   const target = event.target as HTMLElement;
-  if (event.key === 'Escape') {
+  if (
+    event.key === 'Escape' &&
+    !event.repeat &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  ) {
     event.preventDefault();
     void onlyPreviewGlobalSearchStore.handleEscape();
     return;

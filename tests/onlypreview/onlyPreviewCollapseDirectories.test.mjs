@@ -44,9 +44,9 @@ const bundled = await build({
       export { OnlyPreviewShellStore } from './src/renderer/onlypreview/shell/src/onlyPreviewShell.store.ts';
       export { OnlyPreviewTreeSelectionController } from './src/renderer/onlypreview/shell/src/onlyPreviewTreeSelection.store.ts';
       export { onlyPreviewI18n } from './src/renderer/onlypreview/common/onlyPreviewI18n.ts';
-      export { ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT, ONLY_PREVIEW_SELECTION_CHANGED_EVENT } from './src/shared/onlypreview/onlyPreview.types.ts';
+      export { ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT, ONLY_PREVIEW_SELECTION_CHANGED_EVENT, ONLY_PREVIEW_PREVIEW_PRESENTATION_EVENT } from './src/shared/onlypreview/onlyPreview.types.ts';
       export { ONLY_PREVIEW_BROWSE_LISTING_EVENT, ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT } from './src/shared/onlypreview/onlyPreviewSearch.type.ts';
-      export { reactive } from 'vue';
+      export { reactive, computed } from 'vue';
     `,
     resolveDir: root
   },
@@ -83,8 +83,10 @@ const {
   OnlyPreviewTreeSelectionController,
   onlyPreviewI18n,
   reactive,
+  computed,
   ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT: workspaceEvent,
   ONLY_PREVIEW_SELECTION_CHANGED_EVENT: selectionEvent,
+  ONLY_PREVIEW_PREVIEW_PRESENTATION_EVENT: presentationEvent,
   ONLY_PREVIEW_BROWSE_LISTING_EVENT: listingEvent,
   ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT: snapshotEvent
 } = await import(
@@ -213,7 +215,7 @@ const selectPreview = (store) => {
     hostId: env.hostId,
     selectionRevision: 7,
     surface: 'vue',
-    fileRef: { relativePath: store.selectedRelativePath },
+    fileRef: { workspaceId: store.workspace.workspaceId, relativePath: store.selectedRelativePath },
     selectedTextAvailable: true
   };
   store.selectedCharacterCount = 42;
@@ -480,4 +482,122 @@ test('compiled header action has the fold icon directly left of Locate, localize
   }
   const catalog = source('src/renderer/onlypreview/common/onlyPreviewI18n.ts');
   assert.equal([...catalog.matchAll(/collapseDirectories:/g)].length, 2);
+});
+
+const showAgentPreview = async (store, relativePath, workspaceId = store.workspace.workspaceId) => {
+  const presentation = {
+    hostId: env.hostId,
+    workspaceId,
+    selectionRevision: (store.previewPresentation?.selectionRevision || 0) + 1,
+    surface: 'vue',
+    adapterId: 'markdown-dom',
+    status: 'ready',
+    fileRef: { workspaceId, relativePath },
+    descriptor: null,
+    error: null,
+    selectedTextAvailable: true
+  };
+  responders.getPreviewPresentation = async () => ok(presentation);
+  emit(presentationEvent);
+  await tick();
+  assert.deepEqual(store.previewPresentation, presentation);
+};
+
+test('agent presentation changes content without changing browsing state or expanding its file on a ready snapshot', async () => {
+  const store = await createStore({ cached: false });
+  store.selectedRelativePath = 'README.md';
+  store.treeSelectedRelativePath = 'misc';
+  store.focusedRelativePath = 'misc';
+  store.expandedPaths = new Set(['', 'misc']);
+  const selection = new OnlyPreviewTreeSelectionController(() => store);
+  selection.paths = ['misc'];
+  selection.anchorPath = 'misc';
+  const workspace = store.workspace;
+  const index = store.index;
+  const projection = store.browseProjection;
+  const assertBrowsing = () => {
+    assert.equal(store.workspace, workspace);
+    assert.equal(store.index, index);
+    assert.equal(store.browseProjection, projection);
+    assert.equal(store.selectedRelativePath, 'README.md');
+    assert.equal(store.treeSelectedRelativePath, 'misc');
+    assert.equal(store.currentDirectoryRelativePath, 'misc');
+    assert.equal(store.focusedRelativePath, 'misc');
+    assert.deepEqual(expanded(store), ['', 'misc']);
+    assert.deepEqual(selection.paths, ['misc']);
+    assert.equal(selection.anchorPath, 'misc');
+  };
+  for (const workspaceId of [
+    workspace.workspaceId,
+    'external-agent-file-workspace-0001',
+    workspace.workspaceId
+  ]) {
+    await showAgentPreview(store, 'docs/deep/file.md', workspaceId);
+    assertBrowsing();
+    emit(snapshotEvent, { snapshot: snapshot(store) });
+    await tick();
+    assertBrowsing();
+  }
+  assert.equal(browsing().length, 0);
+  assert.equal(
+    calls.some(({ method }) => method === 'restoreWorkspace' || method === 'initialize'),
+    false
+  );
+});
+
+test('Locate is enabled for an unloaded in-Project agent file and loads its parents only on the deliberate action', async () => {
+  const store = await createStore({ cached: false });
+  store.selectedRelativePath = 'README.md';
+  store.treeSelectedRelativePath = 'misc';
+  store.focusedRelativePath = 'misc';
+  store.expandedPaths = new Set(['', 'misc']);
+  const declaration = source('src/renderer/onlypreview/shell/src/App.vue').match(
+    /const canLocateCurrentPreview = computed\(\(\) => \{[\s\S]*?\n\}\);/
+  );
+  assert.ok(declaration);
+  const canLocate = new Function(
+    'computed',
+    'onlyPreviewShellStore',
+    `${declaration[0]} return canLocateCurrentPreview;`
+  )(computed, store);
+  assert.equal(canLocate.value, false);
+  await showAgentPreview(store, 'docs/deep/file.md');
+  assert.equal(canLocate.value, true);
+  assert.equal(
+    store.index.entries.some(({ relativePath }) => relativePath === 'docs/deep/file.md'),
+    false
+  );
+  assert.equal(browsing().length, 0);
+  assert.equal(await store.locateSelectedFile(), 'docs/deep/file.md');
+  assert.equal(store.selectedRelativePath, 'docs/deep/file.md');
+  assert.equal(store.treeSelectedRelativePath, 'docs/deep/file.md');
+  assert.equal(store.currentDirectoryRelativePath, 'docs/deep');
+  assert.equal(store.focusedRelativePath, 'docs/deep/file.md');
+  assert.ok(store.expandedPaths.has('docs/deep'));
+  assert.equal(browsing().length, 2);
+  await showAgentPreview(store, 'outside.md', 'external-agent-file-workspace-0001');
+  assert.equal(canLocate.value, false);
+  const before = [store.selectedRelativePath, store.treeSelectedRelativePath, expanded(store)];
+  assert.equal(await store.locateSelectedFile(), '');
+  assert.deepEqual(
+    [store.selectedRelativePath, store.treeSelectedRelativePath, expanded(store)],
+    before
+  );
+  assert.equal(browsing().length, 2);
+});
+
+test('ordinary selection synchronization still selects and expands the explicitly opened project file', async () => {
+  const store = await createStore({ cached: false });
+  store.selectedRelativePath = 'README.md';
+  store.treeSelectedRelativePath = 'misc';
+  store.expandedPaths = new Set(['']);
+  responders.restoreWorkspace = async () =>
+    ok({ ...store.workspace, selectedRelativePath: 'docs/deep/file.md' });
+  emit(selectionEvent);
+  await tick();
+  assert.equal(store.selectedRelativePath, 'docs/deep/file.md');
+  assert.equal(store.treeSelectedRelativePath, 'docs/deep/file.md');
+  assert.equal(store.currentDirectoryRelativePath, 'docs/deep');
+  assert.ok(store.expandedPaths.has('docs/deep'));
+  assert.equal(browsing().length, 2);
 });

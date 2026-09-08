@@ -36,7 +36,7 @@ test('macOS filesystem copy uses bounded osascript argv while text projections s
   assert.equal(runtime.ONLY_PREVIEW_CLIPBOARD_TIMEOUT_MS, 5_000);
   assert.equal(runtime.ONLY_PREVIEW_CLIPBOARD_MAX_OUTPUT_BYTES, 16 * 1024);
   assert.deepEqual(textWrites, [item.realPath, item.relativePath, 'a & b.txt']);
-  const serviceSource = source('src/main/onlypreview/onlyPreviewClipboard.service.ts');
+  const serviceSource = source('src/main/miniapps/onlypreview/onlyPreviewClipboard.service.ts');
   assert.doesNotMatch(serviceSource, /readFile|createReadStream|\.read\(/);
   assert.doesNotMatch(serviceSource, /\bexec\(|shell:\s*true/);
 });

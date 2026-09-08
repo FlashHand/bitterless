@@ -63,6 +63,7 @@ const mocks = {
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
     const base = join(parentDir, specifier)
@@ -108,8 +109,8 @@ const pkg = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'))
 const service = readFileSync(join(root, 'main/maestro/files/artifactWriter.service.ts'), 'utf8')
 const maestro = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
 const workspaceFile = readFileSync(join(root, 'main/maestro/windows/main/workspaceFile.service.ts'), 'utf8')
-const prompt = readFileSync(join(root, 'main/maestro/agent/prompt/maestroSysPrompt.ts'), 'utf8')
-const catalog = readFileSync(join(root, 'main/maestro/agent/hostToolCatalog.ts'), 'utf8')
+const prompt = readFileSync(join(root, 'main/agent/prompt/maestroSysPrompt.ts'), 'utf8')
+const catalog = readFileSync(join(root, 'main/agent/hostToolCatalog.ts'), 'utf8')
 const workspaceDocs = readFileSync(join(workspaceRoot, 'docs/features/maestro.md'), 'utf8')
 
 assert(pkg.dependencies?.exceljs, 'Excel artifact generation should depend on exceljs')

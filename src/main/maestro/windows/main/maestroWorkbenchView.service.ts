@@ -5,7 +5,7 @@ import { xpcMain } from 'electron-xpc/main'
 import { injectable } from 'inversify'
 import { join } from 'path'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
-import type { ViewRect } from '@maestro-shared/coach.api'
+import type { ViewRect, WorkbenchTabState } from '@maestro-shared/coach.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
 import { MAESTRO_PARTITION } from '@maestro-main/data/maestroDataRoot'
 import { createBoundsApplier } from './viewBounds'
@@ -20,6 +20,7 @@ export const shouldOpenWorkbenchDevTools = (): boolean => {
 
 export interface MaestroWorkbenchViewServiceState {
   browserWindow: BrowserWindow | null
+  operationView: WebContentsView | null
   opBounds: ViewRect | null
   emitTrace(event: TraceEvent): void
   layout(): void
@@ -28,6 +29,7 @@ export interface MaestroWorkbenchViewServiceState {
 @injectable()
 export class MaestroWorkbenchViewService extends CommonService<MaestroWorkbenchViewServiceState> {
   private view: WebContentsView | null = null
+  private open = false
   private visible = false
   private readonly applyBounds = createBoundsApplier()
 
@@ -70,23 +72,51 @@ export class MaestroWorkbenchViewService extends CommonService<MaestroWorkbenchV
     })
   }
 
-  getVisible(): { visible: boolean } {
-    return { visible: this.visible }
+  getState(): WorkbenchTabState {
+    return { open: this.open, visible: this.visible }
   }
 
   isVisible(): boolean {
     return this.visible
   }
 
-  setVisible(params: { visible: boolean }): { visible: boolean } {
-    this.visible = Boolean(params.visible)
+  openTab(): WorkbenchTabState {
+    this.open = true
+    this.visible = true
     if (this._state.opBounds) this.applyBounds(this.view, this._state.opBounds)
     else this._state.layout()
+    this.applyVisibility()
+    this.broadcastVisibility()
+    return this.getState()
+  }
+
+  // Switching tabs preserves the Workbench chip and its renderer's in-memory recording state.
+  backgroundTab(): WorkbenchTabState {
+    if (!this.visible) return this.getState()
+    this.visible = false
+    this.applyVisibility()
+    this.broadcastVisibility()
+    return this.getState()
+  }
+
+  closeTab(): WorkbenchTabState {
+    if (!this.open) return this.getState()
+    const wasVisible = this.visible
+    this.open = false
+    this.visible = false
+    this.applyVisibility()
+    if (wasVisible) {
+      const wc = this._state.operationView?.webContents
+      if (wc && !wc.isDestroyed()) wc.focus()
+    }
+    this.broadcastVisibility()
+    return this.getState()
+  }
+
+  private applyVisibility(): void {
     if (this.view && !this.view.webContents.isDestroyed()) {
       this.view.setVisible(this.visible)
     }
-    this.broadcastVisibility()
-    return { visible: this.visible }
   }
 
   layout(bounds: { x: number; y: number; width: number; height: number }): void {
@@ -98,12 +128,13 @@ export class MaestroWorkbenchViewService extends CommonService<MaestroWorkbenchV
   }
 
   broadcastVisibility(): void {
-    xpcMain.broadcast('coach/workbench-visibility', { visible: this.visible })
+    xpcMain.broadcast('coach/workbench-visibility', this.getState())
   }
 
   reset(): void {
     const view = this.view
     this.view = null
+    this.open = false
     this.visible = false
     if (!view || view.webContents.isDestroyed()) return
     try {

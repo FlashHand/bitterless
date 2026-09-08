@@ -10,8 +10,8 @@ import type {
   OnlyPreviewAlertSnapshot,
   OnlyPreviewAlertSnapshotRequest
 } from '@shared/onlypreview/onlyPreviewAlert.types';
-import { onlyPreviewAlertXpcService } from '@main/onlypreview/views/onlyPreviewAlertXpc.service';
-import { onlyPreviewLogService } from '@main/onlypreview/onlyPreviewLog.runtime';
+import { onlyPreviewAlertXpcService } from '@main/miniapps/onlypreview/views/onlyPreviewAlertXpc.service';
+import { onlyPreviewLogService } from '@main/miniapps/onlypreview/onlyPreviewLog.runtime';
 
 // A handler class of its own rather than two more methods on `OnlyPreviewHandler`: that file is at
 // its 800-line budget, and electron-xpc addresses handlers by class name, so a second class is the

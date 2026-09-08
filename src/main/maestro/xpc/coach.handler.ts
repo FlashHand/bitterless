@@ -5,6 +5,8 @@ import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
 import type { MaestroTask } from '@maestro-shared/task.api'
 import type {
   AgentConversationContext,
+  ContextExportRequest,
+  ContextExportSummary,
   AgentCompactReply,
   AgentCompactRequest,
   AgentMessageRequest,
@@ -126,12 +128,20 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     return await maestroWindowHelper.openDemo()
   }
 
-  async getWorkbenchVisible(): Promise<{ visible: boolean }> {
-    return await maestroWindowHelper.getWorkbenchVisible()
+  async getWorkbenchTab(): ReturnType<CoachXpcContract['getWorkbenchTab']> {
+    return await maestroWindowHelper.getWorkbenchTab()
   }
 
-  async setWorkbenchVisible(params: { visible: boolean }): Promise<{ visible: boolean }> {
-    return await maestroWindowHelper.setWorkbenchVisible(params)
+  async openWorkbenchTab(): ReturnType<CoachXpcContract['openWorkbenchTab']> {
+    return await maestroWindowHelper.openWorkbenchTab()
+  }
+
+  async backgroundWorkbenchTab(): ReturnType<CoachXpcContract['backgroundWorkbenchTab']> {
+    return await maestroWindowHelper.backgroundWorkbenchTab()
+  }
+
+  async closeWorkbenchTab(): ReturnType<CoachXpcContract['closeWorkbenchTab']> {
+    return await maestroWindowHelper.closeWorkbenchTab()
   }
 
   async getPackageInfo(): Promise<PackageInfo> {
@@ -292,6 +302,10 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
 
   async sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply> {
     return await maestroWindowHelper.sendAgentMessage(params)
+  }
+
+  async copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary> {
+    return await maestroWindowHelper.copyNextTurnContext(params)
   }
 
   async compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply> {

@@ -68,7 +68,7 @@ correctness benefit — it only destroys Shell state.
 
 `OnlyPreviewPreviewRegionService.handleWatchCommit` re-presents whenever `commit.full === true`,
 with no test of whether the selected file changed
-(`src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts:276`). `present()` advances the
+(`src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts:276`). `present()` advances the
 selection revision, revokes the old surface authority, and remounts the renderer. So any unrelated
 delete/rename/temp-file save in the Project rebuilds the preview of an untouched file.
 

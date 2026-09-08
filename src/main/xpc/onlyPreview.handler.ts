@@ -5,6 +5,7 @@ import {
   onlyPreviewSuccess,
   parseOnlyPreviewBounds,
   parseOnlyPreviewFileRef,
+  parseOnlyPreviewSelectionRevision,
   parseOnlyPreviewFindIntent,
   parseOnlyPreviewFindResultRequest,
   parseOnlyPreviewPreviewErrorRequest,
@@ -39,20 +40,22 @@ import type {
   OnlyPreviewPreviewTextCancelBrokerRequest,
   OnlyPreviewPreviewTextChunkBrokerRequest
 } from '@shared/onlypreview/onlyPreviewPreviewReadRuntime.types';
-import { onlyPreviewLogService } from '@main/onlypreview/onlyPreviewLog.runtime';
-import { onlyPreviewHostRegistry } from '@main/onlypreview/onlyPreviewHost.registry';
-import { onlyPreviewWorkspaceRegistry } from '@main/onlypreview/onlyPreviewWorkspace.registry';
-import { onlyPreviewSettingsService } from '@main/onlypreview/onlyPreviewSettings.service';
-import { onlyPreviewAssetRegistry } from '@main/onlypreview/onlyPreviewAsset.registry';
-import { onlyPreviewDocumentRegistry } from '@main/onlypreview/onlyPreviewDocument.registry';
-import { onlyPreviewSelectionCoordinator } from '@main/onlypreview/onlyPreviewSelectionCoordinator.service';
-import { selectOnlyPreviewFile } from '@main/onlypreview/onlyPreviewSelectFile.service';
-import { onlyPreviewRecentsService } from '@main/onlypreview/onlyPreviewRecents.runtime';
-import { openOnlyPreviewRecent, navigateOnlyPreviewRecent, reloadOnlyPreview, openOnlyPreviewMarkdownLink } from '@main/onlypreview/onlyPreviewRecentNavigation.service';
-import { presentOnlyPreviewRestoredSelection } from '@main/onlypreview/onlyPreviewRestoreSelection.service';
-import * as projectIndex from '@main/onlypreview/onlyPreviewProjectIndexState.service';
-import { onlyPreviewPreviewRegionService } from '@main/onlypreview/views/onlyPreviewPreviewRegion.service';
-import { onlyPreviewGlobalSearchXpcService } from '@main/onlypreview/views/onlyPreviewGlobalSearchXpc.service';
+import { onlyPreviewLogService } from '@main/miniapps/onlypreview/onlyPreviewLog.runtime';
+import { onlyPreviewHostRegistry } from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
+import { onlyPreviewWorkspaceRegistry } from '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry';
+import { onlyPreviewSettingsService } from '@main/miniapps/onlypreview/onlyPreviewSettings.service';
+import { onlyPreviewAssetRegistry } from '@main/miniapps/onlypreview/onlyPreviewAsset.registry';
+import { onlyPreviewDocumentRegistry } from '@main/miniapps/onlypreview/onlyPreviewDocument.registry';
+import { onlyPreviewSelectionCoordinator } from '@main/miniapps/onlypreview/onlyPreviewSelectionCoordinator.service';
+import { selectOnlyPreviewFile } from '@main/miniapps/onlypreview/onlyPreviewSelectFile.service';
+import { onlyPreviewRecentsService } from '@main/miniapps/onlypreview/onlyPreviewRecents.runtime';
+import { onlyPreviewBookmarksService } from '@main/miniapps/onlypreview/onlyPreviewBookmarks.runtime';
+import { showOnlyPreviewBookmarkMenu } from '@main/miniapps/onlypreview/onlyPreviewBookmarkMenu.service';
+import { openOnlyPreviewRecent, navigateOnlyPreviewRecent, reloadOnlyPreview, openOnlyPreviewMarkdownLink } from '@main/miniapps/onlypreview/onlyPreviewRecentNavigation.service';
+import { presentOnlyPreviewRestoredSelection } from '@main/miniapps/onlypreview/onlyPreviewRestoreSelection.service';
+import * as projectIndex from '@main/miniapps/onlypreview/onlyPreviewProjectIndexState.service';
+import { onlyPreviewPreviewRegionService } from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
+import { onlyPreviewGlobalSearchXpcService } from '@main/miniapps/onlypreview/views/onlyPreviewGlobalSearchXpc.service';
 import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper';
 import { onlyPreviewHostToggleService } from '@main/windows/onlyPreviewHostToggle.service';
 import { chooseOnlyPreviewFolder } from '@main/windows/onlyPreviewChooseFolder.service';
@@ -60,16 +63,19 @@ import { fileSearchWindowService } from '@main/fileSearch/fileSearchWindow.servi
 import {
   onlyPreviewRecentDirectoryService,
   type OnlyPreviewRecentDirectoryStorage
-} from '@main/onlypreview/onlyPreviewRecentDirectory.service';
+} from '@main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
 import {
   createOnlyPreviewAgentSkillGuideInfo,
   requireOnlyPreviewAgentSkillPath,
   resolveOnlyPreviewAgentSkillPath
-} from '@main/onlypreview/onlyPreviewAgentSkill.service';
-import { onlyPreviewProjectNativeActionService } from '@main/onlypreview/onlyPreviewProjectNativeAction.service';
+} from '@main/miniapps/onlypreview/onlyPreviewAgentSkill.service';
+import { onlyPreviewProjectNativeActionService } from '@main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service';
+import { collapseOnlyPreviewDeleteSelection } from '@shared/onlypreview/onlyPreviewDeleteSelection.shared';
+import { showOnlyPreviewFileMenu } from '@main/miniapps/onlypreview/onlyPreviewFileMenu.service';
+import { openOnlyPreviewInDefaultApp } from '@main/miniapps/onlypreview/onlyPreviewDefaultApp.service';
 import { mcpHandler } from './mcp.handler';
 
-export { openOnlyPreviewAbsoluteTarget } from '@main/onlypreview/onlyPreviewExplicitOpen.service';
+export { openOnlyPreviewAbsoluteTarget } from '@main/miniapps/onlypreview/onlyPreviewExplicitOpen.service';
 
 type ApiParams<T extends keyof OnlyPreviewApi> = Parameters<OnlyPreviewApi[T]>[0];
 
@@ -93,6 +99,7 @@ const recentDirectoryStorage =
   createXpcMainEmitter<OnlyPreviewRecentDirectoryStorage>('SettingDao');
 onlyPreviewRecentDirectoryService.configureStorage(recentDirectoryStorage);
 onlyPreviewRecentsService.configureStorage(recentDirectoryStorage);
+onlyPreviewBookmarksService.configureStorage(recentDirectoryStorage);
 onlyPreviewRecentDirectoryService.configureTargetRuntime({
   inspectTarget: async (absoluteTarget) =>
     await fileSearchWindowService.inspectTarget(absoluteTarget),
@@ -150,6 +157,26 @@ class OnlyPreviewHandler
 {
   async getRecents(params: ApiParams<'getRecents'>): ReturnType<OnlyPreviewApi['getRecents']> {
     return await runOperation('getRecents', async () => await onlyPreviewRecentsService.snapshot(params?.hostToken));
+  }
+
+  async getBookmarks(params: ApiParams<'getBookmarks'>): ReturnType<OnlyPreviewApi['getBookmarks']> {
+    return await runOperation('getBookmarks', () => onlyPreviewBookmarksService.snapshot(params));
+  }
+
+  async addBookmark(params: ApiParams<'addBookmark'>): ReturnType<OnlyPreviewApi['addBookmark']> {
+    return await runOperation('addBookmark', () => onlyPreviewBookmarksService.add(params));
+  }
+
+  async showBookmarkContextMenu(
+    params: ApiParams<'showBookmarkContextMenu'>
+  ): ReturnType<OnlyPreviewApi['showBookmarkContextMenu']> {
+    return await runOperation('showBookmarkContextMenu', async () => {
+      const { relativePath } = parseOnlyPreviewFileRef(params);
+      const snapshot = await onlyPreviewBookmarksService.snapshot(params);
+      if (!snapshot.entries.some((entry) => entry.relativePath === relativePath)) return;
+      const window = onlyPreviewWindowHelper.getStandaloneWindow(params.hostToken);
+      if (await showOnlyPreviewBookmarkMenu(window)) await onlyPreviewBookmarksService.remove(params);
+    });
   }
 
   async openRecent(params: ApiParams<'openRecent'>): ReturnType<OnlyPreviewApi['openRecent']> {
@@ -532,6 +559,21 @@ class OnlyPreviewHandler
     });
   }
 
+  async showPreviewFileMenu(
+    params: ApiParams<'showPreviewFileMenu'>
+  ): ReturnType<OnlyPreviewApi['showPreviewFileMenu']> {
+    return await runOperation('showPreviewFileMenu', async () => {
+      const window = onlyPreviewWindowHelper.getStandaloneWindow(params?.hostToken);
+      const revision = parseOnlyPreviewSelectionRevision(params?.selectionRevision);
+      const presentation = onlyPreviewPreviewRegionService.snapshot(params.hostToken);
+      if (!presentation.fileRef || presentation.selectionRevision !== revision) return null;
+      const action = await showOnlyPreviewFileMenu(window);
+      if (!action || window.isDestroyed()) return null;
+      const current = onlyPreviewPreviewRegionService.snapshot(params.hostToken);
+      return current.fileRef && current.selectionRevision === revision ? action : null;
+    });
+  }
+
   async showFileContextMenu(
     params: ApiParams<'showFileContextMenu'>
   ): ReturnType<OnlyPreviewApi['showFileContextMenu']> {
@@ -542,6 +584,32 @@ class OnlyPreviewHandler
         openExternally: (request) => void this.openExternally(request),
         revealInFolder: (request) => void this.revealInFolder(request)
       });
+    });
+  }
+
+  async requestProjectDelete(
+    params: ApiParams<'requestProjectDelete'>
+  ): ReturnType<OnlyPreviewApi['requestProjectDelete']> {
+    return await runOperation('requestProjectDelete', async () => {
+      const authority = onlyPreviewWorkspaceRegistry.getProjectAuthorityRootRef(
+        params?.hostToken, params?.workspaceId
+      );
+      if (!Array.isArray(params.selection) || params.selection.length > 1000) {
+        throw new OnlyPreviewContractError('INVALID_INPUT', 'Project delete selection is invalid.');
+      }
+      const plan = collapseOnlyPreviewDeleteSelection(params.selection);
+      if (!plan.ok) {
+        throw new OnlyPreviewContractError('INVALID_INPUT', 'Project delete selection is invalid.');
+      }
+      for (const entry of plan.entries) {
+        onlyPreviewWorkspaceRegistry.getProjectAuthorityItemRef(authority.host.hostToken, {
+          workspaceId: authority.workspaceId, relativePath: entry.relativePath
+        });
+      }
+      await onlyPreviewProjectNativeActionService.deleteProjectSelectionFromMenu({
+        hostToken: authority.host.hostToken, workspaceId: authority.workspaceId,
+        relativePath: plan.entries[0].relativePath
+      }, plan.entries);
     });
   }
 
@@ -625,8 +693,11 @@ class OnlyPreviewHandler
           params,
           inspected
         );
-        const failure = await shell.openPath(revalidatedPath);
-        if (failure) throw new Error('The operating system could not open this file.');
+        await openOnlyPreviewInDefaultApp(revalidatedPath, () => {
+          onlyPreviewWorkspaceRegistry.revalidateExternalPreviewNativePath(
+            params.hostToken, params, inspected
+          );
+        });
         return;
       }
       await onlyPreviewProjectNativeActionService.openExternally(params);

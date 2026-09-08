@@ -8,9 +8,9 @@ const root = resolve(import.meta.dirname, '../..');
 const bundled = await build({
   stdin: {
     contents: `
-      export { OnlyPreviewRecentsService } from './src/main/onlypreview/onlyPreviewRecents.service.ts';
-      export { OnlyPreviewHostRegistry } from './src/main/onlypreview/onlyPreviewHost.registry.ts';
-      export { OnlyPreviewWorkspaceRegistry } from './src/main/onlypreview/onlyPreviewWorkspace.registry.ts';
+      export { OnlyPreviewRecentsService } from './src/main/miniapps/onlypreview/onlyPreviewRecents.service.ts';
+      export { OnlyPreviewHostRegistry } from './src/main/miniapps/onlypreview/onlyPreviewHost.registry.ts';
+      export { OnlyPreviewWorkspaceRegistry } from './src/main/miniapps/onlypreview/onlyPreviewWorkspace.registry.ts';
     `,
     resolveDir: root
   },

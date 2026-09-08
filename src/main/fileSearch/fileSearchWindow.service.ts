@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { is } from '@electron-toolkit/utils';
 import { createXpcMainEmitter } from 'electron-xpc/main';
-import type { OnlyPreviewHostCapability } from '@main/onlypreview/onlyPreviewHost.registry';
+import type { OnlyPreviewHostCapability } from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
 import type { FileSearchRuntimePrivateApi } from '@shared/onlypreview/fileSearchRuntime.types';
 import { fileSearchRuntimeHandlerName } from '@shared/onlypreview/fileSearchRuntime.types';
 import {

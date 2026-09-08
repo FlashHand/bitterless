@@ -8,6 +8,11 @@ import {
 import type { OnlyPreviewErrorCode } from '@shared/onlypreview/onlyPreview.types';
 
 const en = {
+  bookmarks: {
+    label: 'Bookmarks',
+    empty: 'Right-click a file or folder to add a bookmark.',
+    unavailable: 'This bookmarked folder is unavailable. You can remove its bookmark with a right-click.'
+  },
   productName: 'OnlyPreview',
   bootstrapFailed: 'OnlyPreview could not start. Close and reopen it to retry.',
   topbar: {
@@ -81,8 +86,9 @@ const en = {
     emptyTitle: 'Select a file',
     emptyBody: 'Choose a file from the project index to preview it here.',
     loadingProjectTitle: 'Loading project',
-    loadingProjectBody: 'Building the project index. Files appear as they are found.',
+    loadingProjectBody: 'Loading the project folder.',
     openExternally: 'Open in default app',
+    fileActions: 'File actions',
     openExternallyFailed: 'Could not open this file in its default app.',
     reveal: 'Reveal in folder',
     unsupportedTitle: 'Preview not available',
@@ -223,6 +229,7 @@ const en = {
     INDEX_PROTOCOL_ERROR: 'The Project search index returned an invalid response.',
     PDF_VIEWER_UNAVAILABLE: 'The built-in PDF viewer did not render this document.',
     OPERATION_FAILED: 'OnlyPreview could not complete this action.',
+    DEFAULT_APP_UNAVAILABLE: 'No default application is available. In Finder, choose Open With > Other.',
     PROTOCOL_ERROR: 'The preview data stream could not be opened.'
   } satisfies Record<OnlyPreviewErrorCode, string>
 };
@@ -232,6 +239,11 @@ type Localized<T> = {
 };
 
 const zh: Localized<typeof en> = {
+  bookmarks: {
+    label: '书签',
+    empty: '右击文件或目录可添加书签。',
+    unavailable: '此书签目录已不可用，可右击移除书签。'
+  },
   productName: 'OnlyPreview',
   bootstrapFailed: 'OnlyPreview 无法启动。请关闭后重新打开。',
   topbar: {
@@ -305,8 +317,9 @@ const zh: Localized<typeof en> = {
     emptyTitle: '选择一个文件',
     emptyBody: '从项目索引中选择文件，在此处预览。',
     loadingProjectTitle: '正在加载项目',
-    loadingProjectBody: '正在建立项目索引，文件会随发现逐步出现。',
+    loadingProjectBody: '正在加载项目目录。',
     openExternally: '用默认应用打开',
+    fileActions: '文件操作',
     openExternallyFailed: '无法使用默认应用打开此文件。',
     reveal: '在文件夹中显示',
     unsupportedTitle: '暂不支持预览',
@@ -440,6 +453,7 @@ const zh: Localized<typeof en> = {
     INDEX_PROTOCOL_ERROR: '项目搜索索引返回了无效响应。',
     PDF_VIEWER_UNAVAILABLE: '内置 PDF 阅读器未能渲染此文档。',
     OPERATION_FAILED: 'OnlyPreview 无法完成此操作。',
+    DEFAULT_APP_UNAVAILABLE: '无法找到默认应用，请在 Finder 中选择“打开方式 → 其他”。',
     PROTOCOL_ERROR: '无法打开预览数据流。'
   }
 };

@@ -8,8 +8,8 @@
 - **上游契约(权威):** `../micromeet-cowork/docs/features/cowork-turn-steering.md` ·
   任务卡 `steer-001` / `steer-002` / `steer-003` · review `steer-003-1.md`。
   **上游侧状态:三道闸全部拆完,179 条守卫,`check:behavior` 654 绿。**
-- **Area:** `src/main/maestro/agent/runtime/{piRuntimeAdapter,agentRuntime.types}.ts` ·
-  `src/main/maestro/agent/BaseAgent.ts` · 新建 `src/main/maestro/agent/steering/` ·
+- **Area:** `src/main/agent/runtime/{piRuntimeAdapter,agentRuntime.types}.ts` ·
+  `src/main/agent/BaseAgent.ts` · 新建 `src/main/agent/steering/` ·
   `src/renderer/maestro/control/src/{ChatPanel.vue,store/message.store.ts}` ·
   `src/shared/maestro/coach.api.ts` · `scripts/maestro/`
 

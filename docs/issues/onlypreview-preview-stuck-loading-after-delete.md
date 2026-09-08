@@ -33,7 +33,7 @@ render at all.
 
 `projectIndexing` reads `presentation.projectIndexState`, which Main derives in
 `OnlyPreviewProjectIndexStateService`
-(`src/main/onlypreview/onlyPreviewProjectIndexState.service.ts`). That service marks a workspace
+(`src/main/miniapps/onlypreview/onlyPreviewProjectIndexState.service.ts`). That service marks a workspace
 `building` the moment it is bound (`markBound`, `:35-37`) and leaves it there until a **search
 snapshot reports `ready`**:
 

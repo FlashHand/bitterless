@@ -43,12 +43,16 @@ const stubSources = {
       visible = true;
       writes = 0;
       destroyed = false;
+      focused = false;
       webContents = {
         isDestroyed: () => this.destroyed,
         close: () => { this.destroyed = true; },
+        focus: () => { this.focused = true; },
         loadFile: async () => {},
         loadURL: async () => {},
+        on: () => {},
         once: () => {},
+        setIgnoreMenuShortcuts: () => {},
         navigationHistory: { canGoBack: () => false, canGoForward: () => false }
       };
       setBounds(bounds) { this.bounds = { ...bounds }; this.writes += 1; }
@@ -69,6 +73,7 @@ const stubSources = {
     export const iocHelper = { bind: ({ controller }) => controller };
   `,
   '../window.helper': 'export class WindowHelper { browserWindow = null; }',
+  './maestroControlLinkPolicy': 'export const installControlLinkPolicy = () => {};',
   '@maestro-main/auth/authBridge': `
     export const AI_CRMS_AUTH_HOST = 'auth.example.invalid';
     export const authBridge = { detach: async () => {} };
@@ -299,4 +304,84 @@ test('window teardown clears retained geometry before another window receives fi
   assert.equal(f.controlNative.visible, false);
   f.controller.layout();
   assertLayout(f, opened());
+});
+
+test('Workbench tab opens once, backgrounds without closing, and reuses its renderer after close', async () => {
+  const f = await fixture();
+  f.controller.setViewBounds(closed());
+  await f.workbench.create();
+  const native = f.children.at(-1);
+  const count = f.children.length;
+  assert.deepEqual(await f.controller.getWorkbenchTab(), { open: false, visible: false });
+  assert.equal(native.visible, false);
+  for (let i = 0; i < 3; i += 1) {
+    assert.deepEqual(await f.controller.openWorkbenchTab(), { open: true, visible: true });
+  }
+  assert.equal(f.children.length, count);
+  assert.deepEqual(native.bounds, closed().operation);
+  assert.equal(native.visible, true);
+  assert.deepEqual(await f.controller.backgroundWorkbenchTab(), { open: true, visible: false });
+  assert.equal(native.destroyed, false);
+  await f.controller.openWorkbenchTab();
+  assert.deepEqual(await f.controller.closeWorkbenchTab(), { open: false, visible: false });
+  assert.equal(native.destroyed, false);
+  assert.equal(f.controller.operationView.focused, true);
+  await f.controller.openWorkbenchTab();
+  assert.equal(f.children.length, count);
+  assert.equal(native.visible, true);
+});
+
+test('Workbench open intent survives deferred creation and reset does not restore its tab', async () => {
+  const f = await fixture();
+  f.controller.setViewBounds(closed());
+  await f.controller.openWorkbenchTab();
+  await f.workbench.create();
+  const native = f.children.at(-1);
+  assert.equal(native.visible, true);
+  assert.deepEqual(native.bounds, closed().operation);
+  f.workbench.reset();
+  assert.deepEqual(await f.controller.getWorkbenchTab(), { open: false, visible: false });
+  assert.equal(native.destroyed, true);
+});
+
+test('Cmd+W closes the foreground Workbench only, and user New tab backgrounds it', async () => {
+  const f = await fixture();
+  const calls = [];
+  f.browser.closeActiveTab = async () => calls.push('close-browser');
+  f.browser.newTab = async () => {
+    assert.equal(f.workbench.isVisible(), false);
+    calls.push('new-browser');
+  };
+  await f.controller.openWorkbenchTab();
+  await f.controller.closeActiveTab();
+  assert.deepEqual(calls, []);
+  await f.controller.closeActiveTab();
+  assert.deepEqual(calls, ['close-browser']);
+  await f.controller.openWorkbenchTab();
+  await f.controller.newTab();
+  assert.deepEqual(await f.controller.getWorkbenchTab(), { open: true, visible: false });
+  assert.deepEqual(calls, ['close-browser', 'new-browser']);
+});
+
+test('both internal Workbench URL aliases converge on the same tab without creating browser tabs', async () => {
+  const f = await fixture();
+  const count = f.browser.tabs.length;
+  for (const url of ['bitterless://workbench', 'micromeet://workbench/settings']) {
+    await f.browser.navigate({ url });
+    assert.deepEqual(await f.controller.getWorkbenchTab(), { open: true, visible: true });
+    await f.controller.closeWorkbenchTab();
+    await f.browser.openTab({ url });
+    assert.deepEqual(await f.controller.getWorkbenchTab(), { open: true, visible: true });
+  }
+  assert.equal(f.browser.tabs.length, count);
+});
+
+test('agent tab activation leaves foreground Workbench and the agent target independent', async () => {
+  const f = await fixture();
+  const native = new NativeView();
+  f.browser.tabs.push({ id: 'agent-tab', kind: 'browser', view: native, pinned: false, url: 'https://example.com' });
+  await f.controller.openWorkbenchTab();
+  await f.controller.activateTab({ id: 'agent-tab' });
+  assert.equal(f.browser.activeTabId, 'agent-tab');
+  assert.deepEqual(await f.controller.getWorkbenchTab(), { open: true, visible: true });
 });

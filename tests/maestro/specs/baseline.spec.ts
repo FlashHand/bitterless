@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const openButton = (page: Page, appId: string) =>
-  page.locator(`[data-mini-app-id="${appId}"]`).getByRole('button', { name: /Open|打开/ })
+  page.locator(`[data-mini-app-id="${appId}"]`).getByRole('button')
 
 const expectNoHorizontalOverflow = async (page: Page): Promise<void> => {
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
@@ -32,7 +32,7 @@ test.describe('Bitterless embedded Maestro baseline', () => {
 
     const maestroCard = hostPage.locator('[data-mini-app-id="maestro"]')
     await expect(maestroCard).toBeVisible()
-    await expect(maestroCard).toContainText('Maestro')
+    await expect(maestroCard).toContainText('MAESTRO')
     await expect(openButton(hostPage, 'maestro')).toBeVisible()
     await openButton(hostPage, 'maestro').click()
 

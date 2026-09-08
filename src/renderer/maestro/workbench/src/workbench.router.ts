@@ -5,7 +5,6 @@ import WorkbenchIntegrationsView from './views/WorkbenchIntegrationsView.vue'
 import WorkbenchInjectionsView from './views/WorkbenchInjectionsView.vue'
 import WorkbenchToolsView from './views/WorkbenchToolsView.vue'
 import WorkbenchModelsView from './views/WorkbenchModelsView.vue'
-import WorkbenchSub2ApiView from './views/WorkbenchSub2ApiView.vue'
 import WorkbenchAppsView from './views/WorkbenchAppsView.vue'
 import WorkbenchConnectorsView from './views/WorkbenchConnectorsView.vue'
 import WorkbenchAboutView from './views/WorkbenchAboutView.vue'
@@ -20,7 +19,6 @@ const routes: RouteRecordRaw[] = [
   { path: '/injections', name: 'injections', component: WorkbenchInjectionsView },
   { path: '/tools', name: 'tools', component: WorkbenchToolsView },
   { path: '/models', name: 'models', component: WorkbenchModelsView },
-  { path: '/sub2api', name: 'sub2api', component: WorkbenchSub2ApiView },
   { path: '/apps', name: 'apps', component: WorkbenchAppsView },
   { path: '/connectors', name: 'connectors', component: WorkbenchConnectorsView },
   {

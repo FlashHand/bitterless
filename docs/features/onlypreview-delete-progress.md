@@ -110,9 +110,9 @@ never contended.
 | --- | --- |
 | `src/shared/onlypreview/onlyPreviewAlert.types.ts` | `OnlyPreviewAlertProgressDialog`, added to the dialog union + the request type |
 | `src/shared/onlypreview/onlyPreviewAlert.contract.ts` | `parseProgressDialog`, wired into the snapshot parser |
-| `src/main/onlypreview/views/onlyPreviewAlertView.service.ts` | `showProgress` / `updateProgress` / `closeProgress`; `resolve()` refuses a progress id |
-| `src/main/onlypreview/views/onlyPreviewAlertWindow.service.ts` | the three pass-throughs |
-| `src/main/onlypreview/onlyPreviewDeleteDialog.service.ts` | the timer, the per-entry update, the `finally` |
+| `src/main/miniapps/onlypreview/views/onlyPreviewAlertView.service.ts` | `showProgress` / `updateProgress` / `closeProgress`; `resolve()` refuses a progress id |
+| `src/main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service.ts` | the three pass-throughs |
+| `src/main/miniapps/onlypreview/onlyPreviewDeleteDialog.service.ts` | the timer, the per-entry update, the `finally` |
 | `src/renderer/onlypreview/alert/src/onlyPreviewAlert.store.ts` | `progressDialog` getter |
 | `src/renderer/onlypreview/alert/src/components/AlertProgress/` | the view |
 | `src/renderer/common/i18n/{en,zh}.ts` | `deleteProgressTitle` / `deleteProgressMessage` / `deleteProgressCount` |

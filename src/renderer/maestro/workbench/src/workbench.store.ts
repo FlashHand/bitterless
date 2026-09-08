@@ -45,7 +45,6 @@ import type { HeaderMap, NetworkTiming, TraceEvent } from '@maestro-shared/trace
 import type { NetResponseEvent, Row } from '@maestro-renderer/control/src/record/record.types'
 import { fmtHeaders } from '@maestro-renderer/control/src/record/record.format'
 import { captureConfig } from '@maestro-renderer/control/src/config/captureConfig.store'
-import { CLAUDE_SUBSCRIPTION_SNAPSHOT_CHANGED_EVENT } from '@shared/claudeSubscription/claudeSubscription.contract'
 
 const coach = createXpcRendererEmitter<CoachXpcContract>('CoachXpcHandler')
 
@@ -142,7 +141,6 @@ export const workbenchPanes: WorkbenchPane[] = [
   'injections',
   'tools',
   'models',
-  'sub2api',
   'apps',
   'connectors',
   'settings',
@@ -455,11 +453,6 @@ class WorkbenchStoreState {
       this.applyAgentTurnUpdate(payload.params as AgentTurnUpdate)
     })
     xpcRenderer.subscribe('coach/auth', () => void this.refreshLlmConfig())
-    xpcRenderer.subscribe(CLAUDE_SUBSCRIPTION_SNAPSHOT_CHANGED_EVENT, () => {
-      if (this.activePane === 'models' || this.activePane === 'sub2api') {
-        void this.refreshLlmConfig()
-      }
-    })
     xpcRenderer.subscribe('coach/host-approval', (payload) => {
       const params = payload.params as HostApprovalEvent | { cleared?: boolean; events?: HostApprovalEvent[] }
       if ('cleared' in params && params.cleared) {
@@ -519,9 +512,7 @@ class WorkbenchStoreState {
       void this.refreshHostApprovalEvents()
     }
     if (this.initialized && pane === 'injections') void this.refreshInjectedButtons()
-    if (this.initialized && (pane === 'models' || pane === 'sub2api')) {
-      void this.refreshLlmConfig()
-    }
+    if (this.initialized && pane === 'models') void this.refreshLlmConfig()
   }
 
   get llmProviderGroups(): LlmProviderGroup[] {
@@ -943,7 +934,7 @@ class WorkbenchStoreState {
   }
 
   async close(): Promise<void> {
-    await coach.setWorkbenchVisible({ visible: false })
+    await coach.closeWorkbenchTab()
   }
 
   toggleFilter(key: string): void {

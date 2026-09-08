@@ -26,6 +26,7 @@ import type {
   InjectedButtonRemoveResult,
   TabKind,
   TabInfo,
+  WorkbenchTabState,
   ViewRect
 } from '@maestro-shared/coach.api'
 import {
@@ -62,7 +63,7 @@ const LOAD_WATCHDOG_MS = 30_000
 const INJECTED_BUTTON_ROOT_ID = '__bitterless_maestro_button_root__'
 const injectBtnStore = createXpcMainEmitter<InjectBtnApi>('InjectBtnDao')
 
-const isWorkbenchInternalUrl = (url: string): boolean => /^micromeet:\/\/workbench(?:[/?#].*)?$/i.test(url.trim())
+const isWorkbenchInternalUrl = (url: string): boolean => /^(?:bitterless|micromeet):\/\/workbench(?:[/?#].*)?$/i.test(url.trim())
 
 interface LocalHomeEntry {
   url: string
@@ -181,6 +182,8 @@ export interface MaestroBrowserViewServiceState {
   layout(): void
   readMaestroSettings(): CoachSettings
   hasCustomStartUrl(): boolean
+  openWorkbenchTab(): Promise<WorkbenchTabState>
+  newTab(): Promise<void>
   stopCapture(): Promise<CaptureState>
   broadcastActivity(phase: AgentActivityStep['phase'], label: string, ok?: boolean): void
   switchCaptureTarget(next: OperationTab): Promise<void>
@@ -259,10 +262,13 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   }
 
   async navigate(params: { url: string }): Promise<void> {
+    if (isWorkbenchInternalUrl(params.url || '')) {
+      await this._state.openWorkbenchTab()
+      return
+    }
     if (!this._state.operationView) return
     const active = this.tabs.find((tab) => tab.id === this.activeTabId)
     if (active?.kind !== 'browser') return
-    if (isWorkbenchInternalUrl(params.url || '')) return
     const target = normalizeUrl(params.url)
     if (!target) return
     await this._state.operationView.webContents.loadURL(target).catch((err) => {
@@ -1054,7 +1060,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     const otherClosable = this.tabs.some((item) => item.id !== tab.id && !item.pinned)
     const rightClosable = this.tabs.slice(index + 1).some((item) => !item.pinned)
     const menu = Menu.buildFromTemplate([
-      { label: 'New tab', click: () => void this.newTab() },
+      { label: 'New tab', click: () => void this._state.newTab() },
       { type: 'separator' },
       {
         label: 'Reload',
@@ -1223,7 +1229,10 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       await this.newTab()
       return
     }
-    if (isWorkbenchInternalUrl(url)) return
+    if (isWorkbenchInternalUrl(url)) {
+      await this._state.openWorkbenchTab()
+      return
+    }
     const tab = await this.claimSpareTab({ url })
     await this.activateTab({ id: tab.id })
     const wc = tab.view?.webContents

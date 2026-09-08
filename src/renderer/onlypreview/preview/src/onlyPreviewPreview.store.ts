@@ -247,22 +247,14 @@ class OnlyPreviewPreviewStore {
     });
   }
 
-  // True from the moment a Project is bound until its index is usable. Main derives the value per
-  // snapshot and scopes it to the presentation's workspace, so a state left over from a previous
-  // Project can never be applied here. `failed` reads as not-loading: the Project rail already
-  // reports the failure, and an endless animation beside it would be a lie.
-  //
-  // The placeholder covers a Project that cannot be browsed yet — it exists so an empty pane does
-  // not read "Select a file" before there is anything to select. Once this Project has resolved a
-  // real file it is demonstrably usable, so from then on an empty pane means "nothing is selected",
-  // and the placeholder must stop outranking the empty state (`PreviewSurface.vue` orders indexing
-  // ahead of empty). Main only latches `ready` on a search snapshot that reports it, so a Project
-  // whose index never reports `ready` would otherwise answer every later deselection — deleting the
-  // selected file, above all — with "Loading project" for the rest of the session.
+  // Main scopes root-listing readiness to the Project and includes it in every pulled snapshot.
+  // Indexing may continue after even an empty root is loaded; only the Project rail shows that
+  // progress. A listing failure stops the animation while the rail retains its real error.
+  // Keep the resolved-file guard so deleting a file that was opened before listing completed does
+  // not bring the placeholder back over an already usable preview.
   get projectIndexing(): boolean {
     const presentation = this.presentation;
-    const state = presentation?.projectIndexState ?? null;
-    if (state !== 'building' && state !== 'reconciling') return false;
+    if (presentation?.projectBrowseState !== 'pending') return false;
     const workspaceId = presentation?.workspaceId ?? null;
     return !workspaceId || this.browsedWorkspaceId !== workspaceId;
   }

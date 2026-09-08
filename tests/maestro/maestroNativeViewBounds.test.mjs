@@ -16,7 +16,11 @@ const mocks = {
         this.visibilityWrites = [];
         this.failNextBoundsWrite = false;
         this.closeCount = 0;
+        this.inputListeners = new Map();
+        this.ignoredMenuShortcuts = [];
         this.webContents = {
+          on: (name, listener) => this.inputListeners.set(name, listener),
+          setIgnoreMenuShortcuts: (ignore) => this.ignoredMenuShortcuts.push(ignore),
           isDestroyed: () => this.destroyed,
           loadFile: () => Promise.resolve(),
           loadURL: () => Promise.resolve(),
@@ -111,6 +115,39 @@ const createControl = () => {
   });
   return { service, children, visibleWhenAttached };
 };
+
+test('only Control receives chat shortcut routing; another native view is untouched', async () => {
+  const { service, children } = createControl();
+  const otherView = new WebContentsView();
+  await service.create();
+  assert.equal(children[0].inputListeners.has('before-input-event'), true);
+  assert.equal(otherView.inputListeners.size, 0);
+  service.reset();
+});
+
+test('precise chat H/N chords bypass the menu without consuming DOM keyboard events', async () => {
+  const { service, children } = createControl();
+  await service.create();
+  const view = children[0];
+  const onInput = view.inputListeners.get('before-input-event');
+  const modifier = process.platform === 'darwin' ? { meta: true } : { control: true };
+  const event = { preventDefault: () => assert.fail('DOM keyboard events must reach ChatPanel') };
+  for (const key of ['h', 'H', 'n', 'N']) {
+    onInput(event, { type: 'keyDown', key, ...modifier });
+    assert.equal(view.ignoredMenuShortcuts.at(-1), true);
+    onInput(event, { type: 'keyUp', key, ...modifier });
+    assert.equal(view.ignoredMenuShortcuts.at(-1), false);
+  }
+  for (const input of [
+    { key: 't' }, { key: 'w' }, { key: 'q' }, { key: 'r' }, { key: 'a' },
+    { key: 'h', alt: true }, { key: 'h', shift: true }, { key: 'h', isComposing: true },
+    { key: 'h', meta: false, control: false }
+  ]) {
+    onInput(event, { type: 'keyDown', ...modifier, ...input });
+    assert.equal(view.ignoredMenuShortcuts.at(-1), false);
+  }
+  service.reset();
+});
 
 test('native bounds round coordinates and clamp negative dimensions', () => {
   const apply = createBoundsApplier();

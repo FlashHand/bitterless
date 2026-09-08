@@ -9,6 +9,8 @@ const require = createRequire(import.meta.url)
 const root = join(projectRoot, 'src')
 const sourcePath = (relativePath) => {
   const [processName, ...rest] = relativePath.split('/')
+  // `agent/` sits at the host root, not under `maestro/` — agents are not Maestro-specific.
+  if (rest[0] === 'agent') return join(root, processName, ...rest)
   return join(root, processName, 'maestro', ...rest)
 }
 const read = (path) => readFileSync(sourcePath(path), 'utf8')

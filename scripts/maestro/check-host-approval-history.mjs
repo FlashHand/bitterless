@@ -12,6 +12,7 @@ const moduleCache = new Map()
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
     const base = join(parentDir, specifier)
@@ -56,11 +57,11 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message)
 }
 
-const { HostApprovalHistory } = loadTsModule('@maestro-main/agent/runtime/hostApprovalHistory')
+const { HostApprovalHistory } = loadTsModule('@main/agent/runtime/hostApprovalHistory')
 const coachApi = readFileSync(join(root, 'shared/maestro/coach.api.ts'), 'utf8')
 const coachHandler = readFileSync(join(root, 'main/maestro/xpc/coach.handler.ts'), 'utf8')
 const maestroWindow = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
-const maestroAgent = readFileSync(join(root, 'main/maestro/agent/maestroAgent.service.ts'), 'utf8')
+const maestroAgent = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
 const requestExec = readFileSync(join(root, 'main/maestro/drive/requestExec.service.ts'), 'utf8')
 const workbenchStore = readFileSync(join(root, 'renderer/maestro/workbench/src/workbench.store.ts'), 'utf8')
 const toolsView = readFileSync(join(root, 'renderer/maestro/workbench/src/views/WorkbenchToolsView.vue'), 'utf8')

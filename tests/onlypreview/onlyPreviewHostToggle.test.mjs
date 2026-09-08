@@ -137,10 +137,10 @@ await build({
     contents: `
     export { onlyPreviewHostToggleService } from './src/main/windows/onlyPreviewHostToggle.service';
     export { chooseOnlyPreviewFolder } from './src/main/windows/onlyPreviewChooseFolder.service';
-    export { onlyPreviewHostRegistry } from './src/main/onlypreview/onlyPreviewHost.registry';
-    export { onlyPreviewWorkspaceRegistry } from './src/main/onlypreview/onlyPreviewWorkspace.registry';
-    export { onlyPreviewRecentDirectoryService } from './src/main/onlypreview/onlyPreviewRecentDirectory.service';
-    export { onlyPreviewTargetMutations, presentOnlyPreviewExplicitFile } from './src/main/onlypreview/onlyPreviewExplicitOpen.service';
+    export { onlyPreviewHostRegistry } from './src/main/miniapps/onlypreview/onlyPreviewHost.registry';
+    export { onlyPreviewWorkspaceRegistry } from './src/main/miniapps/onlypreview/onlyPreviewWorkspace.registry';
+    export { onlyPreviewRecentDirectoryService } from './src/main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
+    export { onlyPreviewTargetMutations, presentOnlyPreviewExplicitFile } from './src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service';
   `,
     resolveDir: root,
     loader: 'ts'

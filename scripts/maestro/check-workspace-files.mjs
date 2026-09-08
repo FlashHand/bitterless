@@ -13,7 +13,7 @@ const messageStore = readFileSync(join(root, 'renderer/maestro/control/src/store
 const messageType = readFileSync(join(root, 'renderer/maestro/control/src/store/message.type.ts'), 'utf8')
 const chatPanel = readFileSync(join(root, 'renderer/maestro/control/src/ChatPanel.vue'), 'utf8')
 const messageItem = readFileSync(join(root, 'renderer/maestro/control/src/MessageItem.vue'), 'utf8')
-const maestroPrompt = readFileSync(join(root, 'main/maestro/agent/prompt/maestroSysPrompt.ts'), 'utf8')
+const maestroPrompt = readFileSync(join(root, 'main/agent/prompt/maestroSysPrompt.ts'), 'utf8')
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message)
@@ -158,11 +158,11 @@ assert(messageType.includes("kind?: 'attachment' | 'artifact'"), 'chat file type
 
 assert(chatPanel.includes('name="maestro__composer__workspace"'), 'composer should render a workspace chip')
 assert(chatPanel.includes('@paste="onComposerPaste"'), 'composer should support pasted screenshots as path attachments')
-assert(chatPanel.includes('title="Set workspace"'), 'composer should allow setting workspace')
-assert(chatPanel.includes('title="Switch workspace"'), 'composer should allow switching workspace')
+assert(chatPanel.includes('name="maestro__composer__choose-workspace"') && chatPanel.includes('@click="chooseWorkspace"'), 'composer should allow setting workspace')
+assert(chatPanel.includes('aria-label="Switch workspace"'), 'composer should allow switching workspace')
 assert(!chatPanel.includes('title="Refresh workspace"') && !chatPanel.includes('@click="refreshWorkspace"'), 'composer should not render workspace Refresh')
 assert(messageStore.includes('async refreshWorkspace(sessionId: string)'), 'workspace refresh store API should remain available')
-assert(chatPanel.includes('title="Clear workspace"'), 'composer should allow clearing workspace')
+assert(chatPanel.includes('aria-label="Clear workspace"'), 'composer should allow clearing workspace')
 assert(chatPanel.includes('@keydown="onComposerKeydown"'), 'composer keyboard handling should stay attached')
 
 assert(messageItem.includes('name="messageItem__artifacts"'), 'assistant messages should render file artifacts')

@@ -1,0 +1,51 @@
+.maestro-slash {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--bl-royalblue-100, #d9ddea);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgb(30 34 55 / 12%);
+}
+
+.maestro-slash__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--bl-royalblue-900, #1e2237);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.maestro-slash__item:hover,
+.maestro-slash__item--active {
+  color: var(--bl-royalblue-700, #3e4568);
+  background: var(--bl-royalblue-50, #f3f5fc);
+}
+
+.maestro-slash__name {
+  flex: 0 0 112px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.maestro-slash__hint {
+  min-width: 0;
+  overflow: hidden;
+  color: #6f7487;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

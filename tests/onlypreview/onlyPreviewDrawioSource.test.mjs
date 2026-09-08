@@ -63,16 +63,16 @@ test('uses one typed size-policy dictionary with 10 MiB fallback and 20 MiB Draw
   assert.match(types, /getOnlyPreviewFileSizeLimit/);
   assert.match(types, /audio: null,[\s\S]*video: null/);
 
-  const classifier = source('src/main/onlypreview/onlyPreviewClassifier.service.ts');
+  const classifier = source('src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts');
   assert.match(classifier, /DIAGRAM_EXTENSIONS = new Set\(\['\.drawio'\]\)/);
   assert.match(classifier, /kind === 'diagram'\) return 'drawio-viewer'/);
   assert.match(classifier, /getOnlyPreviewFileSizeLimit\(adapterId\)/);
   assert.match(classifier, /if \(kind === 'diagram'\) return descriptor/);
 
-  const adapter = source('src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
+  const adapter = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
   assert.match(adapter, /descriptor\.kind === 'diagram'[\s\S]*adapterId: 'drawio-viewer'/);
   assert.match(adapter, /adapterId === 'drawio-viewer'/);
-  const delivery = source('src/main/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
+  const delivery = source('src/main/miniapps/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
   assert.match(delivery, /adapter\.adapterId === 'drawio-viewer'[\s\S]*getOnlyPreviewFileSizeLimit/);
 
   const registry = source('src/shared/onlypreview/onlyPreviewFind.registry.ts');
@@ -110,10 +110,10 @@ test('lazy-loads every format SFC and loads the viewer only after bounded prefli
   assert.match(session, /this\.cancelPendingPreflight\?\.\(\)/);
   assert.match(session, /ONLY_PREVIEW_DRAWIO_PREFLIGHT_TIMEOUT_MS/);
 
-  const view = source('src/main/onlypreview/views/onlyPreviewPreviewView.service.ts');
+  const view = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts');
   assert.match(view, /getDiagramLoadingRevision/);
   assert.match(view, /'DIAGRAM_RENDER_TIMEOUT'/);
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
   assert.match(region, /presentation\.adapterId === 'drawio-viewer'[\s\S]*destroyVuePreviewView/);
 });
 
@@ -146,10 +146,10 @@ test('Draw.io remediation keeps every authored implementation and focused test b
   // extraction. Reported together: a bare `assert.ok` per file hides every violation after the
   // first, which is how three of these drifted over the limit unnoticed.
   const oversized = [
-    'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewRegionGuards.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegionGuards.service.ts',
     'src/renderer/onlypreview/preview/src/onlyPreviewPreview.store.ts',
     'src/renderer/onlypreview/preview/src/onlyPreviewPreviewViewModel.service.ts',
     'src/renderer/onlypreview/preview/src/onlyPreviewDrawioPreflight.service.ts',

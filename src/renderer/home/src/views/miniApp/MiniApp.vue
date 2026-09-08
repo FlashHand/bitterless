@@ -1,38 +1,32 @@
 <template>
-  <div class="bl-full-container">
-    <div name="miniApp__page" class="mini-app-page">
-      <div name="miniApp__grid" class="mini-app-page__grid">
-        <a-card
-          v-for="app in miniApps"
-          :key="app.id"
-          :data-mini-app-id="app.id"
-          name="miniApp__card"
-          class="mini-app-page__card"
+  <section name="miniApp__page" class="mini-app-page">
+    <ul name="miniApp__list" class="mini-app-page__list">
+      <li
+        v-for="app in miniApps"
+        :key="app.id"
+        :data-mini-app-id="app.id"
+        name="miniApp__item"
+        class="mini-app-page__item"
+      >
+        <a-button
+          name="miniApp__open"
+          class="mini-app-page__open"
+          type="text"
+          html-type="button"
+          :title="app.name"
+          :loading="openingAppIds.has(app.id)"
+          :disabled="openingAppIds.has(app.id)"
+          :aria-busy="openingAppIds.has(app.id)"
+          @click="openApp(app)"
         >
-          <template #title>
-            <div name="miniApp__card__title" class="mini-app-page__card-title">
-              <img :src="app.icon" :alt="app.name" class="mini-app-page__card-icon" />
-              <span>{{ app.name }}</span>
-            </div>
+          <template #icon>
+            <img :src="app.icon" alt="" draggable="false" class="mini-app-page__icon" />
           </template>
-          <div name="miniApp__card__content" class="mini-app-page__card-content">
-            <p class="mini-app-page__card-subtitle">{{ app.subtitle }}</p>
-          </div>
-          <template #actions>
-            <a-button
-              type="primary"
-              size="mini"
-              :loading="openingAppIds.has(app.id)"
-              :disabled="openingAppIds.has(app.id)"
-              @click="openApp(app)"
-            >
-              {{ i18nHelper.miniApp.open }}
-            </a-button>
-          </template>
-        </a-card>
-      </div>
-    </div>
-  </div>
+          <span name="miniApp__name" class="mini-app-page__name">{{ app.name }}</span>
+        </a-button>
+      </li>
+    </ul>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -77,7 +71,7 @@ const openEyesOnAgents = async () => {
 };
 
 /**
- * Which host this grid is rendered in.
+ * Which host this application list is rendered in.
  *
  * The same component serves the Bitterless Home window and Maestro's bundled Home tab. Only the
  * Cowork host has a tab strip to open a mini app into, and it is the router that knows — see
@@ -123,7 +117,7 @@ const miniApps = computed(() =>
     openOnlyPreview,
     openSubmodules,
     i18nHelper,
-  ),
+  ).map((app) => ({ ...app, name: app.name.toUpperCase() })),
 );
 </script>
 

@@ -3,7 +3,7 @@ import {
   MAESTRO_ONLY_PREVIEW_DISPLAY_URL,
   MAESTRO_ONLY_PREVIEW_TAB_ID
 } from '@maestro-shared/compositeTab.identity';
-import { openOnlyPreviewAbsoluteTarget } from '@main/onlypreview/onlyPreviewExplicitOpen.service';
+import { openOnlyPreviewAbsoluteTarget } from '@main/miniapps/onlypreview/onlyPreviewExplicitOpen.service';
 import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper';
 import { OnlyPreviewCoworkMount } from '@main/windows/onlyPreviewCoworkMount';
 

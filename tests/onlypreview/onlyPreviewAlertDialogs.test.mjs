@@ -35,7 +35,7 @@ const newFolder = await bundle(
   'newFolder.mjs',
   {
     'electron-xpc/main': join(projectRoot, 'tests/onlypreview/fixtures/xpcMain.stub.mjs'),
-    '@main/onlypreview/views/onlyPreviewAlertWindow.service': join(
+    '@main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service': join(
       projectRoot,
       'tests/onlypreview/fixtures/alertWindow.stub.mjs'
     ),
@@ -263,7 +263,7 @@ test('the alert renderer is registered everywhere a renderer surface has to be',
   assert.match(vite, /'globalSearch', 'alert', 'settings', 'guide'/);
   assert.match(source('src/preload/onlypreview/onlyPreviewEnv.preload.ts'), /value === 'alert'/);
   assert.match(
-    source('src/main/onlypreview/views/onlyPreviewRendererTarget.service.ts'),
+    source('src/main/miniapps/onlypreview/views/onlyPreviewRendererTarget.service.ts'),
     /OnlyPreviewRendererMode =[\s\S]*'alert'/
   );
   const html = source('src/renderer/onlypreview/alert/index.html');
@@ -278,14 +278,14 @@ test('the alert renderer is registered everywhere a renderer surface has to be',
 
 test('the alert layer has an owner and the view service never attaches its own view', () => {
   assert.match(
-    source('src/main/onlypreview/views/onlyPreviewViewLayer.service.ts'),
+    source('src/main/miniapps/onlypreview/views/onlyPreviewViewLayer.service.ts'),
     /OnlyPreviewViewLayerOwner = 'shell' \| 'preview' \| 'globalSearch' \| 'alert'/
   );
-  const view = source('src/main/onlypreview/views/onlyPreviewAlertView.service.ts');
+  const view = source('src/main/miniapps/onlypreview/views/onlyPreviewAlertView.service.ts');
   assert.doesNotMatch(view, /addChildView|removeChildView/);
   assert.match(view, /runtime\.showInAlertLayer\(view\)/);
   assert.match(view, /runtime\.hideAlertLayer\(\)/);
-  const windowService = source('src/main/onlypreview/views/onlyPreviewAlertWindow.service.ts');
+  const windowService = source('src/main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service.ts');
   assert.match(windowService, /onlyPreviewViewLayerService\.show\('alert', 'alert', view\)/);
   assert.match(windowService, /onlyPreviewViewLayerService\.hide\('alert', 'alert'\)/);
 });

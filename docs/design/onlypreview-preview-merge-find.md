@@ -634,7 +634,7 @@ Draw.io phase one 与 image/audio/video 永远不发布文字能力：transition
 解码/网络错误可把 `loading` 或 `ready` 推到 `unavailable`，而 error 之后迟到的 ready 必须 no-op。
 
 快捷键仍由宿主统一识别，不要求每个文件后缀注册一遍。当前
-`src/main/onlypreview/onlyPreviewClassifier.service.ts` 的 `TEXT_EXTENSIONS` 已覆盖 `.js`、`.css`、
+`src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts` 的 `TEXT_EXTENSIONS` 已覆盖 `.js`、`.css`、
 `.ts`、`.tsx`、`.vue`、`.py`、`.go`、`.rs` 等常用语言。023 已删除 unknown extension 的 sample
 回落：未知后缀默认 unsupported；如果以后需要「按文本打开」，由用户显式选择，
 不能由文件头自动提升。新增语言的语法高亮需要补 extension / language mapping，但全文查找协议本身
@@ -760,11 +760,11 @@ XLSX/XLSM、DOCX、旧 `.doc` 与查找 capability 已定，不再计入未定�
 
 ---
 
-024 实施侧路径：新增 `src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts` 作为双 view owner；
+024 实施侧路径：新增 `src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts` 作为双 view owner；
 `src/main/windows/onlyPreviewWindow.helper.ts` 只保留 BaseWindow / Shell / settings 与总 teardown；
 `src/renderer/onlypreview/shell/` 承载 Preview toolbar；现有 `src/renderer/onlypreview/preview/` 演进为
 `vuePreviewView` 的 Vue 子应用；`chromePreviewView` 不新增 renderer bundle 或 preload；
-`src/main/onlypreview/onlyPreviewDocument.registry.ts` 独立承担 document-scoped、path-contained HTML 资源，
+`src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts` 独立承担 document-scoped、path-contained HTML 资源，
 `onlyPreviewAsset.registry.ts` 继续承担 exact-file assets；shared/preload/XPC/i18n 与测试合同已同步。
 
 [onlypreview-dual-preview-region-024](../plan/tasks/onlypreview-dual-preview-region-024.md) 已取代 018 的单

@@ -1,6 +1,7 @@
 import type {
   OnlyPreviewIndex,
   OnlyPreviewIndexEntry,
+  OnlyPreviewErrorPayload,
   OnlyPreviewKind,
   OnlyPreviewResult
 } from './onlyPreview.types';
@@ -19,6 +20,7 @@ export const ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT = 'onlypreview/search-snapshot' 
 export const ONLY_PREVIEW_SEARCH_BATCH_EVENT = 'onlypreview/search-batch' as const;
 export const ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT = 'onlypreview/search-watch-commit' as const;
 export const ONLY_PREVIEW_SEARCH_PROGRESS_EVENT = 'onlypreview/search-progress' as const;
+export const ONLY_PREVIEW_SEARCH_FAILURE_EVENT = 'onlypreview/search-failure' as const;
 export const ONLY_PREVIEW_BROWSE_LISTING_EVENT = 'onlypreview/browse-listing' as const;
 export const ONLY_PREVIEW_SEARCH_MAX_WATCH_PATHS = 512;
 
@@ -88,6 +90,17 @@ export interface OnlyPreviewSearchSnapshot {
 export interface OnlyPreviewSearchSnapshotEvent {
   hostId: string;
   snapshot: OnlyPreviewSearchSnapshot;
+}
+
+export interface OnlyPreviewSearchFailure {
+  workspaceId: string;
+  generation: number;
+  error: OnlyPreviewErrorPayload;
+}
+
+export interface OnlyPreviewSearchFailureEvent {
+  hostId: string;
+  failure: OnlyPreviewSearchFailure;
 }
 
 export type OnlyPreviewSearchBuildProgress =

@@ -8,6 +8,36 @@ Current MenuBar/fixed-local-tab parity reference: Cowork `dev/next` commit `19b0
 Current Control-chat parity source: Cowork `dev/next` commit
 `67b056bc08ac345d223a69fb3f954613f3e588d3` (2026-08-31).
 
+### Control-chat link policy — ported 2026-09-08 (Ral: 「做 A,把 bitterless cowork 同步做」)
+
+A web link in a chat reply now becomes a **new tab in the operation view**. Before this, the Control
+`WebContentsView` had **no** `setWindowOpenHandler` and **no** navigation fence — the only unfenced
+surface of its kind here — so `markstream-vue`'s `target="_blank"` fell through to Electron's
+built-in path and opened a **bare `BrowserWindow`**. That was nobody's decision, just the default of
+a missing hook, and this is the worst view in the app to leave open: it carries `maestroCoach.js`
+with `sandbox: false` on a persistent partition, so a window created off it inherits a preload that
+exposes `xpcRenderer`.
+
+- Policy lives in `main/maestro/windows/main/maestroControlLinkPolicy.ts`, installed from
+  `maestroControlView.service.ts` `create()` against the url the view actually loads.
+- `http(s)` **and not the panel's own origin** → `openTab`; everything else (`file:`, `data:`,
+  `javascript:`, `about:`, `bitterless-preview:`) is denied. The own-origin arm is load-bearing: a
+  produced-file link's href is a bare absolute path, so a middle-click resolves it against the
+  panel's origin and in dev that is http(s).
+- `will-navigate` / `will-redirect` are fenced too, allowing only the panel reloading itself
+  (exact url, or same origin when the origin is not the string `'null'` — `file://` origins are).
+- **In main, not in the renderer's click handler**, because a delegated `click` listener never sees
+  a middle-click (`auxclick`), a `Cmd`/`Ctrl`+click, `window.open()`, or a `<form target="_blank">`.
+  The renderer is unchanged.
+- Cowork is the parity source for this file. `scripts/maestro/check-control-link-policy.mjs` runs the
+  real predicates and, when a cowork checkout is present, asserts the two policies are **byte-equal**
+  after stripping comments and normalising the app name; the exported symbol names are deliberately
+  identical in both repos so that equality is real rather than normalised away.
+- Not covered: a `micromeet://`-style mini-app display url. Cowork denies it too — routing it needs
+  `parseMiniappDisplayUrl` + `newTab({ kind: 'miniapp' })`, which is cowork-only and would break the
+  byte-equality above. Design record: cowork `docs/features/cowork-reply-file-links.md` #6 and
+  overmind `areas/agent-runtime/chat/links-in-message.html` #6.
+
 ## Purpose
 
 The runtime originally migrated from Micromeet Cowork is now Bitterless's sole visible **primary
@@ -106,7 +136,9 @@ tokens, renderer values, and raw errors are forbidden.
   add/activate/reorder/duplicate/close,
   address navigation, history, reload, popup interception, and native context menus.
 - Ordinary-browser per-tab debugger attachment, warm-tab LRU management, browser-tab persistence,
-  sidebar collapse, and Workbench overlay.
+  sidebar collapse, and a singleton closable Workbench tab. The gear only opens it and has no
+  selected state; its existing native view survives tab closure, preserving recording state. See
+  [Workbench tab 167](../plan/tasks/maestro-workbench-tab-167.md).
 - Composite Mini App tabs publish their registered display URL/title through the same navigation
   updates as ordinary tabs. OnlyPreview activation must not retain `bitterless://home`; see
   [composite tab address 145](../plan/tasks/onlypreview-composite-tab-address-145.md).
@@ -121,7 +153,10 @@ tokens, renderer values, and raw errors are forbidden.
   [tasks 089](../plan/tasks/maestro-cowork-chat-core-089.md) and
   [090](../plan/tasks/maestro-cowork-chat-files-090.md); both independent reviews report no
   unresolved P0-P2 findings, with runtime/E2E acceptance owned by Ral.
-- AI-CRMS and OpenAI Codex provider/model/effort/compression selection with existing login flows.
+- Maestro Control omits Micromeet (`ai-crms`) and Local (`local`) choices. Previously saved targets
+  remain labelled but disabled until an explicit provider selection; no automatic provider switch
+  or configuration rewrite. Shared backend/Workbench providers are unaffected (task159).
+  Other provider/model/effort/compression selection retains the existing login flows.
   GPT-5.5 remains selectable and a stored GPT-5.5 target is preserved alongside GPT-5.6 Luna, Sol,
   and Terra; the new-install Codex default may remain GPT-5.6 Luna.
 - Unified attachment cards and attach/drop/paste for supported files and directories, bounded image
@@ -130,8 +165,9 @@ tokens, renderer values, and raw errors are forbidden.
 - The composer workspace name opens that directory in OnlyPreview via the registered host opener,
   reusing a live tab/window or opening a tab in the current browser. Switching workspace has its
   own icon action; Clear and the empty-state Set workspace remain unchanged. The BL-only
-  [composer cleanup 149](../plan/tasks/maestro-composer-cleanup-149.md) removes Refresh and shows
-  the complete workspace name with wrapping when constrained, preserving the full-path tooltip. See
+  [composer cleanup 149](../plan/tasks/maestro-composer-cleanup-149.md) removes Refresh. The
+  [workspace control 158](../plan/tasks/maestro-workspace-ui-158.md) now matches Cowork's fixed 26px
+  height and 280px maximum width, truncating long names while preserving the full-path tooltip. See
   [workspace preview 138](../plan/tasks/onlypreview-cowork-workspace-preview-138.md).
 - New/recovered empty BL chats do not insert a synthetic greeting. Real conversation and recovery
   messages remain intact; the existing composer remains the entry point for an empty chat.
@@ -290,6 +326,86 @@ unavailable in packaged builds.
 
 ## Layout contract
 
+### Workspace control appearance — 2026-09-08
+
+Task158 follows Cowork's compact32px control rhythm,12px semibold name,6px icon gap,8px name
+padding and28px action widths. Separate Open/path, Switch and Clear tooltips replace the group
+tooltip. The screenshot follow-up uses Cowork's bright blue#165dff only for this workspace control,
+with fine neutral borders, restrained hover and visible keyboard
+focus. Name height remains content-driven and wraps without ellipsis, unlike Cowork's260px cap.
+Only appearance changes; task149/155 actions, confirmation, guards and two-row footer remain.
+The32px single-line outer box includes its border; internal segments are30px and square, with
+rounded clipping owned only by the outer shell. The explicit workspace-content span owns the6px
+icon/name gap, independent of Arco's internal DOM. Local selectors override shared Arco rounding
+and ControlApp font weights without changing any global button theme.
+
+```text
+[folder full workspace name | switch | clear] [attach]
+```
+
+### Composer and history interaction parity — 2026-09-08
+
+The later [slash-command contract](maestro-slash-commands.md) adds Cowork-style `/clear` and
+`/view_context` above the composer. It preserves BL's existing New chat guards and prompt semantics;
+it does not enable Cowork's separate JSONL audit subsystem.
+
+Ral requested Cowork's bottom composer and Chat History interactions/shortcuts. Keep BL's
+Royal Blue/i18n and existing model/turn persistence, migrate the UI interaction slice only.
+
+```text
+message input
+[Choose workspace / full selected name] [Attach]
+             [provider / model / effort] [Voice] [Stop OR Send]
+```
+
+Use two stable rows at all Chat widths rather than container-dependent wrapping. Workspace
+precedes attachment; the selected name stays fully readable/wrappable (task149), Refresh remains
+absent, empty-state workspace has a meaningful Choose workspace action, and clearing the workspace
+requires the same confirmation as Cowork. Stop and Send are mutually exclusive according to the
+current turn state. Hide the redundant context meter to match Cowork; do not remove its data/model
+logic. Existing provider/model/effort popup content stays unchanged.
+
+History uses the current persisted BL list, with a distinct active-conversation marker and keyboard
+cursor. Opening initializes the cursor at the current session (or first row); Up/Down wrap through
+rows, Enter selects, Esc closes. Selecting the already active chat is a no-op; pointer hover does
+not replace the keyboard cursor. History and New Chat shortcuts follow Cowork (Cmd/Ctrl+H and
+Cmd/Ctrl+N); new chat focuses its composer. Scope handling to the active Maestro chat, respecting
+IME and existing disabled/turn-lock behavior and not stealing shortcuts from other app surfaces.
+Do not invent unavailable unread/concurrent-turn or permanent-delete data. Delivery: task155.
+
+Native shortcut arbitration is scoped to Maestro Control's `webContents`: exact Cmd/Ctrl+H/N
+temporarily ignore application-menu accelerators while leaving DOM key events intact; other input
+restores normal menu handling. This prevents macOS Hide from swallowing History without changing
+the global menu. Use Electron's documented
+[`before-input-event` / `setIgnoreMenuShortcuts`](https://www.electronjs.org/docs/latest/api/web-contents/#event-before-input-event).
+
+### Chat width handle — 2026-09-08
+
+Ral requested Cowork-equivalent resizing. The left edge of the Chat's own renderer contains an
+8px-wide, full-height pointer handle. Width clamps to Cowork's current **380–480px** bounds;
+Maestro retains its existing 480px default. Home owns the width preference and existing measured
+rectangle channel to Main. Persist only the settled width, not every move. Closing/reopening keeps
+the width; closed Chat retains zero drawable width and native invisibility.
+
+```text
+browser / mini-app | 8px handle | Maestro Chat (380–480px)
+```
+
+Reuse Maestro's existing #ffffff surface, #f8fafc canvas, #465467 text and #4e5882 Royal Blue
+accent; no new typography or layout style. The handle is transparent at rest with subtle blue
+hover/drag feedback and a column-resize cursor. Use pointer capture and screen coordinates so
+moving the native view edge does not cancel the drag delta; up/cancel/lost-capture all end the
+gesture. Renderer blur only updates the focus shadow, matching Cowork; it is not a pointer-end
+signal. OnlyPreview geometry updates must not claim focus from sibling Chat (see
+[resize/focus issue](../issues/maestro-chat-resize-interrupted-by-preview-focus.md)).
+Disable width transition during dragging. No Home-only overlay, Main cursor polling,
+new heavyweight I/O or separate bounds authority. Delivery: task154.
+
+Ral also requested Cowork's active Chat shadow. The Chat renderer's own `document.hasFocus()`
+initial value and window `focus`/`blur` events control a 2px blue card outline/shadow at 35% opacity.
+Use Maestro's existing primary color, not Cowork's hard-coded blue. Losing focus removes it;
+unmount releases listeners. No global-active-tab heuristic, IPC focus polling or persistent state.
+
 ```text
 ┌──────────────────────────── Maestro window ────────────────────────────┐
 │ tab strip · tabs · new tab                         recording status    │
@@ -389,10 +505,11 @@ backed by an adapter over `HomeShellBridgeHandler`; it never imports `authStore`
 token, or calls authentication HTTP directly. The bridge snapshot is explicit and token-free, and
 window recreation subscribes before the initial read so authenticated content fails closed.
 
-After an active password-complete session is confirmed, the dedicated renderer presents the
-existing 56px Home rail with only Mini Apps and Connector visible; the local Settings route remains
-registered without a rail button. The Connector rail action opens the existing Workbench Connector
-pane so its preload and renderer remain the single runtime/handler owner. Chat, MessageSearch, the
+After an active password-complete session is confirmed, the dedicated renderer presents a simple
+left-aligned application list without a navigation rail. Equal-width rows contain only an icon and
+an uppercase app name; clicking the whole row opens the app, with the existing per-app loading and
+duplicate-open guards. There are no card descriptions or separate Open buttons. The local Settings
+route stays registered; Connector remains available in Workbench. Chat, MessageSearch, the
 normal Home router, MenuBar, update polling, and Home singleton subscribers are absent. Todo
 delegates to the hidden Home shell for authenticated readiness, and this no-Chat surface hides the
 legacy Chat-menu setting. Password/OTP values exist only in addressed bridge commands and are never

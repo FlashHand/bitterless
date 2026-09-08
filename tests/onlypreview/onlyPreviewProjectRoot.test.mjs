@@ -65,7 +65,7 @@ test('root relative/name copies are explicit and root menu source has no delete 
 
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
   const nativeActions = source(
-    'src/main/onlypreview/onlyPreviewProjectNativeAction.service.ts'
+    'src/main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service.ts'
   );
   const rootMenu = handler.slice(
     handler.indexOf('async showProjectRootContextMenu('),

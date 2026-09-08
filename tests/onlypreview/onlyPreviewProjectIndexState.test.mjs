@@ -14,7 +14,7 @@ const broadcasts = [];
 globalThis.__onlyPreviewIndexStateBroadcasts = broadcasts;
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/onlyPreviewProjectIndexState.service.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewProjectIndexState.service.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',

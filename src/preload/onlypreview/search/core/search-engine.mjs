@@ -19,6 +19,7 @@ import { createOnlyPreviewSearchDiagnostics } from '../../../../shared/onlyprevi
 import { executeOnlyPreviewGlobalSearch } from './global-search-executor.mjs';
 import { previewOnlyPreviewGlobalSearchResult } from './global-search-preview.mjs';
 import { reclaimInterruptedSqliteArtifacts } from './sqlite-artifacts.mjs';
+import { openRecoverableSqliteIndex, sqlitePrimaryErrorCode } from './sqlite-recovery.mjs';
 import {
   loadOnlyPreviewWorkspaceConfig,
   readOnlyPreviewWorkspaceConfigSignature,
@@ -262,6 +263,13 @@ export class OnlyPreviewSearchEngine {
       });
       return result;
     } catch (error) {
+      if (error?.code !== 'CANCELLED') {
+        this.diagnostics.emit('initialize-failure', {
+          tag: diagnostic.tag,
+          phase: diagnostic.phase,
+          sqliteCode: sqlitePrimaryErrorCode(error)
+        });
+      }
       this.diagnostics.emit('initialize-terminal', {
         tag: diagnostic.tag,
         outcome: error?.code === 'CANCELLED' ? 'cancelled' : 'failure',
@@ -269,12 +277,18 @@ export class OnlyPreviewSearchEngine {
       });
       throw error;
     } finally {
-      if (this.currentBuildPromise === build) this.currentBuildPromise = undefined;
+      if (this.currentBuildPromise === build) {
+        this.currentBuildPromise = undefined;
+        this.initialTreePromise = undefined;
+        this.initialTreeSnapshot = undefined;
+      }
     }
   }
 
   async initializeInternal({ workspaceId, generation, rootPath, databasePath, diagnostic }) {
+    diagnostic.phase = 'shutdown';
     await this.shutdownInternal();
+    diagnostic.phase = 'authority';
     if (!isAbsolute(rootPath) || !isAbsolute(databasePath)) {
       throw new TypeError('Search authority paths must be absolute');
     }
@@ -290,6 +304,7 @@ export class OnlyPreviewSearchEngine {
     this.watchCommitRevision = 0;
     this.rootPath = rootRealPath;
     this.databasePath = databaseRealPath;
+    diagnostic.phase = 'config';
     this.config = await this.readWorkspaceConfig(rootRealPath);
     this.searchPolicy = createTraversalPolicy(this.config);
     this.browseIndex = createOnlyPreviewBrowseIndex(this.rootPath, {
@@ -300,22 +315,30 @@ export class OnlyPreviewSearchEngine {
       configHash: this.config.hash,
       engineHash
     };
-    const sqliteStartedAt = this.diagnostics.now();
-    const seedIndex = new OnlyPreviewSqliteIndex(this.databasePath);
-    const hasActiveIndex = seedIndex.isReusable(this.identity);
-    const canReconcile = seedIndex.canReconcile(this.identity);
-    this.diagnostics.emit('sqlite-open', {
-      tag: diagnostic.tag,
-      reusable: hasActiveIndex,
-      reconcile: canReconcile,
-      elapsedMs: this.diagnostics.elapsed(sqliteStartedAt)
+    let sqliteStartedAt;
+    const { seedIndex, hasActiveIndex, canReconcile, seedTree } = await openRecoverableSqliteIndex({
+      databasePath: this.databasePath,
+      identity: this.identity,
+      searchPolicy: this.searchPolicy,
+      onPhase: (phase) => {
+        diagnostic.phase = phase;
+        if (phase === 'sqlite-open') sqliteStartedAt = this.diagnostics.now();
+      },
+      onOpen: ({ hasActiveIndex, canReconcile }) => this.diagnostics.emit('sqlite-open', {
+        tag: diagnostic.tag,
+        reusable: hasActiveIndex,
+        reconcile: canReconcile,
+        elapsedMs: this.diagnostics.elapsed(sqliteStartedAt)
+      }),
+      onRecovery: ({ sqliteCode }) => this.diagnostics.emit('sqlite-recovery', {
+        tag: diagnostic.tag,
+        sqliteCode
+      })
     });
     this.index = hasActiveIndex ? seedIndex : undefined;
     this.activeSearchPolicy = hasActiveIndex ? this.searchPolicy : undefined;
     this.activeIdentity = hasActiveIndex ? this.identity : undefined;
-    const seedTree = hasActiveIndex
-      ? seedIndex.readTreeSnapshot({ searchPolicy: this.searchPolicy })
-      : { entries: [], maxDepthReached: false, treeMetadataReady: false };
+    diagnostic.phase = 'watch-start';
     const watchRevision = ++this.watchRevision;
     const configReconciler = createWorkspaceConfigReconciler({
       enqueue: (operation) => this.enqueue(operation),
@@ -346,9 +369,17 @@ export class OnlyPreviewSearchEngine {
     this.treeEntries = sortOnlyPreviewTreeEntries(seedTree.entries);
     this.maxDepthReached = seedTree.maxDepthReached;
     this.treeMetadataReady = seedTree.treeMetadataReady;
+    const initialTreeEntries = hasActiveIndex ? undefined : [];
+    let resolveInitialTree;
+    if (initialTreeEntries) {
+      this.initialTreePromise = new Promise((resolveTree) => {
+        resolveInitialTree = resolveTree;
+      });
+    }
     try {
       const buildRevision = ++this.buildRevision;
       const buildEpoch = ++this.buildEpoch;
+      diagnostic.phase = 'root-listing';
       const rootListingStartedAt = this.diagnostics.now();
       const rootListing = await this.emitRootBrowseListing();
       this.diagnostics.emit('root-listing', {
@@ -357,19 +388,32 @@ export class OnlyPreviewSearchEngine {
         elapsedMs: this.diagnostics.elapsed(rootListingStartedAt)
       });
       this.emitBuildProgress({ buildRevision, phase: 'counting' });
+      diagnostic.phase = 'snapshot';
       await this.emitSnapshot();
+      diagnostic.phase = 'count';
       const countStartedAt = this.diagnostics.now();
       const total = await countWorkspaceSearchEntries({
         rootPath: this.rootPath,
         config: this.config,
+        onTreeEntry: initialTreeEntries ? (entry) => initialTreeEntries.push(entry) : undefined,
         isCancelled: () => buildEpoch !== this.buildEpoch
       });
+      if (buildEpoch !== this.buildEpoch) throw cancelledError();
+      if (initialTreeEntries) {
+        this.initialTreeSnapshot = {
+          treeEntries: sortOnlyPreviewTreeEntries(initialTreeEntries),
+          searchPolicy: this.searchPolicy,
+          identity: this.identity
+        };
+        resolveInitialTree(this.initialTreeSnapshot);
+      }
       this.diagnostics.emit('full-count', {
         tag: diagnostic.tag,
         count: total,
         elapsedMs: this.diagnostics.elapsed(countStartedAt)
       });
       this.emitBuildProgress({ buildRevision, phase: 'indexing', completed: 0, total });
+      diagnostic.phase = 'rebuild';
       await this.buildAndPromoteCandidate({
         seedIndex,
         reconcileExisting: canReconcile,
@@ -380,6 +424,7 @@ export class OnlyPreviewSearchEngine {
       });
       this.selectedFilePriority.revoke();
       this.state = 'ready';
+      diagnostic.phase = 'snapshot';
       await this.emitSnapshot();
       if (this.watchNeedsFullReconcile) {
         this.watchNeedsFullReconcile = false;
@@ -394,6 +439,8 @@ export class OnlyPreviewSearchEngine {
       }
       throw error;
     } finally {
+      // A failed count has no metadata to publish; its build promise carries the actual error.
+      resolveInitialTree?.(undefined);
       if (seedIndex !== this.index) closeIndex(seedIndex);
     }
   }
@@ -733,10 +780,11 @@ export class OnlyPreviewSearchEngine {
   }
 
   async memory() {
+    const initialTree = this.index ? undefined : this.initialTreeSnapshot;
     return await measureOnlyPreviewSearchMemory({
       index: this.index,
-      treeEntries: this.treeEntries,
-      treeMetadataReady: this.treeMetadataReady
+      treeEntries: initialTree?.treeEntries ?? this.treeEntries,
+      treeMetadataReady: this.treeMetadataReady || initialTree !== undefined
     });
   }
 
@@ -865,6 +913,8 @@ export class OnlyPreviewSearchEngine {
       this.activeIdentity = undefined;
       this.treeEntries = [];
       this.treeMetadataReady = false;
+      this.initialTreePromise = undefined;
+      this.initialTreeSnapshot = undefined;
       this.maxDepthReached = false;
     } finally {
       writer.release();

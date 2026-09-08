@@ -366,35 +366,76 @@ export const executeOnlyPreviewGlobalSearch = async (context, params) => {
     const activeBuild = context.currentBuildPromise;
     if (!context.index && !activeBuild) throw new TypeError('Search index is not ready');
     if (!context.index && activeBuild) {
-      const priorityStartedAt = diagnostics.now();
       context.activeQueryCount += 1;
       try {
-        const priority = await context.selectedFilePriority.searchGlobal(query, {
-          maxResults: cap,
-          scope: validatedScope,
-          isCancelled
-        });
-        diagnostics.emit('search-gate', {
-          tag: diagnostic.tag,
-          gate: 'priority',
-          elapsedMs: diagnostics.elapsed(priorityStartedAt)
-        });
-        if (priority.cancelled) throw cancelledError();
-        for (const authority of [...priority.files, ...priority.contents]) emitAuthority(authority);
-        const priorityContentPaths = new Set(
-          priority.contents.map(({ relativePath }) => relativePath)
-        );
-        if (validatedScope.kind === 'directory' && validatedScope.relativePath) {
-          await searchScopedContentsWithoutActiveIndex({
-            context,
-            query,
-            scope: validatedScope,
-            cap,
-            isCancelled,
-            onAuthority: (authority) => {
-              if (!priorityContentPaths.has(authority.relativePath)) emitAuthority(authority);
-            }
+        let siblingCancelled = false;
+        const branchIsCancelled = () =>
+          siblingCancelled || isCancelled() || !context.globalSearchSession.isCurrent(request);
+        const runBranch = async (operation) => {
+          try {
+            return await operation();
+          } catch (error) {
+            siblingCancelled = true;
+            throw error;
+          }
+        };
+        const filesPromise = runBranch(async () => {
+          const metadataStartedAt = diagnostics.now();
+          const metadata = await waitForPromise(context.initialTreePromise, branchIsCancelled);
+          diagnostics.emit('search-gate', {
+            tag: diagnostic.tag,
+            gate: 'metadata',
+            elapsedMs: diagnostics.elapsed(metadataStartedAt)
           });
+          if (!metadata) return;
+          const files = await searchOnlyPreviewGlobalFiles({
+            entries: metadata.treeEntries,
+            query,
+            scope: { kind: 'project' },
+            maxResults: cap,
+            isCancelled: branchIsCancelled
+          });
+          if (files.cancelled || branchIsCancelled()) throw cancelledError();
+          for (const authority of files.authorities) {
+            emitAuthority(bindSnapshotAuthority(authority, metadata));
+          }
+        });
+        const contentsPromise = runBranch(async () => {
+          const priorityStartedAt = diagnostics.now();
+          const priority = await context.selectedFilePriority.searchGlobal(query, {
+            maxResults: cap,
+            scope: validatedScope,
+            isCancelled: branchIsCancelled
+          });
+          diagnostics.emit('search-gate', {
+            tag: diagnostic.tag,
+            gate: 'priority',
+            elapsedMs: diagnostics.elapsed(priorityStartedAt)
+          });
+          if (priority.cancelled || branchIsCancelled()) throw cancelledError();
+          for (const authority of [...priority.files, ...priority.contents]) emitAuthority(authority);
+          const priorityContentPaths = new Set(
+            priority.contents.map(({ relativePath }) => relativePath)
+          );
+          if (validatedScope.kind === 'directory' && validatedScope.relativePath) {
+            await searchScopedContentsWithoutActiveIndex({
+              context,
+              query,
+              scope: validatedScope,
+              cap,
+              isCancelled: branchIsCancelled,
+              onAuthority: (authority) => {
+                if (!branchIsCancelled() && !priorityContentPaths.has(authority.relativePath)) {
+                  emitAuthority(authority);
+                }
+              }
+            });
+          }
+        });
+        const settled = await Promise.allSettled([filesPromise, contentsPromise]);
+        const failures = settled.filter(({ status }) => status === 'rejected');
+        if (failures.length > 0) {
+          throw (failures.find(({ reason }) => reason?.code !== 'CANCELLED') ?? failures[0]).reason;
         }
       } finally {
         releaseSnapshotReader(context);
@@ -442,7 +483,7 @@ export const executeOnlyPreviewGlobalSearch = async (context, params) => {
       }
       diagnostics.emit('search-gate', {
         tag: diagnostic.tag,
-        gate: 'initial-tree',
+        gate: 'index-build',
         elapsedMs: diagnostics.elapsed(gateStartedAt)
       });
       if (isCancelled()) throw cancelledError();

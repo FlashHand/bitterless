@@ -6,7 +6,7 @@ Status: Fixed
 
 Three verification checks are red on `dev/next` for reasons unrelated to any in-flight OnlyPreview
 surface work. All three reproduce at `HEAD` (`94dfa75`) and none of them is caused by the current
-worktree edits, which touch only `src/main/onlypreview/views/onlyPreviewPreviewView.service.ts`,
+worktree edits, which touch only `src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts`,
 `src/main/windows/onlyPreviewWindow.helper.ts`, the Playwright specs/fixtures, `docs/`, and
 `package.json`.
 
@@ -56,7 +56,7 @@ unrun.
   is why only it fails. Real filesystem I/O in `bindWorkspace` also means one `setImmediate` is no
   longer enough for the listing to arrive.
 
-### 3. `eslint src/main/onlypreview/views/onlyPreviewPreviewView.service.ts`
+### 3. `eslint src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts`
 
 `webFrameMain` is imported from `electron` and never used. Identical at `HEAD`.
 
@@ -102,7 +102,7 @@ a separate pre-existing debt and none of it belongs to the repairs below.
   rect passed to `onlyPreviewPreviewRegionService.updateBounds`.
 - Brought the three over-budget files back under 800 lines:
   - extracted the preview open-trace bookkeeping into
-    `src/main/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts`;
+    `src/main/miniapps/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts`;
   - moved the presentation projection and the prepared-preview cancellation helper into the
     existing `onlyPreviewPreviewAdapter.service.ts` sibling;
   - extracted the renderer-error mapper, the metadata view model, and its projection into

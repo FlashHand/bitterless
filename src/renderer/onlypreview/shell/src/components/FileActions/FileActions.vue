@@ -1,28 +1,17 @@
 <template>
   <div name="onlypreview__fileActions" class="onlypreview-file-actions">
-    <a-button
-      name="onlypreview__openExternally"
-      class="onlypreview-file-actions__button onlypreview-file-actions__button--primary"
-      type="primary"
-      size="mini"
-      :title="onlyPreviewI18n.preview.openExternally"
-      @click="onlyPreviewShellStore.openPreviewExternally()"
-    >
-      <IconExternalLink :size="14" aria-hidden="true" />
-      <span class="onlypreview-file-actions__label">
-        {{ onlyPreviewI18n.preview.openExternally }}
-      </span>
-    </a-button>
-    <a-button
-      name="onlypreview__reveal"
+    <IconBtn
+      name="onlypreview__fileActionsMenu"
       class="onlypreview-file-actions__button"
-      size="mini"
-      :title="onlyPreviewI18n.preview.reveal"
-      @click="onlyPreviewShellStore.revealPreviewInFolder()"
+      :title="onlyPreviewI18n.preview.fileActions"
+      :aria-label="onlyPreviewI18n.preview.fileActions"
+      aria-haspopup="menu"
+      :aria-expanded="onlyPreviewShellStore.previewFileMenuOpen"
+      :disabled="!onlyPreviewShellStore.previewFileRef || onlyPreviewShellStore.previewFileMenuOpen"
+      @click="onlyPreviewShellStore.showPreviewFileMenu()"
     >
-      <IconFolderShare :size="14" aria-hidden="true" />
-      <span class="onlypreview-file-actions__label">{{ onlyPreviewI18n.preview.reveal }}</span>
-    </a-button>
+      <IconDotsVertical :size="16" aria-hidden="true" />
+    </IconBtn>
     <span
       v-if="onlyPreviewShellStore.previewActionError"
       name="onlypreview__fileActionError"
@@ -36,7 +25,8 @@
 </template>
 
 <script setup lang="ts">
-import { IconAlertTriangle, IconExternalLink, IconFolderShare } from '@tabler/icons-vue';
+import { IconAlertTriangle, IconDotsVertical } from '@tabler/icons-vue';
+import IconBtn from '@renderer/common/components/IconBtn/IconBtn.vue';
 import { onlyPreviewI18n } from '../../../../common/onlyPreviewI18n';
 import { onlyPreviewShellStore } from '../../onlyPreviewShell.store';
 </script>

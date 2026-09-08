@@ -1,0 +1,339 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { after, test } from 'node:test';
+import { build } from 'esbuild';
+import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc';
+import * as vue from 'vue';
+
+const root = resolve(import.meta.dirname, '../..');
+const panelFile = 'src/renderer/maestro/control/src/ChatPanel.vue';
+const source = readFileSync(resolve(root, panelFile), 'utf8');
+const { descriptor } = parse(source, { filename: panelFile });
+const script = compileScript(descriptor, { id: 'history', genDefaultAs: 'component' });
+const activeTurn = vue.ref(null);
+const fixture = {
+  mounts: [], unmounts: [], listeners: new Map(), calls: [], confirmations: [], notices: [], focused: true,
+  copyContext: async () => ({ ok: true, chars: 123, entries: 4 }),
+  messageStore: vue.reactive({
+    historySessions: [],
+    turnService: {
+      activeTurn: () => fixture.activeTurn,
+      send: async () => { fixture.calls.push('send'); return { text: 'ok' }; }
+    },
+    clearWorkspace: async (id) => fixture.calls.push(['clear', id]),
+    buildAgentContext: (session, _messageId, attachedPaths) => ({ workspace: session.detail.workspace, attachedPaths })
+  }),
+  get activeTurn() { return activeTurn.value; },
+  set activeTurn(value) { activeTurn.value = value; }
+};
+globalThis.__historyFixture = fixture;
+globalThis.__historyVue = vue;
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { platform: 'MacIntel' } });
+Object.defineProperty(globalThis, 'document', { configurable: true, value: { hasFocus: () => fixture.focused } });
+Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+  addEventListener: (name, callback, capture) => fixture.listeners.set(name, { callback, capture }),
+  removeEventListener: (name, callback, capture) => {
+    assert.deepEqual(fixture.listeners.get(name), { callback, capture });
+    fixture.listeners.delete(name);
+  }
+} });
+after(() => {
+  for (const [name, original] of [['window', originalWindow], ['document', originalDocument], ['navigator', originalNavigator]]) {
+    if (original) Object.defineProperty(globalThis, name, original);
+    else delete globalThis[name];
+  }
+  delete globalThis.__historyFixture;
+  delete globalThis.__historyVue;
+});
+const icons = /import \{ ([^}]+) \} from '@tabler\/icons-vue'/.exec(source)[1].split(',').map((name) => name.trim());
+const mocks = {
+  vue: `const v = globalThis.__historyVue; export const ${['ref', 'computed', 'nextTick', 'defineComponent', 'reactive', 'watch'].map((name) => `${name} = v.${name}`).join(', ')};
+    export const onMounted = (callback) => globalThis.__historyFixture.mounts.push(callback);
+    export const onBeforeUnmount = (callback) => globalThis.__historyFixture.unmounts.push(callback);`,
+  '@tabler/icons-vue': `export const ${icons.map((name) => `${name} = {}`).join(', ')};`,
+  '@arco-design/web-vue': `export const Button = {}, Drawer = {}, Tooltip = {};
+    export const Message = Object.fromEntries(['success', 'warning', 'error'].map(kind => [kind, text => globalThis.__historyFixture.notices.push({kind, text})]));
+    export const Modal = { confirm: (params) => globalThis.__historyFixture.confirmations.push(params) };`,
+  'electron-xpc/renderer': `export const createXpcRendererEmitter = () => ({ copyNextTurnContext: params => {
+    globalThis.__historyFixture.calls.push(['copy', params]); return globalThis.__historyFixture.copyContext(params);
+  } });`,
+  '@renderer/common/i18n/i18n.helper': `export const i18nHelper = { maestroControl: { chat: {
+    clearWorkspaceTitle: 'Clear?', clearWorkspaceContent: 'Clear {name}?', clearWorkspace: 'Clear', keepWorkspace: 'Keep',
+    slashClear: 'Start a fresh chat; keep this conversation', slashViewContext: 'Copy model context and pending input',
+    slashCopied: 'Copied {chars} / {entries}', newChatUnavailable: 'New chat is unavailable while a turn is running.'
+  } } };`,
+  './store/message.store': 'export const messageStore = globalThis.__historyFixture.messageStore;',
+  './store/channel.store': `export const channelStore = {
+    startNewMaestroSession: async (id) => globalThis.__historyFixture.calls.push(['new', id]),
+    selectMaestroHistorySession: async (id) => globalThis.__historyFixture.calls.push(['history', id])
+  };`,
+  './store/turn.service': 'export const isRejection = () => false;'
+};
+const output = await build({
+  stdin: { contents: `${script.content}\nexport default component;`, resolveDir: resolve(root, 'src/renderer/maestro/control/src'), loader: 'ts' },
+  bundle: true, write: false, platform: 'node', format: 'esm',
+  plugins: [{ name: 'history-boundaries', setup(context) {
+    context.onResolve({ filter: /.*/ }, ({ path }) =>
+      Object.hasOwn(mocks, path) || /\.(vue|less)$/.test(path) ? { path, namespace: 'history-mock' } : undefined);
+    context.onLoad({ filter: /.*/, namespace: 'history-mock' }, ({ path }) => ({ contents: mocks[path] ?? 'export default {};' }));
+  } }]
+});
+const { default: component } = await import(`data:text/javascript;base64,${Buffer.from(output.outputFiles[0].text).toString('base64')}`);
+const tick = () => new Promise((done) => setImmediate(done));
+const harness = (t, archivedAt) => {
+  fixture.mounts.length = 0;
+  fixture.unmounts.length = 0;
+  fixture.calls.length = 0;
+  fixture.confirmations.length = 0;
+  fixture.notices.length = 0;
+  fixture.copyContext = async () => ({ ok: true, chars: 123, entries: 4 });
+  fixture.listeners.clear();
+  fixture.focused = true;
+  fixture.activeTurn = null;
+  fixture.messageStore.historySessions = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const props = vue.reactive({ session: { id: 'b', archivedAt, detail: { workspace: { name: 'Project' } } } });
+  const ui = component.setup(props, { expose: () => undefined, emit: () => undefined });
+  let focused = 0;
+  ui.composerRef.value = { focus: () => focused++, style: {}, selectionStart: 0, scrollHeight: 44, setSelectionRange: () => undefined };
+  for (const mount of fixture.mounts) mount();
+  t.after(() => { for (const unmount of fixture.unmounts) unmount(); });
+  const key = (key, options = {}) => {
+    const event = { key, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...options };
+    fixture.listeners.get('keydown').callback(event);
+    return event;
+  };
+  return { ui, key, props, focused: () => focused };
+};
+
+test('SFC compiles and footer uses workspace-before-attachment with mutually exclusive Stop/Send', () => {
+  assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename: panelFile, id: 'history', compilerOptions: { bindingMetadata: script.bindings } }).errors, []);
+  assert.ok(source.indexOf('name="maestro__composer__workspace"') < source.indexOf('name="maestro__composer__attach"'));
+  assert.match(source, /<IconBtn\s+v-else\s+name="maestro__composer__send"/);
+  assert.doesNotMatch(source, /context-meter|contextTooltipLines|IconRefresh/);
+});
+
+test('history defaults to current chat, wraps cursor, and current activation is a no-op', async (t) => {
+  const { ui, key } = harness(t);
+  key('h', { metaKey: true });
+  assert.equal(ui.historyVisible.value, true);
+  assert.equal(ui.historyCursor.value, 1);
+  key('Enter');
+  await tick();
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(ui.historyVisible.value, true);
+  key('ArrowUp');
+  key('ArrowUp');
+  assert.equal(ui.historyCursor.value, 2);
+  key('ArrowDown');
+  assert.equal(ui.historyCursor.value, 0);
+  const enter = key('Enter');
+  ui.onComposerKeydown(enter);
+  await tick();
+  assert.deepEqual(fixture.calls, [['history', 'a']]);
+  assert.equal(ui.historyVisible.value, false);
+  assert.equal(enter.stopped, true);
+});
+
+test('Escape/toggle close restore composer focus; mount and listener cleanup are paired', async (t) => {
+  const { ui, key, focused } = harness(t);
+  await tick();
+  assert.equal(focused(), 1);
+  assert.equal(fixture.listeners.get('keydown').capture, true);
+  key('h', { ctrlKey: true });
+  key('Escape');
+  await tick();
+  assert.equal(ui.historyVisible.value, false);
+  assert.equal(focused(), 2);
+  key('h', { metaKey: true });
+  key('h', { metaKey: true });
+  await tick();
+  assert.equal(focused(), 3);
+});
+
+test('shortcuts respect focus, IME, repeated activation, and the existing turn lock', async (t) => {
+  const { ui, key } = harness(t);
+  for (const options of [{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { altKey: true }, { shiftKey: true }]) {
+    key('h', { metaKey: true, ...options });
+    assert.equal(ui.historyVisible.value, false);
+  }
+  fixture.focused = false;
+  key('h', { metaKey: true });
+  assert.equal(ui.historyVisible.value, false);
+  fixture.focused = true;
+  fixture.activeTurn = {};
+  key('n', { metaKey: true });
+  await tick();
+  assert.deepEqual(fixture.calls, []);
+  fixture.activeTurn = null;
+  key('n', { metaKey: true, repeat: true });
+  key('n', { metaKey: true });
+  await tick();
+  assert.deepEqual(fixture.calls, [['new', 'b']]);
+});
+
+test('empty history is safe and archived composers are not auto-focused', async (t) => {
+  const { ui, key, focused } = harness(t, 1);
+  fixture.messageStore.historySessions = [];
+  key('h', { metaKey: true });
+  key('ArrowUp');
+  key('Enter');
+  key('Escape');
+  await tick();
+  assert.equal(ui.historyCursor.value, 0);
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(focused(), 0);
+});
+
+test('workspace clear waits for confirmation and rechecks a turn that started meanwhile', async (t) => {
+  const { ui } = harness(t);
+  await ui.clearWorkspace();
+  assert.deepEqual(fixture.calls, []);
+  assert.match(fixture.confirmations[0].content, /Project/);
+  fixture.activeTurn = {};
+  await fixture.confirmations[0].onOk();
+  assert.deepEqual(fixture.calls, []);
+  fixture.activeTurn = null;
+  await fixture.confirmations[0].onOk();
+  assert.deepEqual(fixture.calls, [['clear', 'b']]);
+});
+
+const draft = async (ui, text, caret = text.length) => {
+  ui.input.value = text;
+  ui.composerRef.value.selectionStart = caret;
+  ui.updateComposerCaret();
+  await vue.nextTick();
+};
+const composerKey = (ui, key, options = {}) => {
+  const event = { key, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...options };
+  ui.onComposerKeydown(event);
+  return event;
+};
+
+test('slash menu triggers only at a line start, filters predictably and wraps its ASCII order', async (t) => {
+  const { ui } = harness(t);
+  for (const value of ['~/Downloads/a.pdf', '9/1', 'and/or', 'a /view', '/Users/file', '/2026/09/08']) {
+    await draft(ui, value);
+    assert.equal(ui.slashVisible.value, false, value);
+  }
+  await draft(ui, '/clear/file', 6);
+  assert.equal(ui.slashVisible.value, false);
+  await draft(ui, 'Question\n/');
+  assert.deepEqual(ui.shortcutStore.matches.map(item => item.name), ['/clear', '/view_context']);
+  assert.equal(ui.shortcutStore.active.name, '/clear');
+  composerKey(ui, 'ArrowUp');
+  assert.equal(ui.shortcutStore.active.name, '/view_context');
+  composerKey(ui, 'ArrowDown');
+  assert.equal(ui.shortcutStore.active.name, '/clear');
+  await draft(ui, '/CONTEXT');
+  assert.equal(ui.shortcutStore.active.name, '/view_context');
+  await draft(ui, '/fresh');
+  assert.equal(ui.shortcutStore.active.name, '/clear', 'description participates in filtering');
+  await draft(ui, '/nonexistent');
+  assert.equal(ui.slashVisible.value, false);
+});
+
+test('Tab completes, Escape preserves text, and IME/repeats do not execute a command', async (t) => {
+  const { ui } = harness(t);
+  await draft(ui, '/vie');
+  for (const options of [{ isComposing: true }, { keyCode: 229 }, { repeat: true }]) composerKey(ui, 'Enter', options);
+  assert.deepEqual(fixture.calls, []);
+  const tab = composerKey(ui, 'Tab');
+  await vue.nextTick();
+  assert.equal(tab.defaultPrevented, true);
+  assert.equal(ui.input.value, '/view_context');
+  assert.equal(ui.slashVisible.value, true);
+  composerKey(ui, 'Escape');
+  assert.equal(ui.input.value, '/view_context');
+  assert.equal(ui.slashVisible.value, false);
+});
+
+test('/clear delegates New chat without sending/deleting history and explains a refused action', async (t) => {
+  const { ui } = harness(t);
+  await draft(ui, '/clear');
+  fixture.activeTurn = {};
+  composerKey(ui, 'Enter');
+  await tick();
+  assert.deepEqual(fixture.calls, []);
+  assert.equal(ui.input.value, '/clear');
+  assert.match(fixture.notices.at(-1).text, /running/);
+  fixture.activeTurn = null;
+  composerKey(ui, 'Enter');
+  await tick();
+  assert.deepEqual(fixture.calls, [['new', 'b']]);
+  assert.equal(ui.input.value, '');
+});
+
+test('/view_context removes only its slash token and sends references rather than file bytes', async (t) => {
+  const { ui } = harness(t);
+  ui.selectedFiles.value = [{ name: 'report.pdf', path: '/project/report.pdf' }];
+  await draft(ui, 'Question\n/view_context\nKeep this', 'Question\n/view_context'.length);
+  composerKey(ui, 'Enter');
+  await tick();
+  assert.deepEqual(fixture.calls, [['copy', {
+    sessionId: 'b', draft: 'Question\n\nKeep this',
+    context: { workspace: { name: 'Project' }, attachedPaths: ['/project/report.pdf'] }
+  }]]);
+  assert.equal(ui.input.value, 'Question\n\nKeep this');
+  assert.equal(ui.selectedFiles.value.length, 1);
+  assert.equal(fixture.notices.at(-1).kind, 'success');
+});
+
+test('one pending command cannot repeat or send; late completion preserves newly typed input', async (t) => {
+  const { ui } = harness(t);
+  let finish;
+  fixture.copyContext = () => new Promise(resolve => { finish = resolve; });
+  await draft(ui, '/view_context');
+  composerKey(ui, 'Enter');
+  composerKey(ui, 'Enter');
+  await draft(ui, '/clear');
+  composerKey(ui, 'Enter');
+  assert.equal(fixture.calls.length, 1);
+  finish({ ok: true, chars: 12, entries: 1 });
+  await tick();
+  assert.equal(ui.input.value, '/clear');
+  assert.equal(ui.shortcutStore.pending, false);
+});
+
+test('failed export retains retryable draft; switched sessions and unmounts fence late writes', async (t) => {
+  const { ui, props } = harness(t);
+  fixture.copyContext = async () => ({ ok: false, error: 'runtime unsupported' });
+  await draft(ui, '/view_context');
+  await ui.commitShortcut();
+  assert.equal(ui.input.value, '/view_context');
+  assert.equal(ui.slashVisible.value, true);
+  assert.match(fixture.notices.at(-1).text, /runtime unsupported/);
+  let finish;
+  fixture.copyContext = () => new Promise(resolve => { finish = resolve; });
+  const pending = ui.commitShortcut();
+  props.session = { ...props.session, id: 'new-session' };
+  assert.equal(ui.shortcutStore.open, false);
+  await draft(ui, 'new session draft');
+  finish({ ok: true, chars: 12, entries: 1 });
+  await pending;
+  assert.equal(ui.input.value, 'new session draft');
+  await draft(ui, '/view_context');
+  const disposed = ui.commitShortcut();
+  for (const unmount of fixture.unmounts.splice(0)) unmount();
+  finish({ ok: true, chars: 12, entries: 1 });
+  await disposed;
+  assert.equal(ui.input.value, '/view_context');
+  assert.equal(ui.shortcutStore.open, false);
+});
+
+test('an export error remains visible without replacing a newer draft', async (t) => {
+  const { ui } = harness(t);
+  let finish;
+  fixture.copyContext = () => new Promise(resolve => { finish = resolve; });
+  await draft(ui, '/view_context');
+  const pending = ui.commitShortcut();
+  await draft(ui, 'Keep my new draft');
+  finish({ ok: false, error: 'Clipboard unavailable' });
+  await pending;
+  assert.equal(ui.input.value, 'Keep my new draft');
+  assert.equal(fixture.notices.at(-1).text, 'Clipboard unavailable');
+});

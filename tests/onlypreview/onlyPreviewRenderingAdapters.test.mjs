@@ -366,14 +366,15 @@ test('Office surface errors install local truth and dispose before Main reportin
   assert.equal(harness.ready.length, 0, 'stale ready must not clear a terminal local Office error');
 });
 
-test('the loading-project pane follows the Project index state on the presentation', async () => {
+test('the loading-project pane follows root-listing readiness independently of indexing', async () => {
   const descriptor = officeDescriptor('.png', 'image');
   const presentation = {
     ...officePresentation(descriptor, 301, 'image'),
     fileRef: null,
     descriptor: null,
     status: 'empty',
-    projectIndexState: 'building'
+    projectIndexState: 'building',
+    projectBrowseState: 'pending'
   };
   const harness = createRendererStoreHarness(presentation);
   globalThis.__onlyPreviewRendererStoreHarness = harness;
@@ -389,22 +390,25 @@ test('the loading-project pane follows the Project index state on the presentati
   assert.equal(store.projectIndexing, true);
   assert.match(await renderPreviewSurface(store), /name="onlypreview__previewIndexing"/);
 
-  const republish = async (projectIndexState) => {
-    harness.presentation = { ...presentation, projectIndexState };
+  const republish = async (projectBrowseState, projectIndexState = 'building') => {
+    harness.presentation = { ...presentation, projectIndexState, projectBrowseState };
     harness.subscriptions.get('onlypreview/previewPresentation')({
       params: { hostId: 'host-for-tests' }
     });
     await new Promise((resolveWait) => setImmediate(resolveWait));
   };
 
-  await republish('reconciling');
-  assert.equal(store.projectIndexing, true, 'reconciling is still not a usable index');
+  await republish('pending', 'ready');
+  assert.equal(store.projectIndexing, true, 'index readiness cannot impersonate a root listing');
 
   await republish('ready');
   assert.equal(store.projectIndexing, false);
   const readyHtml = await renderPreviewSurface(store);
   assert.match(readyHtml, /name="onlypreview__previewEmpty"/);
   assert.doesNotMatch(readyHtml, /name="onlypreview__previewIndexing"/);
+
+  await republish('ready', 'reconciling');
+  assert.equal(store.projectIndexing, false, 'index reconciliation cannot re-show project loading');
 
   // A build that fails before an index exists emits no snapshot, so Main reports `failed` instead.
   // It must read as not-loading: the Project rail already shows the error, and an animation that
@@ -426,7 +430,8 @@ test('a Project that has already resolved a file drops the index placeholder for
   const descriptor = officeDescriptor('.txt', 'text');
   const presentation = {
     ...officePresentation(descriptor, 401),
-    projectIndexState: 'building'
+    projectIndexState: 'building',
+    projectBrowseState: 'pending'
   };
   const harness = createRendererStoreHarness(presentation);
   globalThis.__onlyPreviewRendererStoreHarness = harness;
@@ -459,7 +464,8 @@ test('a Project that has already resolved a file drops the index placeholder for
     descriptor: null,
     error: null,
     selectedTextAvailable: false,
-    projectIndexState: 'building'
+    projectIndexState: 'building',
+    projectBrowseState: 'pending'
   });
 
   // Exactly what `clearPresentation` publishes when the selected file is deleted.

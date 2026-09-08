@@ -796,3 +796,121 @@ test('a folder delete that fails after isolation restores it and cleans up after
     assert.deepEqual(recoveryEntries(root), []);
   });
 });
+
+// 同一个目录的重绑必须**幂等**(docs/issues/renderer-reload-invalidates-project-authority.md)。
+//
+// 为什么这是一条必须有的用例:`bindWorkspace` 原来每次都 `++this.generation`,而**渲染进程
+// 重载必然重新 bind**(shell 重新 boot → 恢复上次的项目)。于是 main 手上重载前拿的引用失配,
+// 用户看到「This project belongs to another preview session」—— 而并没有第二个会话。
+// 重载不只发生在开发期的 HMR:崩溃恢复、冷 tab 激活时 view 重新物化、host toggle 之后的重建
+// 都会。
+//
+// 上面那 15 条用例在**有没有这个修复的情况下都通过** —— 所以它们不是这条性质的证据,
+// 这一组才是。
+test('re-binding the same directory is idempotent, so a reload does not invalidate live references', async () => {
+  await withTempDirectory('onlypreview-authority-idempotent-', async (root) => {
+    const project = join(root, 'project');
+    write(join(project, 'main.ts'), 'export {};');
+    const authority = new runtime.FileSearchProjectAuthority();
+
+    const first = await authority.bindWorkspace(runtimeInstanceId, 'ws', project);
+    assert.equal(first.workspaceGeneration, 1);
+
+    // 一次重载 = 同一个目录再 bind 一次。代次不能变。
+    const second = await authority.bindWorkspace(runtimeInstanceId, 'ws', project);
+    assert.equal(
+      second.workspaceGeneration,
+      first.workspaceGeneration,
+      '同一目录重绑铸了新代次 —— 这正是那条横幅的成因'
+    );
+
+    // 真正要保住的性质:重载**之前**拿的引用,重载之后仍然能用。
+    const authorized = await authority.authorizeItem(
+      runtimeInstanceId,
+      first.workspaceId,
+      first.workspaceGeneration,
+      'main.ts'
+    );
+    assert.equal(authorized.relativePath, 'main.ts');
+  });
+});
+
+test('a different directory still mints a new generation and retires the old reference', async () => {
+  await withTempDirectory('onlypreview-authority-switch-', async (root) => {
+    const first = join(root, 'first');
+    const second = join(root, 'second');
+    write(join(first, 'a.ts'), 'export {};');
+    write(join(second, 'b.ts'), 'export {};');
+    const authority = new runtime.FileSearchProjectAuthority();
+
+    const bound = await authority.bindWorkspace(runtimeInstanceId, 'ws', first);
+    const rebound = await authority.bindWorkspace(runtimeInstanceId, 'ws', second);
+    assert.ok(
+      rebound.workspaceGeneration > bound.workspaceGeneration,
+      '换目录必须铸新代次 —— 幂等不能把这条语义一起削掉'
+    );
+    // 旧引用**应当**失效:项目真的换了。
+    await expectOnlyPreviewError('WORKSPACE_ACCESS_DENIED')(() =>
+      authority.authorizeItem(runtimeInstanceId, bound.workspaceId, bound.workspaceGeneration, 'a.ts')
+    );
+  });
+});
+
+test('the same workspaceId over a different directory is NOT idempotent', async () => {
+  await withTempDirectory('onlypreview-authority-sameid-', async (root) => {
+    const first = join(root, 'first');
+    const second = join(root, 'second');
+    write(join(first, 'a.ts'), 'export {};');
+    write(join(second, 'b.ts'), 'export {};');
+    const authority = new runtime.FileSearchProjectAuthority();
+
+    // `workspaceId` 是调用方给的,而这个模块的职责恰恰是「确认那个 id 指的还是同一个真实目录」。
+    // 只比 id 就会把两个不同目录当成同一个 —— 那是把要守的东西当成前提。
+    const bound = await authority.bindWorkspace(runtimeInstanceId, 'same-id', first);
+    const rebound = await authority.bindWorkspace(runtimeInstanceId, 'same-id', second);
+    assert.ok(
+      rebound.workspaceGeneration > bound.workspaceGeneration,
+      '同 id 不同目录被当成幂等 —— 判据只比了 workspaceId'
+    );
+  });
+});
+
+test('a directory replaced at the same path is a different workspace', async () => {
+  await withTempDirectory('onlypreview-authority-replaced-', async (root) => {
+    const project = join(root, 'project');
+    write(join(project, 'main.ts'), 'export {};');
+    const authority = new runtime.FileSearchProjectAuthority();
+    const bound = await authority.bindWorkspace(runtimeInstanceId, 'ws', project);
+
+    // 路径没变,但 inode 变了 —— 这是 dev/inode 那两项判据存在的理由:
+    // 只比 real path 会把「同名的另一个目录」当成同一个项目。
+    renameSync(project, join(root, 'moved-away'));
+    write(join(project, 'other.ts'), 'export {};');
+
+    const rebound = await authority.bindWorkspace(runtimeInstanceId, 'ws', project);
+    assert.ok(
+      rebound.workspaceGeneration > bound.workspaceGeneration,
+      '同路径但换了 inode 的目录被当成同一个 —— 判据漏了 dev/inode'
+    );
+  });
+});
+
+test('a symlinked spelling of the same directory is idempotent, because the check is on real paths', async () => {
+  await withTempDirectory('onlypreview-authority-symlink-', async (root) => {
+    const project = join(root, 'project');
+    write(join(project, 'main.ts'), 'export {};');
+    const alias = join(root, 'alias');
+    symlinkSync(project, alias);
+    const authority = new runtime.FileSearchProjectAuthority();
+
+    const bound = await authority.bindWorkspace(runtimeInstanceId, 'ws', project);
+    // 直接给这个符号链接会被 `bindWorkspace` 以 PATH_NOT_REGULAR_FILE 拒掉(它本来就拒符号链接
+    // 作为工作区根),所以这里走「链接内部的真实路径」这一种拼法 —— realpath 归一之后同一个目录。
+    const viaReal = await authority.bindWorkspace(runtimeInstanceId, 'ws', realpathSync(alias));
+    assert.equal(
+      viaReal.workspaceGeneration,
+      bound.workspaceGeneration,
+      '同一目录的另一种拼法应当归一到同一代次'
+    );
+  });
+});

@@ -449,7 +449,7 @@ load-bearing ones:
   re-reads every `out/renderer/onlypreview/<mode>/index.html` and enforces CSP and charset ordering,
   the `wasm-unsafe-eval` present/absent split per entry, and the Monaco bootstrap hash. Renderer-entry
   drift is invisible to node tests and caught here.
-- An **import-direction guard**: no file under `src/main/onlypreview/` may import `@maestro*`. The
+- An **import-direction guard**: no file under `src/main/miniapps/onlypreview/` may import `@maestro*`. The
   dependency rule is stated in this document and is otherwise unenforced.
 - A **containment property test** over (composite extent × reported preview rect) asserting every
   layer rect lies inside `{0, 0, width, height}` — the invariant that stands in for the ancestor

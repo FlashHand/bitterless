@@ -2,6 +2,12 @@
 
 Status: implemented; owner verification pending
 
+Current selection policy: task150 superseded the clear-tree-selection lines below; external
+files preserve Project browsing state. Task153 further makes agent/MCP file opens non-selecting
+for the tree, including inside-project files. See the
+[current browse-history contract](../features/onlypreview-browse-history.md#state-and-persistence).
+Directory opens retain the switch-Project behavior described here.
+
 ## Problem
 
 `preview.open`, Finder/Explorer file-open, and the development CLI route currently treat every

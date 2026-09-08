@@ -32,6 +32,7 @@ const mocks = {
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
     const base = join(parentDir, specifier)
@@ -196,7 +197,7 @@ const previousRelay = process.env.COACH_AI_CRMS_RELAY_BASE_URL
 process.env.COACH_AI_CRMS_RELAY_BASE_URL = `http://127.0.0.1:${listen.port}/v1`
 
 try {
-  const { CoachRuntimeAdapter } = loadTsModule('@maestro-main/agent/runtime/coachRuntimeAdapter')
+  const { CoachRuntimeAdapter } = loadTsModule('@main/agent/runtime/coachRuntimeAdapter')
   const adapter = new CoachRuntimeAdapter()
   assert(await adapter.checkTarget({ providerId: 'ai-crms', modelId: 'qwen3.7-plus', authPath: '' }), 'Coach runtime router should select the native AI-CRMS adapter')
 

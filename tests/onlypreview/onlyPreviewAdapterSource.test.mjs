@@ -7,7 +7,7 @@ test('Markdown rendering and selection counts stay renderer-only, inert, and hos
   assert.equal(packageJson.dependencies.marked, '18.0.7');
   assert.equal(packageJson.dependencies.dompurify, '3.4.12');
 
-  const classifier = source('src/main/onlypreview/onlyPreviewClassifier.service.ts');
+  const classifier = source('src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts');
   assert.match(classifier, /TEXT_EXTENSIONS[\s\S]*'\.md'[\s\S]*'\.mdx'/);
   assert.match(classifier, /'\.md':\s*'markdown'/);
   assert.match(classifier, /'\.markdown':\s*'markdown'/);
@@ -22,7 +22,7 @@ test('Markdown rendering and selection counts stay renderer-only, inert, and hos
   assert.match(surface, /descriptor\.extension === '\.md'/);
   assert.doesNotMatch(surface, /descriptor\.extension === '\.mdx'/);
   assert.doesNotMatch(surface, /descriptor\.extension === '\.markdown'/);
-  const previewAdapter = source('src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
+  const previewAdapter = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
   assert.match(previewAdapter, /descriptor\.extension === '\.md'[\s\S]*adapterId: 'markdown-dom'/);
   assert.doesNotMatch(previewAdapter, /descriptor\.extension === '\.mdx'/);
 
@@ -44,7 +44,25 @@ test('Markdown rendering and selection counts stay renderer-only, inert, and hos
   const markdownComponent = source(
     'src/renderer/onlypreview/preview/src/components/MarkdownPreview/MarkdownPreview.vue'
   );
-  assert.match(markdownComponent, /v-html="renderResult\.html"/);
+  // `v-html` 只能收到 sanitize 后的结果 —— 现在有两条来源,都在这里列举掉:
+  //   ① `result.html` 本身;② 它经 `highlightOnlyPreviewMarkdownCode` 替换过代码块之后的版本
+  //      (替换在 sanitize 之后,因为 shiki 靠 inline style 上色而白名单里没有 style)。
+  // 原断言只钉了 `renderResult.html` 这个名字;列举来源比钉名字强 —— 它同时排除了
+  // 「documentHtml 从别处被赋值」这件事,而那才是这条断言真正在防的。
+  assert.match(markdownComponent, /v-html="documentHtml"/);
+  const documentHtmlAssignments = [
+    ...markdownComponent.matchAll(/documentHtml\.value\s*=\s*([^;\n]+)/g)
+  ].map((match) => match[1].trim());
+  assert.deepEqual(
+    documentHtmlAssignments.sort(),
+    ["''", 'decorated', 'result.html'],
+    'v-html 的内容只能来自 sanitize 后的 html 或它替换过代码块的版本'
+  );
+  assert.match(
+    markdownComponent,
+    /highlightOnlyPreviewMarkdownCode\(result\.html, result\.codeBlocks\)/,
+    '`decorated` 必须来自那一次替换,不能是别的东西'
+  );
   assert.match(markdownComponent, /countOnlyPreviewDomSelection\(documentRef\.value/);
   assert.match(markdownComponent, /document\.addEventListener\('selectionchange'/);
   assert.match(markdownComponent, /document\.removeEventListener\('selectionchange'/);
@@ -263,15 +281,15 @@ test('image and native media adapters keep renderer-owned lifecycle and no text/
   assert.match(mediaService, /response\.headers\.get\('accept-ranges'\)/);
   assert.match(mediaService, /code === 1[\s\S]*code === 2[\s\S]*code === 3[\s\S]*code === 4/);
 
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const delivery = source('src/main/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const delivery = source('src/main/miniapps/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
   // Image, audio and video all render straight from the element, so all three hold the token for
   // the life of the selection; none of them buffers the file and hands it back on ready.
   assert.match(delivery, /adapter\.adapterId === 'image' \|\|/);
   assert.match(delivery, /lifetime: 'selection'/);
   assert.doesNotMatch(delivery, /: 'ttl'/);
   assert.match(region, /this\.presentation\.status !== 'loading'/);
-  const adapterSource = source('src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
+  const adapterSource = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
   const adapterTextGate = adapterSource.slice(
     adapterSource.indexOf('onlyPreviewAdapterProvidesSelectedText'),
     adapterSource.indexOf('onlyPreviewAdapterUsesOneShotAsset')
@@ -289,7 +307,7 @@ test('deep Project rows stay complete while HTML routes to the isolated Chrome s
   const sharedTypes = source('src/shared/onlypreview/onlyPreview.types.ts');
   assert.match(sharedTypes, /'html-page': 1024 \* 1024/);
 
-  const classifier = source('src/main/onlypreview/onlyPreviewClassifier.service.ts');
+  const classifier = source('src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts');
   const textExtensions = classifier.match(
     /const TEXT_EXTENSIONS = new Set\(\[([\s\S]*?)\]\);/
   )?.[1];
@@ -309,11 +327,11 @@ test('deep Project rows stay complete while HTML routes to the isolated Chrome s
     previewStore,
     /presentation\.adapterId === 'html-page'[\s\S]*A Chromium-direct document was routed to the Vue Preview surface/
   );
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const viewService = source('src/main/onlypreview/views/onlyPreviewPreviewView.service.ts');
-  const previewAdapter = source('src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts');
+  const previewAdapter = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
   assert.match(previewAdapter, /adapterId:\s*'html-page'/);
-  const delivery = source('src/main/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
+  const delivery = source('src/main/miniapps/onlypreview/views/onlyPreviewSelectionDelivery.service.ts');
   assert.match(delivery, /onlyPreviewDocumentRegistry\.issue\(hostToken, prepared, selectionRevision\)/);
   assert.match(viewService, /installOnlyPreviewSessionProtocol/);
   // The dead proxy and the http/https block are gone by owner decision; the containment that
@@ -323,7 +341,7 @@ test('deep Project rows stay complete while HTML routes to the isolated Chrome s
   assert.match(viewService, /setPermissionCheckHandler\(\(\) => false\)/);
   assert.match(viewService, /'will-download', preventOnlyPreviewDownload/);
   assert.match(viewService, /setWebRTCIPHandlingPolicy\('disable_non_proxied_udp'\)/);
-  const documentRegistry = source('src/main/onlypreview/onlyPreviewDocument.registry.ts');
+  const documentRegistry = source('src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts');
   // A previewed page renders as a page, so its own scripts, workers, frames and same-document
   // fetches are allowed. The property that still matters is that the network stays closed: every
   // source is the document's own one-shot origin, and no http/ws origin appears anywhere.

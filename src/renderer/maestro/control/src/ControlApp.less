@@ -1,4 +1,5 @@
 .control-app {
+  position: relative;
   display: flex;
   width: 100%;
   min-height: 0;
@@ -7,6 +8,28 @@
   overflow: hidden;
   background: #f8fafc;
   padding: 12px;
+}
+
+.control-app__resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  width: 8px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.control-app__resize-handle:hover {
+  background: rgba(var(--primary-6), 0.15);
+}
+
+.control-app__resize-handle--resizing,
+.control-app__resize-handle--resizing:hover {
+  background: rgba(var(--primary-6), 0.3);
 }
 
 .control-app .arco-btn {
@@ -73,6 +96,17 @@
   border-radius: 16px;
   background: #ffffff;
   padding: 8px;
+  transition: box-shadow 0.15s ease-out;
+}
+
+.control-app__card--focused {
+  box-shadow: 0 0 0 2px rgba(var(--primary-6), 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-app__card {
+    transition: none;
+  }
 }
 
 .control-app__toolbar,

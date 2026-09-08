@@ -6,6 +6,71 @@ design document.
 
 ## Feature contracts
 
+- [Maestro slash commands](features/maestro-slash-commands.md) — implemented; owner testing pending: Cowork-style
+  `/clear` and `/view_context` menu, preserving BL runtime and composer behavior.
+
+- [Chat resize interrupted by OnlyPreview focus](issues/maestro-chat-resize-interrupted-by-preview-focus.md) — implemented; owner testing pending;
+  BL-only repair preserves sibling focus and Cowork-style pointer gesture lifecycle.
+
+- [Project Cmd+Delete](plan/tasks/onlypreview-project-delete-shortcut-166.md) — implemented in BL/Cowork;
+  focused Shell opens the existing delete confirmation; owner testing pending.
+
+- [OnlyPreview bookmarks and focus](plan/tasks/onlypreview-bookmarks-focus-165.md) — implemented;
+  Project-scoped file/folder bookmarks and renderer-focus selection emphasis; owner testing pending.
+
+- [macOS Open With](plan/tasks/onlypreview-macos-open-with-164.md) — implemented; packaged-app testing pending:
+  BL/Cowork file registration, workspace-safe OS opens and default-viewer self-open protection.
+
+- [OnlyPreview header file menu](plan/tasks/onlypreview-header-file-menu-163.md) — implemented; owner testing pending:
+  one dots IconBtn opens native Open/Reveal actions in BL and Cowork, fenced to the current preview.
+
+- [Main-process layout refactor](plan/tasks/main-process-layout-162.md) - implemented; owner testing
+  pending: the Claude subscription (sub2api) feature is removed outright, including Maestro's `Local`
+  LLM provider, which existed only to point pi at that local server. `src/main/maestro/agent/` is
+  hoisted to `src/main/agent/` and `src/main/onlypreview/` moves under a new `src/main/miniapps/`,
+  matching Cowork. `src/main/modules/` is created empty for the next step. The `claude-subscription-*`
+  and `sub2api` documents below are kept as the record of a feature that no longer ships.
+
+- [pi agent dir moved off `~/.pi/agent`](issues/pi-agent-dir-uses-global-home.md) - implemented; owner
+  testing pending: pi's `agentDir` was never set, so the user's own `~/.pi/agent/AGENTS.md` (a git-sync
+  rulebook) was reaching every maestro session's **system** prompt uncompressed, and `TOOLS_DIR` pointed
+  into the pi CLI's managed `bin`. Now `<userData>/.pi`, set via `PI_CODING_AGENT_DIR` at boot **and** an
+  explicit `agentDir` per session, with a one-time forward migration of auth/models off
+  `<userData>/cowork/pi` that deliberately does not carry `bin/`. Cowork aligned to the same path.
+
+- [Control-chat link policy](features/maestro.md) - implemented; owner testing pending: a web link in a
+  chat reply becomes a new operation tab instead of a bare BrowserWindow; the Control view had no
+  window-open handler and no navigation fence at all. Ported from Cowork (the parity source for
+  Control chat) and held byte-equal by `scripts/maestro/check-control-link-policy.mjs`.
+
+- [Workspace open readiness](plan/tasks/onlypreview-open-readiness-161.md) - implemented; owner testing pending:
+  repeated opens await the same initialized OnlyPreview surface; BL/Cowork parity.
+
+- [Maestro Control providers](plan/tasks/maestro-control-providers-159.md) - implemented; owner testing pending:
+  remove Micromeet/Local choices without silently changing saved providers.
+- [Corrupt Project index recovery](issues/onlypreview-corrupt-project-index.md) - implemented; owner testing pending:
+  confirmed SQLite corruption; recover the derived cache and preserve project files.
+
+- [Maestro workspace appearance](plan/tasks/maestro-workspace-ui-158.md) - implemented; owner testing pending:
+  Cowork-aligned compact typography, control alignment and independent tooltips; BL only.
+
+- [Cold-index search](issues/onlypreview-cold-index-blocks-search.md) - implemented; owner testing pending:
+  early metadata Files results and background indexing without false RPC failures; BL/Cowork.
+- [Embedded search Escape](plan/tasks/onlypreview-tab-search-escape-157.md) - implemented; owner testing pending:
+  close the active global-search layer in a browser tab; check Cowork parity.
+
+- [Maestro composer/history parity](plan/tasks/maestro-composer-history-parity-155.md) - implemented; owner testing pending:
+  Cowork footer structure and history keyboard interactions while preserving BL workspace styling.
+
+- [Maestro Chat width handle](plan/tasks/maestro-chat-width-handle-154.md) - implemented; owner testing pending:
+  8px left-edge drag handle; Cowork's 380–480px limits, existing Maestro default preserved.
+
+- [Agent preview preserves Project selection](plan/tasks/onlypreview-agent-preserve-project-153.md) - implemented; owner testing pending:
+  MCP file opens update preview/Recents without changing the selected directory or workspace.
+
+- [OnlyPreview listing readiness](plan/tasks/onlypreview-project-browse-ready-152.md) - implemented; owner testing pending:
+  Select a file once the Project listing is available, independently of indexing progress.
+
 - [Renderer language coordination](features/renderer-i18n.md) - one main-process language authority,
   live updates for every first-party renderer, and correct locale before recreated windows mount.
 - [Maestro sub-application](features/maestro.md) - the Bitterless Mini App migrated from the

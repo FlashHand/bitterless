@@ -77,8 +77,10 @@ onBeforeUnmount(() => {
            heavy pages, drop `transition-[width] duration-200 ease-out` for an instant toggle. -->
       <div
         ref="controlPlaceholder"
+        name="maestroLayout__controlPlaceholder"
         class="maestro-layout__control"
-        :class="{ 'maestro-layout__control--open': layoutStore.sidebarOpen }"
+        :class="{ 'maestro-layout__control--resizing': layoutStore.sidebarResizing }"
+        :style="{ width: layoutStore.sidebarOpen ? `${layoutStore.sidebarWidth}px` : '0px' }"
       ></div>
     </div>
   </div>

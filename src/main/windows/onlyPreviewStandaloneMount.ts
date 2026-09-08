@@ -3,8 +3,8 @@ import type {
   OnlyPreviewMount,
   OnlyPreviewMountChrome,
   OnlyPreviewMountKind
-} from '@main/onlypreview/onlyPreviewSurface.mount';
-import type { OnlyPreviewSurfaceSize } from '@main/onlypreview/onlyPreviewSurfaceLayout';
+} from '@main/miniapps/onlypreview/onlyPreviewSurface.mount';
+import type { OnlyPreviewSurfaceSize } from '@main/miniapps/onlypreview/onlyPreviewSurfaceLayout';
 
 /**
  * The composite carried by its own window — today's behaviour, behind the seam.

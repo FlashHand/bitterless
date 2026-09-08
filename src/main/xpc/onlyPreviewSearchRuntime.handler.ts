@@ -36,9 +36,9 @@ import type {
   OnlyPreviewSearchSnapshot
 } from '@shared/onlypreview/onlyPreviewSearch.type';
 import { fileSearchRuntimeRelayService } from '@main/fileSearch/fileSearchRuntimeRelay.service';
-import { onlyPreviewHostRegistry } from '@main/onlypreview/onlyPreviewHost.registry';
-import { onlyPreviewProjectIndexStateService } from '@main/onlypreview/onlyPreviewProjectIndexState.service';
-import { onlyPreviewSearchBootstrapRegistry } from '@main/onlypreview/onlyPreviewSearchBootstrap.registry';
+import { onlyPreviewHostRegistry } from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
+import { onlyPreviewProjectIndexStateService } from '@main/miniapps/onlypreview/onlyPreviewProjectIndexState.service';
+import { onlyPreviewSearchBootstrapRegistry } from '@main/miniapps/onlypreview/onlyPreviewSearchBootstrap.registry';
 
 /**
  * Record the index state of a snapshot that is *returned* rather than broadcast.

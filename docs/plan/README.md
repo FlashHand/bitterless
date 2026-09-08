@@ -14,6 +14,54 @@ no-copy progress rail—remains part of the current feature contract.
 
 ## Active delivery
 
+- [Slash commands 169](tasks/maestro-slash-commands-169.md) — implemented; owner testing pending; Cowork-style
+  `/clear` and `/view_context` menu with BL-native, read-only context export.
+
+- [Home application list 168](tasks/maestro-home-app-list-168.md) — implemented; owner testing pending;
+  no left navigation, uniform icon/name rows, uppercase names and whole-row opening.
+
+- [Workbench tab 167](tasks/maestro-workbench-tab-167.md) — implemented; owner testing pending;
+  Cowork-style singleton tab, gear without selected state, recording renderer retained on close.
+
+- [Project Cmd+Delete 166](tasks/onlypreview-project-delete-shortcut-166.md) — implemented;
+  Shell-only selection confirmation, matching Cowork mini-032; owner testing pending.
+
+- [OnlyPreview bookmarks and focus 165](tasks/onlypreview-bookmarks-focus-165.md) — implemented;
+  Project-scoped persistent bookmarks and Shell-focus selection; Cowork mini-031; owner testing pending.
+
+- [macOS Open With 164](tasks/onlypreview-macos-open-with-164.md) — implemented; packaged-app testing pending;
+  Viewer/Alternate associations, Project-preserving OS input and default-self guard; Cowork mini-030.
+
+- [OnlyPreview header file menu 163](tasks/onlypreview-header-file-menu-163.md) — implemented; owner testing pending;
+  single IconBtn and selection-fenced Electron-native actions; Cowork mini-029 parity.
+
+- [Workspace open readiness161](tasks/onlypreview-open-readiness-161.md) — implemented; owner testing pending;
+  repeated workspace opens cannot bypass privileged runtime readiness.
+
+- [Maestro Control providers159](tasks/maestro-control-providers-159.md) — implemented; owner testing pending; BL only.
+- [Corrupt index recovery160](tasks/onlypreview-corrupt-index-recovery-160.md) — implemented; owner testing pending;
+  exact SQLite corruption recovery in the preload, without project/configuration changes.
+
+- [Maestro workspace UI 158](tasks/maestro-workspace-ui-158.md) — implemented; owner testing pending;
+  BL/Cowork 26px height and 280px control cap with long-name ellipsis and unchanged actions.
+
+- [Cold-index search 156](tasks/onlypreview-cold-search-156.md) — implemented; owner testing pending;
+  background initialization, early metadata Files batches and progress-aware transport.
+- [Embedded search Escape 157](tasks/onlypreview-tab-search-escape-157.md) — implemented; owner testing pending;
+  active search-layer close routing in BL/Cowork tabs.
+
+- [Maestro footer/history parity 155](tasks/maestro-composer-history-parity-155.md) — implemented; owner testing pending;
+  fixed footer rows and Cowork-style history/New Chat interaction.
+
+- [Maestro Chat resize 154](tasks/maestro-chat-width-handle-154.md) — implemented; owner testing pending;
+  left-edge8px handle, Cowork380–480px range and settled width persistence.
+
+- [Agent preview Project preservation 153](tasks/onlypreview-agent-preserve-project-153.md) — implemented; owner testing pending;
+  agent/MCP file opens preserve independent Project tree state; Cowork mini-023 port.
+
+- [OnlyPreview listing readiness 152](tasks/onlypreview-project-browse-ready-152.md) — implemented; owner testing pending;
+  root-listing readiness controls the empty preview, indexing keeps its own progress rail.
+
 - [OnlyPreview tree density 151](tasks/onlypreview-tree-density-151.md) — implemented; owner testing pending;
   Project names 14px, root weight600, rows22px; Cowork mini-021 port.
 

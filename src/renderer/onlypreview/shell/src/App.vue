@@ -2,6 +2,7 @@
   <div
     name="onlypreview__shell"
     class="onlypreview-shell"
+    :class="{ 'onlypreview-shell--focused': shellFocused }"
     :style="{ '--onlypreview-project-width': `${onlyPreviewShellStore.projectWidth}px` }"
     @keydown.capture="handleShellKeydown"
   >
@@ -118,6 +119,7 @@
       </div>
     </header>
 
+    <BookmarkBar />
     <main name="onlypreview__workspace" class="onlypreview-shell__workspace">
       <aside name="onlypreview__project" class="onlypreview-shell__project">
         <div name="onlypreview__projectHeader" class="onlypreview-shell__project-header">
@@ -436,9 +438,11 @@ import { formatOnlyPreviewBytes, interpolateOnlyPreview } from '../../common/onl
 import { onlyPreviewEnv } from '../../common/contextBridge/onlyPreviewEnv.bridge';
 import { onlyPreviewI18n } from '../../common/onlyPreviewI18n';
 import PreviewToolbar from './components/PreviewToolbar/PreviewToolbar.vue';
+import BookmarkBar from './components/Bookmarks/BookmarkBar.vue';
 import ProjectPanelTabs from './components/Recents/ProjectPanelTabs.vue';
 import RecentsPanel from './components/Recents/RecentsPanel.vue';
 import { onlyPreviewRecentsStore } from './onlyPreviewRecents.store';
+import { handleOnlyPreviewProjectDeleteShortcut } from './onlyPreviewProjectDeleteShortcut.service';
 import { onlyPreviewProjectWidthPersistence } from './onlyPreviewProjectWidthPersistence.service';
 import type { OnlyPreviewIndexEntry } from '@shared/onlypreview/onlyPreview.types';
 import { onlyPreviewShellStore } from './onlyPreviewShell.store';
@@ -454,6 +458,8 @@ import {
 } from './onlyPreviewProjectAuthoring.store';
 
 const previewHostRef = ref<HTMLElement | null>(null);
+const shellFocused = ref(false);
+const syncShellFocus = (): void => { shellFocused.value = document.hasFocus(); };
 const treeRef = ref<HTMLElement | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 let resizeFrame = 0;
@@ -567,9 +573,9 @@ const locateCurrentFile = async (): Promise<void> => {
 
 const canLocateCurrentPreview = computed(() => {
   const fileRef = onlyPreviewShellStore.previewFileRef;
-  return Boolean(fileRef && fileRef.workspaceId === onlyPreviewShellStore.workspace?.workspaceId
-    && fileRef.relativePath === onlyPreviewShellStore.selectedRelativePath
-    && onlyPreviewShellStore.selectedEntry);
+  return Boolean(
+    fileRef && fileRef.workspaceId === onlyPreviewShellStore.workspace?.workspaceId
+  );
 });
 
 const handleTreeKeydown = (event: KeyboardEvent): void => {
@@ -693,6 +699,9 @@ const handleProjectItemCopyShortcut = (event: KeyboardEvent): boolean => {
 };
 
 const handleShellKeydown = (event: KeyboardEvent): void => {
+  if (handleOnlyPreviewProjectDeleteShortcut(
+    event, onlyPreviewRecentsStore.activePanel === 'project' && !onlyPreviewProjectAuthoring.editing
+  )) return;
   if (handleProjectItemCopyShortcut(event)) return;
   if (event.altKey && event.code === 'Digit1') {
     event.preventDefault();
@@ -716,6 +725,10 @@ watch(
 );
 
 onMounted(() => {
+  syncShellFocus();
+  window.addEventListener('focus', syncShellFocus);
+  window.addEventListener('blur', syncShellFocus);
+  document.addEventListener('visibilitychange', syncShellFocus);
   subscribeOnlyPreviewProjectIntents();
   window.addEventListener('pagehide', flushProjectWidth);
   window.addEventListener('focus', refreshHostToggleState);
@@ -746,6 +759,9 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  window.removeEventListener('focus', syncShellFocus);
+  window.removeEventListener('blur', syncShellFocus);
+  document.removeEventListener('visibilitychange', syncShellFocus);
   onlyPreviewRecentsStore.dispose();
   window.removeEventListener('pagehide', flushProjectWidth);
   window.removeEventListener('focus', refreshHostToggleState);

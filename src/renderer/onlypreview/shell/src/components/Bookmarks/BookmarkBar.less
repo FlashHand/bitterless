@@ -1,0 +1,70 @@
+.onlypreview-bookmarks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 30px;
+  min-width: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--onlypreview-divider);
+  background: var(--onlypreview-surface);
+  -webkit-app-region: no-drag;
+}
+.onlypreview-bookmarks__mark {
+  flex: 0 0 auto;
+  color: var(--onlypreview-muted);
+}
+.onlypreview-bookmarks__list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  height: 29px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.onlypreview-bookmarks__item {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  max-width: 200px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--onlypreview-ink);
+  font-size: 12px;
+  cursor: pointer;
+  svg {
+    flex-shrink: 0;
+    color: var(--onlypreview-royal);
+  }
+  &:hover {
+    background: var(--onlypreview-royal-soft);
+  }
+}
+.onlypreview-bookmarks__item:focus-visible,
+.onlypreview-bookmarks__error:focus-visible {
+  outline: 2px solid var(--onlypreview-focus);
+  outline-offset: -2px;
+}
+.onlypreview-bookmarks__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.onlypreview-bookmarks__empty {
+  color: var(--onlypreview-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.onlypreview-bookmarks__error {
+  flex-shrink: 0;
+  border: 0;
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--onlypreview-danger);
+  cursor: pointer;
+}

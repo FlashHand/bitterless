@@ -1,10 +1,11 @@
 import { reactive } from 'vue'
 import { createXpcRendererEmitter, xpcRenderer } from 'electron-xpc/renderer'
-import type { CoachXpcContract, WorkbenchPane } from '@maestro-shared/coach.api'
+import type { CoachXpcContract, WorkbenchPane, WorkbenchTabState } from '@maestro-shared/coach.api'
 
 const coach = createXpcRendererEmitter<CoachXpcContract>('CoachXpcHandler')
 
 class WorkbenchStore {
+  open = false
   visible = false
   initialized = false
 
@@ -12,22 +13,31 @@ class WorkbenchStore {
     if (this.initialized) return
     this.initialized = true
     xpcRenderer.subscribe('coach/workbench-visibility', (payload) => {
-      const params = payload.params as { visible?: boolean } | undefined
-      this.visible = Boolean(params?.visible)
+      this.apply(payload.params as WorkbenchTabState)
     })
-    const state = await coach.getWorkbenchVisible()
-    this.visible = state.visible
+    this.apply(await coach.getWorkbenchTab())
   }
 
-  async toggle(): Promise<void> {
-    const state = await coach.setWorkbenchVisible({ visible: !this.visible })
-    this.visible = state.visible
+  async openTab(): Promise<void> {
+    this.apply(await coach.openWorkbenchTab())
+  }
+
+  async background(): Promise<void> {
+    this.apply(await coach.backgroundWorkbenchTab())
+  }
+
+  async close(): Promise<void> {
+    this.apply(await coach.closeWorkbenchTab())
   }
 
   async openPane(pane: WorkbenchPane): Promise<void> {
-    const state = await coach.setWorkbenchVisible({ visible: true })
-    this.visible = state.visible
+    await this.openTab()
     xpcRenderer.broadcast('coach/workbench-pane', { pane })
+  }
+
+  private apply(state: WorkbenchTabState): void {
+    this.open = state.open
+    this.visible = state.visible
   }
 }
 

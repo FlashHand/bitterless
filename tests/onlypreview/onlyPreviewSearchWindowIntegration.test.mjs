@@ -295,7 +295,7 @@ test('official graph owns search in top-level hidden preload over capability-bou
 });
 
 test('Preview routes selected-file watch commits through the Main-owned Region revision', () => {
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
   const previewStore = source('src/renderer/onlypreview/preview/src/onlyPreviewPreview.store.ts');
   assert.match(region, /async handleWatchCommit\(/);
   assert.match(region, /fileRef\.workspaceId !== commit\.workspaceId/);

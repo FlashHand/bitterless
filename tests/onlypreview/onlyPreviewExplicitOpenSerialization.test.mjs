@@ -144,14 +144,14 @@ test('all explicit target sources use the serialized boundary and packaged switc
   );
 
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
-  const explicitService = source('src/main/onlypreview/onlyPreviewExplicitOpen.service.ts');
+  const explicitService = source('src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts');
   const appMain = source('src/main/app.main.ts');
   const explicitOpenBody = explicitService;
   assert.match(explicitOpenBody, /beginExplicitTarget\(\)[\s\S]*ensureStandalone\('explicit'\)/);
   assert.doesNotMatch(explicitOpenBody, /absoluteTargetGeneration|requestGeneration/);
   assert.match(
     handler,
-    /export \{ openOnlyPreviewAbsoluteTarget \} from '@main\/onlypreview\/onlyPreviewExplicitOpen\.service';/
+    /export \{ openOnlyPreviewAbsoluteTarget \} from '@main\/miniapps\/onlypreview\/onlyPreviewExplicitOpen\.service';/
   );
   assert.match(
     explicitOpenBody,
@@ -170,6 +170,6 @@ test('all explicit target sources use the serialized boundary and packaged switc
   );
   assert.match(
     appMain,
-    /new OnlyPreviewOpenQueue\(openOnlyPreviewAbsoluteTarget\)[\s\S]*mcpBridgeServer\.configurePreviewOpener\(openOnlyPreviewAbsoluteTarget\)/
+    /new OnlyPreviewOpenQueue\(\(target\) =>\s*openOnlyPreviewAbsoluteTarget\(target, \{ preserveTreeSelection: true \}\)[\s\S]*mcpBridgeServer\.configurePreviewOpener\(\(target\) =>\s*openOnlyPreviewAbsoluteTarget\(target, \{ preserveTreeSelection: true \}\)/
   );
 });

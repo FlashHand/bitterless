@@ -248,8 +248,10 @@ export class FileSearchProjectAuthority {
     rootPath: string
   ): Promise<OnlyPreviewFileAuthorityWorkspaceBinding> {
     const operation = ++this.authorityOperation;
-    this.workspace = null;
-    await this.revokeDeleteGrants();
+    // 捕获在**任何破坏性动作之前** —— 下面要用它判断这次是不是「同一个目录的重绑」。
+    // 原来的实现第一件事就是 `this.workspace = null` ＋ 撤销 grant,于是等路径解析完也就
+    // 没有东西可以比较了。
+    const existing = this.workspace;
     try {
       const lexicalStats = await this.fileOperations.lstat(rootPath);
       if (lexicalStats.isSymbolicLink()) {
@@ -270,6 +272,43 @@ export class FileSearchProjectAuthority {
           'The Project workspace authority changed.'
         );
       }
+      if (operation !== this.authorityOperation) {
+        throw new OnlyPreviewContractError(
+          'OPERATION_FAILED',
+          'The Project workspace binding was superseded.'
+        );
+      }
+      /**
+       * 同一个目录的重绑是**幂等**的 —— 不铸新代次,不撤销 grant,一个字节的状态都不动。
+       *
+       * 为什么必须这样(docs/issues/renderer-reload-invalidates-project-authority.md):
+       * 每次 bind 都 `++this.generation` 会**作废之前发出的全部 `workspaceGeneration`**,
+       * 而**渲染进程重载必然重新 bind**(shell 重新 boot → 恢复上次的项目)。重载不只发生在
+       * 开发期的 HMR:渲染进程崩溃恢复、冷 tab 激活时 view 重新物化、host toggle 之后的重建
+       * 都会。于是 main 手上重载前拿的引用失配,用户看到一条
+       * 「This project belongs to another preview session」—— 而并没有第二个会话。
+       *
+       * 判据是 **real path ＋ dev ＋ inode 三者全等**,不能只比 `workspaceId`:那个 id 是
+       * 调用方给的,而这个模块的职责恰恰是「确认那个 id 指的还是同一个真实目录」——
+       * 只比 id 等于把它要守的东西当成前提。三者都是上面已经取过的,不增加 syscall。
+       *
+       * 真换了目录时照旧铸新代次:不同目录的 `rootRealPath`/`dev`/`inode` 不会全等,
+       * 所以旧引用**应当**失效那条语义没有被削弱。
+       */
+      if (
+        existing &&
+        existing.workspaceId === workspaceId &&
+        existing.rootRealPath === rootRealPath &&
+        existing.deviceId === rootStats.dev &&
+        existing.inode === rootStats.ino
+      ) {
+        return { runtimeInstanceId, workspaceId, workspaceGeneration: existing.generation };
+      }
+      // 到这里才是「换项目」,破坏性动作从此刻开始。
+      this.workspace = null;
+      await this.revokeDeleteGrants();
+      // 撤销是异步的,所以要再查一次 —— 「supersede 之后不再改状态」这条不变量不能因为
+      // 多了一个 await 就漏掉。
       if (operation !== this.authorityOperation) {
         throw new OnlyPreviewContractError(
           'OPERATION_FAILED',

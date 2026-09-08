@@ -114,9 +114,9 @@ test('full-app E2E launchers require shared mock-Keychain isolation before Main 
 });
 
 test('recent-directory wiring stays Main-owned, value-free, and renderer-contract neutral', () => {
-  const service = source('src/main/onlypreview/onlyPreviewRecentDirectory.service.ts');
+  const service = source('src/main/miniapps/onlypreview/onlyPreviewRecentDirectory.service.ts');
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
-  const explicitService = source('src/main/onlypreview/onlyPreviewExplicitOpen.service.ts');
+  const explicitService = source('src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts');
   const appMain = source('src/main/app.main.ts');
   const types = source('src/shared/onlypreview/onlyPreview.types.ts');
 
@@ -206,7 +206,7 @@ test('OnlyPreview XPC prototype exposes the exact renderer allowlist and capabil
     'getAgentSkillGuideInfo'
   ]);
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
-  const explicitOpen = source('src/main/onlypreview/onlyPreviewExplicitOpen.service.ts');
+  const explicitOpen = source('src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts');
   assert.match(explicitOpen, /await recordOnlyPreviewRecentFile/);
   assert.doesNotMatch(
     explicitOpen.slice(
@@ -329,7 +329,7 @@ test('workspace updates have one authoritative event path and stale search snaps
     handler.indexOf('async updatePreviewBounds(')
   );
   assert.match(selectStandaloneHandler, /selectOnlyPreviewFile\(params\?\.hostToken/);
-  const selectStandaloneBody = source('src/main/onlypreview/onlyPreviewSelectFile.service.ts');
+  const selectStandaloneBody = source('src/main/miniapps/onlypreview/onlyPreviewSelectFile.service.ts');
   assert.match(
     handler,
     /onlyPreviewHostRegistry\.onRevoke[\s\S]*onlyPreviewSelectionCoordinator\.revoke/
@@ -566,8 +566,8 @@ test('Project browse exclusion markers stay listing-only and survive the Rendere
 test('OnlyPreview folder-first chrome, current-file locator, and native file menu stay capability scoped', () => {
   const types = source('src/shared/onlypreview/onlyPreview.types.ts');
   const handler = source('src/main/xpc/onlyPreview.handler.ts');
-  const explicitOpen = source('src/main/onlypreview/onlyPreviewExplicitOpen.service.ts');
-  const nativeActions = source('src/main/onlypreview/onlyPreviewProjectNativeAction.service.ts');
+  const explicitOpen = source('src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts');
+  const nativeActions = source('src/main/miniapps/onlypreview/onlyPreviewProjectNativeAction.service.ts');
   const windowHelper = source('src/main/windows/onlyPreviewWindow.helper.ts');
   const shellApp = source('src/renderer/onlypreview/shell/src/App.vue');
   const shellStore = source('src/renderer/onlypreview/shell/src/onlyPreviewShell.store.ts');
@@ -581,7 +581,7 @@ test('OnlyPreview folder-first chrome, current-file locator, and native file men
   const onlyPreviewI18n = source('src/renderer/onlypreview/common/onlyPreviewI18n.ts');
   const nativeEnglish = source('src/renderer/common/i18n/en.ts');
   const nativeChinese = source('src/renderer/common/i18n/zh.ts');
-  const workspaceRegistry = source('src/main/onlypreview/onlyPreviewWorkspace.registry.ts');
+  const workspaceRegistry = source('src/main/miniapps/onlypreview/onlyPreviewWorkspace.registry.ts');
 
   assert.ok(handler.split(/\r?\n/).length < 800);
   const bindingBody = handler.slice(
@@ -812,7 +812,7 @@ test('OnlyPreview folder-first chrome, current-file locator, and native file men
 
 test('OnlyPreview Settings restores size but derives parented work-area bounds on every open', () => {
   const windowHelper = source('src/main/windows/onlyPreviewWindow.helper.ts');
-  const boundsService = source('src/main/onlypreview/onlyPreviewWindowBounds.service.ts');
+  const boundsService = source('src/main/miniapps/onlypreview/onlyPreviewWindowBounds.service.ts');
   const positioning = windowHelper.slice(
     windowHelper.indexOf('const settingsBoundsForParent'),
     windowHelper.indexOf('export class OnlyPreviewWindowHelper')

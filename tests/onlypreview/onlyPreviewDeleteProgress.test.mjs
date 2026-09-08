@@ -14,8 +14,8 @@ import test, { describe } from 'node:test';
 const projectRoot = resolve(dirname(new URL(import.meta.url).pathname), '..', '..');
 const source = (relativePath) => readFileSync(join(projectRoot, relativePath), 'utf8');
 
-const DELETE = 'src/main/onlypreview/onlyPreviewDeleteDialog.service.ts';
-const VIEW = 'src/main/onlypreview/views/onlyPreviewAlertView.service.ts';
+const DELETE = 'src/main/miniapps/onlypreview/onlyPreviewDeleteDialog.service.ts';
+const VIEW = 'src/main/miniapps/onlypreview/views/onlyPreviewAlertView.service.ts';
 const TYPES = 'src/shared/onlypreview/onlyPreviewAlert.types.ts';
 const CONTRACT = 'src/shared/onlypreview/onlyPreviewAlert.contract.ts';
 const COMPONENT = 'src/renderer/onlypreview/alert/src/components/AlertProgress/AlertProgress.vue';

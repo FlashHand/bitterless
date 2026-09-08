@@ -465,7 +465,7 @@ test('Files stays project-wide while Contents obeys the current directory scope'
   }
 });
 
-test('first build streams scoped Contents but waits for project Files metadata and splits priority scope', async () => {
+test('first build streams Files and scoped Contents while final results wait for index promotion', async () => {
   const workspace = createWorkspace();
   mkdirSync(join(workspace.rootPath, 'current'));
   mkdirSync(join(workspace.rootPath, 'areas'));
@@ -531,7 +531,7 @@ test('first build streams scoped Contents but waits for project Files metadata a
     assert.equal(streamed[0].section, 'files');
     assert.equal(streamed[0].relativePath, 'areas/network/network.js');
     await new Promise((resolveTurn) => setImmediate(resolveTurn));
-    assert.equal(settled, false, 'terminal Files must wait for complete project metadata');
+    assert.equal(settled, false, 'the final response must still wait for content index promotion');
 
     const earlyToken = streamed[0].resultToken;
     releasePromotion.resolve();
@@ -550,7 +550,7 @@ test('first build streams scoped Contents but waits for project Files metadata a
       earlyToken
     );
     const gateIndex = diagnosticEvents.findIndex(
-      ({ event, gate }) => event === 'search-gate' && gate === 'initial-tree'
+      ({ event, gate }) => event === 'search-gate' && gate === 'index-build'
     );
     const terminalIndex = diagnosticEvents.findIndex(
       ({ event, outcome }) => event === 'search-terminal' && outcome === 'success'

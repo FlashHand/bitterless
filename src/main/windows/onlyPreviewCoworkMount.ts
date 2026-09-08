@@ -5,8 +5,8 @@ import type {
   OnlyPreviewMount,
   OnlyPreviewMountChrome,
   OnlyPreviewMountKind
-} from '@main/onlypreview/onlyPreviewSurface.mount';
-import type { OnlyPreviewSurfaceSize } from '@main/onlypreview/onlyPreviewSurfaceLayout';
+} from '@main/miniapps/onlypreview/onlyPreviewSurface.mount';
+import type { OnlyPreviewSurfaceSize } from '@main/miniapps/onlypreview/onlyPreviewSurfaceLayout';
 
 /**
  * The OnlyPreview composite carried by a Maestro (Cowork) tab.

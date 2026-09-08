@@ -14,7 +14,7 @@ const bundlePath = join(buildRoot, 'runtime.mjs');
 
 await build({
   entryPoints: [
-    join(projectRoot, 'src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts')
+    join(projectRoot, 'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts')
   ],
   outfile: bundlePath,
   bundle: true,

@@ -13,7 +13,7 @@ const buildRoot = mkdtempSync(join(tmpdir(), 'onlypreview-alert-view-'));
 const bundlePath = join(buildRoot, 'alertView.mjs');
 
 await build({
-  entryPoints: [join(projectRoot, 'src/main/onlypreview/views/onlyPreviewAlertView.service.ts')],
+  entryPoints: [join(projectRoot, 'src/main/miniapps/onlypreview/views/onlyPreviewAlertView.service.ts')],
   outfile: bundlePath,
   bundle: true,
   platform: 'node',

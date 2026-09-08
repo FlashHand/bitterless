@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -12,13 +12,13 @@ import {
   IconLoader2,
   IconPlus,
   IconSettings,
-  IconSettingsFilled,
   IconSparkles,
   IconSparklesFilled,
   IconX
 } from '@tabler/icons-vue'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
 import type { TabInfo } from '@maestro-shared/coach.api'
+import { MAESTRO_WORKBENCH_DISPLAY_URL } from '@maestro-shared/coach.api'
 import IconBtn from '../../../../../common/components/IconBtn/IconBtn.vue'
 import { menuBarStore } from './menuBar.store'
 import { tabStore } from './tab.store'
@@ -31,6 +31,25 @@ import './MenuBar.less'
 // Shared style for the address-bar icon buttons: borderless,
 // transparent, highlight on hover, soft scale-down on press; muted + no hover when disabled.
 const navBtn = 'maestro-menu-bar__nav-button'
+const addressValue = computed({
+  get: () => workbenchStore.visible ? MAESTRO_WORKBENCH_DISPLAY_URL : menuBarStore.url,
+  set: (value: string) => {
+    if (!workbenchStore.visible) menuBarStore.url = value
+  }
+})
+const workbenchChipAfterIndex = computed(() => {
+  const lastPinned = tabStore.tabs.findLastIndex((tab) => tab.pinned)
+  return Math.max(0, lastPinned)
+})
+
+function chipActive(tab: TabInfo): boolean {
+  return tab.active && !workbenchStore.visible
+}
+
+async function onTabClick(id: string): Promise<void> {
+  await workbenchStore.background()
+  await tabStore.activate(id)
+}
 // The fixed Home tab is a bundled renderer, so its icon must be bundled too.
 import bitterlessIcon from '@maestro-renderer/common/assets/icons/bitterless-icon.png'
 
@@ -85,11 +104,11 @@ function unlockTabWidths(): void {
 // closable browser tabs.
 function tabClass(tab: TabInfo): string {
   if (tab.kind === 'home') {
-    return tab.active
+    return chipActive(tab)
       ? 'maestro-menu-bar__tab--pinned-active'
       : 'maestro-menu-bar__tab--pinned'
   }
-  return tab.active
+  return chipActive(tab)
     ? 'maestro-menu-bar__tab--active'
     : 'maestro-menu-bar__tab--idle'
 }
@@ -129,7 +148,7 @@ function fixedTabClass(tab: TabInfo): string {
               tabStore.isDragging(tab.id) ? 'maestro-menu-bar__tab--dragging' : ''
             ]"
             :style="!tab.pinned && lockedTabWidth ? { width: lockedTabWidth + 'px', flexShrink: 0 } : undefined"
-            @click="tabStore.activate(tab.id)"
+            @click="onTabClick(tab.id)"
             @contextmenu.prevent="tabStore.showMenu(tab.id)"
             @dragstart="tabStore.startDrag($event, tab.id)"
             @dragover.prevent="tabStore.dragOver($event, tab.id)"
@@ -161,7 +180,7 @@ function fixedTabClass(tab: TabInfo): string {
             <IconBtn
               v-if="!tab.pinned && tabStore.tabs.length > 1"
               class="maestro-menu-bar__tab-close"
-              :class="{ 'maestro-menu-bar__tab-close--active': tab.active }"
+              :class="{ 'maestro-menu-bar__tab-close--active': chipActive(tab) }"
               draggable="false"
               :title="i18nHelper.menuBar.maestro.closeTab"
               :aria-label="i18nHelper.menuBar.maestro.closeTab"
@@ -171,6 +190,36 @@ function fixedTabClass(tab: TabInfo): string {
               <IconX :size="14" stroke="2" aria-hidden="true" />
             </IconBtn>
           </div>
+          <template v-if="workbenchStore.open && i === workbenchChipAfterIndex">
+            <div class="maestro-menu-bar__tab-divider-wrap" aria-hidden="true">
+              <div class="maestro-menu-bar__tab-divider"></div>
+            </div>
+            <div
+              name="menubar__workbench__tab"
+              class="maestro-menu-bar__tab maestro-menu-bar__tab--workbench"
+              :class="workbenchStore.visible ? 'maestro-menu-bar__tab--pinned-active' : 'maestro-menu-bar__tab--pinned'"
+              :title="i18nHelper.maestroWorkbench.title"
+              role="tab"
+              :aria-selected="workbenchStore.visible"
+              tabindex="0"
+              @click="workbenchStore.openTab()"
+              @keydown.enter.self.prevent="workbenchStore.openTab()"
+              @keydown.space.self.prevent="workbenchStore.openTab()"
+            >
+              <IconSettings class="maestro-menu-bar__favicon" :size="16" stroke="1.8" />
+              <span class="maestro-menu-bar__tab-label">{{ i18nHelper.menuBar.maestro.workbenchTab }}</span>
+              <IconBtn
+                name="menubar__workbench__close"
+                class="maestro-menu-bar__tab-close"
+                :class="{ 'maestro-menu-bar__tab-close--active': workbenchStore.visible }"
+                :title="i18nHelper.maestroWorkbench.close"
+                :aria-label="i18nHelper.maestroWorkbench.close"
+                @click.stop="workbenchStore.close()"
+              >
+                <IconX :size="14" stroke="2" aria-hidden="true" />
+              </IconBtn>
+            </div>
+          </template>
           <!-- Divider after the pinned group, before the first closable browsing tab. -->
           <div
             v-if="tab.pinned && tabStore.tabs[i + 1] && !tabStore.tabs[i + 1].pinned"
@@ -219,7 +268,7 @@ function fixedTabClass(tab: TabInfo): string {
       <div data-slot="nav" class="maestro-menu-bar__navigation">
         <button
           :class="navBtn"
-          :disabled="!menuBarStore.canGoBack"
+          :disabled="workbenchStore.visible || !menuBarStore.canGoBack"
           :title="i18nHelper.menuBar.maestro.back"
           :aria-label="i18nHelper.menuBar.maestro.back"
           type="button"
@@ -229,7 +278,7 @@ function fixedTabClass(tab: TabInfo): string {
         </button>
         <button
           :class="navBtn"
-          :disabled="!menuBarStore.canGoForward"
+          :disabled="workbenchStore.visible || !menuBarStore.canGoForward"
           :title="i18nHelper.menuBar.maestro.forward"
           :aria-label="i18nHelper.menuBar.maestro.forward"
           type="button"
@@ -240,6 +289,7 @@ function fixedTabClass(tab: TabInfo): string {
         <button
           :class="navBtn"
           :title="i18nHelper.menuBar.maestro.reload"
+          :disabled="workbenchStore.visible"
           :aria-label="i18nHelper.menuBar.maestro.reload"
           type="button"
           @click="menuBarStore.reload()"
@@ -251,9 +301,9 @@ function fixedTabClass(tab: TabInfo): string {
            navigated away from their trusted entry; ordinary browser tabs keep the normal
            schemeless/pasted-address behavior. -->
       <input
-        v-model="menuBarStore.url"
-        :disabled="tabStore.activeLocked"
-        :title="tabStore.activeLocked ? i18nHelper.menuBar.maestro.fixedAddressLocked : ''"
+        v-model="addressValue"
+        :disabled="workbenchStore.visible || tabStore.activeLocked"
+        :title="workbenchStore.visible || tabStore.activeLocked ? i18nHelper.menuBar.maestro.fixedAddressLocked : ''"
         class="maestro-menu-bar__address"
         :placeholder="i18nHelper.menuBar.maestro.addressPlaceholder"
         @keydown.enter="menuBarStore.go()"
@@ -292,14 +342,14 @@ function fixedTabClass(tab: TabInfo): string {
         </button>
 
         <button
-          :class="[navBtn, { 'maestro-menu-bar__nav-button--active': workbenchStore.visible }]"
-          :aria-pressed="workbenchStore.visible"
-          :title="workbenchStore.visible ? i18nHelper.menuBar.maestro.hideWorkbench : i18nHelper.menuBar.maestro.showWorkbench"
+          name="menubar__workbench__open"
+          :class="navBtn"
+          :title="i18nHelper.menuBar.maestro.showWorkbench"
+          :aria-label="i18nHelper.menuBar.maestro.showWorkbench"
           type="button"
-          @click="workbenchStore.toggle()"
+          @click="workbenchStore.openTab()"
         >
-          <IconSettingsFilled v-if="workbenchStore.visible" :size="18" stroke="1.8" />
-          <IconSettings v-else :size="18" stroke="1.8" />
+          <IconSettings :size="18" stroke="1.8" />
         </button>
 
         <!-- Update button — at the address bar's trailing edge. The compact label names the state

@@ -9,6 +9,7 @@ const yaml = require('js-yaml');
 const { parse } = require('acorn');
 const { extractFile, listPackage } = require('@electron/asar');
 const { resolveUpdateDirectory, resolveUpdatePlatform } = require('../release/releaseChannel.cjs');
+const auditOnlyPreviewAssociations = require('./onlyPreviewAssociations.audit.cjs');
 
 const UPDATE_CONFIG_FILE = 'app-update.yml';
 
@@ -779,6 +780,7 @@ const afterPack = async (context) => {
   if (!context || typeof context.appOutDir !== 'string') {
     throw new Error('[desktop-package-audit] Electron Builder context is missing appOutDir');
   }
+  auditOnlyPreviewAssociations(context);
   writePackagedUpdateFeed(context.appOutDir);
   auditDesktopPackage(context.appOutDir);
 };

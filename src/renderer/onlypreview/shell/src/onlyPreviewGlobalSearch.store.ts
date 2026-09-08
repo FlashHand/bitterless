@@ -235,10 +235,6 @@ class OnlyPreviewGlobalSearchStore {
   }
 
   async handleEscape(): Promise<void> {
-    if (this.query) {
-      this.clear();
-      return;
-    }
     await this.dismiss();
   }
 

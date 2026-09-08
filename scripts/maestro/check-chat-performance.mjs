@@ -6,7 +6,7 @@ const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const root = join(projectRoot, 'src')
 const messageStore = readFileSync(join(root, 'renderer/maestro/control/src/store/message.store.ts'), 'utf8')
 const controlApp = readFileSync(join(root, 'renderer/maestro/control/src/ControlApp.vue'), 'utf8')
-const agentBroadcast = readFileSync(join(root, 'main/maestro/agent/runtime/agentBroadcast.ts'), 'utf8')
+const agentBroadcast = readFileSync(join(root, 'main/agent/runtime/agentBroadcast.ts'), 'utf8')
 const requestExec = readFileSync(join(root, 'main/maestro/drive/requestExec.service.ts'), 'utf8')
 const requestExecHelper = readFileSync(join(root, 'main/maestro/drive/requestExec.helper.ts'), 'utf8')
 

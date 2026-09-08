@@ -160,7 +160,7 @@ const createFrameBroker = (sources, options = {}) => {
 };
 
 const createModules = (broker) => {
-  const assetModule = loadTypeScriptModule('src/main/onlypreview/onlyPreviewAsset.registry.ts', {
+  const assetModule = loadTypeScriptModule('src/main/miniapps/onlypreview/onlyPreviewAsset.registry.ts', {
     '@main/fileSearch/fileSearchWindow.service': { fileSearchWindowService: broker },
     '@shared/diagnostics/diagnostic.service': { sanitizeErrorCauseChain: () => 'test-cause' },
     '@shared/onlypreview/onlyPreview.contract': contracts,
@@ -170,7 +170,7 @@ const createModules = (broker) => {
     './onlyPreviewWorkspace.registry': { onlyPreviewWorkspaceRegistry: inertWorkspaces }
   });
   const documentModule = loadTypeScriptModule(
-    'src/main/onlypreview/onlyPreviewDocument.registry.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts',
     {
       '@main/fileSearch/fileSearchWindow.service': { fileSearchWindowService: broker },
       '@shared/onlypreview/onlyPreview.contract': contracts,
@@ -210,17 +210,17 @@ const createRequest = (url, method = 'GET', headers = {}, controller = new Abort
 
 test('Main asset/document routers are path-free framed brokers with no filesystem fallback', () => {
   for (const relativePath of [
-    'src/main/onlypreview/onlyPreviewAsset.registry.ts',
-    'src/main/onlypreview/onlyPreviewDocument.registry.ts'
+    'src/main/miniapps/onlypreview/onlyPreviewAsset.registry.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts'
   ]) {
     const code = source(relativePath);
     assert.doesNotMatch(code, /node:fs|node:fs\/promises|createReadStream|fileHandle|net\.fetch/);
     assert.match(code, /cancelPreviewRead/);
   }
-  const assets = source('src/main/onlypreview/onlyPreviewAsset.registry.ts');
+  const assets = source('src/main/miniapps/onlypreview/onlyPreviewAsset.registry.ts');
   assert.match(assets, /openPreviewRead/);
   assert.match(assets, /readNextPreviewChunk/);
-  const documents = source('src/main/onlypreview/onlyPreviewDocument.registry.ts');
+  const documents = source('src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts');
   assert.match(documents, /inspectPreviewDocumentResource/);
   assert.match(documents, /createOnlyPreviewReadResponse/);
   assert.match(documents, /activeSessions/);
@@ -507,7 +507,7 @@ test('frame broker failure terminates only its response and scopes cancellation 
 test('document and PDF ceilings remain centralized while hidden reader owns HTML budget', () => {
   const types = source('src/shared/onlypreview/onlyPreview.types.ts');
   const reader = source('src/preload/fileSearch/fileSearchPreviewReader.service.ts');
-  const document = source('src/main/onlypreview/onlyPreviewDocument.registry.ts');
+  const document = source('src/main/miniapps/onlypreview/onlyPreviewDocument.registry.ts');
   assert.match(types, /'html-page': 1024 \* 1024/);
   assert.match(types, /'chromium-pdf': 100 \* 1024 \* 1024/);
   assert.match(types, /ONLY_PREVIEW_MAX_DOCUMENT_RESOURCE_BYTES = 25 \* 1024 \* 1024/);
@@ -521,7 +521,7 @@ test('document and PDF ceilings remain centralized while hidden reader owns HTML
 
 test('session protocol keeps document routing scoped to the active Chrome token', () => {
   const protocolModule = loadTypeScriptModule(
-    'src/main/onlypreview/onlyPreviewProtocol.service.ts',
+    'src/main/miniapps/onlypreview/onlyPreviewProtocol.service.ts',
     {
       electron: {
         protocol: { registerSchemesAsPrivileged: () => {}, handle: () => {}, unhandle: () => {} }

@@ -1,63 +1,84 @@
 .mini-app-page {
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 24px;
   overflow-y: auto;
 }
 
-.mini-app-page__grid {
+.mini-app-page__list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.mini-app-page__card {
   width: 320px;
-  height: 184px;
-  display: flex;
+  max-width: 100%;
   flex-direction: column;
-  border-radius: 8px;
-  border: 1px solid oklch(0.85 0 0);
-  background: oklch(1 0 0);
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.mini-app-page__card > .arco-card-body {
-  flex: 1;
-  min-height: 0;
+.mini-app-page__item {
+  width: 100%;
+  min-width: 0;
+}
+
+.mini-app-page__open.arco-btn {
+  box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-}
-
-.mini-app-page__card .arco-card-actions {
-  flex-shrink: 0;
-  margin-top: auto;
-}
-
-.mini-app-page__card-title {
-  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 44px;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--bl-royalblue-900);
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
 }
 
-.mini-app-page__card-icon {
+.mini-app-page__open.arco-btn:hover:not([disabled]) {
+  color: var(--bl-royalblue-700);
+  background: var(--bl-royalblue-50);
+}
+
+.mini-app-page__open.arco-btn:focus-visible {
+  outline: 2px solid var(--bl-royalblue-500);
+  outline-offset: -2px;
+}
+
+.mini-app-page__open.arco-btn[disabled] {
+  cursor: progress;
+}
+
+.mini-app-page__open.arco-btn .arco-btn-icon {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0;
+}
+
+.mini-app-page__icon {
+  display: block;
   width: 24px;
   height: 24px;
   object-fit: contain;
 }
 
-.mini-app-page__card-content {
+.mini-app-page__name {
   flex: 1;
-  min-height: 0;
-  padding: 8px 0;
-}
-
-.mini-app-page__card-subtitle {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  min-width: 0;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  color: oklch(0.5 0 0);
-  font-size: 14px;
-  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -17,9 +17,9 @@ import {
 
 test('Vue Preview View exposes no legacy whole-text read and delegates text bytes to Preview Read', () => {
   const { service } = createHarness();
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const viewService = source('src/main/onlypreview/views/onlyPreviewPreviewView.service.ts');
-  const readBroker = source('src/main/onlypreview/views/onlyPreviewPreviewReadBroker.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts');
+  const readBroker = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewReadBroker.service.ts');
 
   assert.equal(typeof service.readText, 'undefined');
   assert.doesNotMatch(viewService, /\breadText\s*\(/);
@@ -399,8 +399,8 @@ test('a superseded Chrome mount cannot clear the shared session under a newer vi
 });
 
 test('raw Chrome sibling and window helper keep the hardened topology contract', () => {
-  const region = source('src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
-  const viewService = source('src/main/onlypreview/views/onlyPreviewPreviewView.service.ts');
+  const region = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts');
   const helper = source('src/main/windows/onlyPreviewWindow.helper.ts');
   const chromePreferences = viewService.slice(
     viewService.indexOf('private createChromePreviewView('),
@@ -428,7 +428,7 @@ test('raw Chrome sibling and window helper keep the hardened topology contract',
   assert.match(region, /private selectionRevision = 0/);
   // The preview inset is the composite's own chrome, so it is pinned where that chrome now lives —
   // one module both a window and a Cowork tab feed with an extent.
-  const surfaceLayout = source('src/main/onlypreview/onlyPreviewSurfaceLayout.ts');
+  const surfaceLayout = source('src/main/miniapps/onlypreview/onlyPreviewSurfaceLayout.ts');
   assert.match(surfaceLayout, /ONLY_PREVIEW_PREVIEW_TOOLBAR_HEIGHT = 43/);
   assert.match(
     surfaceLayout,

@@ -20,7 +20,7 @@ file renders correctly in the probe below whenever the session is persistent.
 ## Root Cause
 
 The raw Chromium content view is created with an **in-memory** session partition
-(`src/main/onlypreview/views/onlyPreviewPreviewView.service.ts:451`):
+(`src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts:451`):
 
 ```ts
 partition: `onlypreview-chrome-${runtime.host.hostId}-${revision}-${randomUUID()}`
@@ -55,7 +55,7 @@ Two secondary observations:
 Every byte is read and streamed by the **main process**:
 
 1. `OnlyPreviewPreviewRegionService.present()`
-   (`src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts:176`) resolves the selection.
+   (`src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts:176`) resolves the selection.
 2. `onlyPreviewWorkspaceRegistry.openFile()` resolves the real path, enforces workspace containment,
    and holds an open `FileHandle` plus its `dev`/`inode`/`size`/`mtimeNs` identity.
 3. `onlyPreviewClassifierService.describe()` reads a head sample in main and requires the `%PDF-`

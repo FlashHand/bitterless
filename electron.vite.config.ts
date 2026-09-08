@@ -564,6 +564,22 @@ export default defineConfig({
       onlyPreviewDevCspPlugin,
       maestroSqliteDevCspPlugin,
       monacoEditorPlugin({
+        // **只保留 `editorWorkerService`。** 不传这个选项时插件默认吐出全部 worker,
+        // 于是产物里有一个 **12 MB 的 `ts.worker.bundle.js`** ＋ css/html/json 三个,
+        // 合计 16 MB —— 而它们**一个消费者都没有**。
+        //
+        // 那些 worker 提供的是**语言服务**(补全、诊断、格式化),而 OnlyPreview 是一个**只读**
+        // 预览器:本仓与 micromeet-cowork 里 `languages.typescript` / `typescriptDefaults` /
+        // `registerCompletionItemProvider` / `setDiagnosticsOptions` / `getWorker` 一处都没有
+        // (2026-09-08 实测)。而且**它们也不负责上色** —— 上色 2026-09-08 起由 shiki 的 TextMate
+        // 语法做(`onlyPreviewHighlighter.service.ts`),在那之前由 monarch 在渲染进程里同步做,
+        // 两者都不经过 worker。
+        //
+        // `editorWorkerService` 必须留:它做 diff 计算、链接检测这类编辑器核心工作,与语言无关。
+        //
+        // 哪天真要给某个语言加语言服务,把它加回这个数组即可 —— 代价就是那几 MB,而现在这个数组
+        // 让代价成为一个显式选择,不再是一个没人问过的默认值。
+        languageWorkers: ['editorWorkerService'],
         customDistPath: (_root, outDir) => resolve(outDir, 'monacoeditorwork')
       }),
       privilegedRuntimeBlankHtmlPlugin,

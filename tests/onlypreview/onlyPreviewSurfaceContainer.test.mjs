@@ -14,8 +14,8 @@ const code = (relativePath) =>
 
 const HELPER = 'src/main/windows/onlyPreviewWindow.helper.ts';
 const MOUNT = 'src/main/windows/onlyPreviewStandaloneMount.ts';
-const SEAM = 'src/main/onlypreview/onlyPreviewSurface.mount.ts';
-const LAYERS = 'src/main/onlypreview/views/onlyPreviewViewLayer.service.ts';
+const SEAM = 'src/main/miniapps/onlypreview/onlyPreviewSurface.mount.ts';
+const LAYERS = 'src/main/miniapps/onlypreview/views/onlyPreviewViewLayer.service.ts';
 
 test('the composite is parented by its own container, not by the window', () => {
   const layers = source(LAYERS);
@@ -96,11 +96,11 @@ test('the seam declares no host, and the composite asks it for liveness', () => 
   assert.match(seam, /isAlive\(\): boolean/);
   assert.doesNotMatch(seam, /maestro|Maestro/, 'the seam must not name a host');
   for (const path of [
-    'src/main/onlypreview/views/onlyPreviewAlertView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewPreviewView.service.ts',
-    'src/main/onlypreview/views/onlyPreviewAlertWindow.service.ts',
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts'
+    'src/main/miniapps/onlypreview/views/onlyPreviewAlertView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service.ts',
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts'
   ]) {
     const service = code(path);
     assert.match(service, /isHostLive/, `${path} must ask the host for liveness`);

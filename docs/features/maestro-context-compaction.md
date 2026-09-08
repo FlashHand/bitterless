@@ -9,7 +9,7 @@
   任务卡 `ctx-001`…`ctx-008` · review `ctx-001-1.md` / `ctx-004-1.md` / `ctx-002-003-1.md`。
 - **上游研究底稿:** `overmind:areas/agent-runtime/chat/compaction.html`(方案) ·
   `compaction-decisions.html`(决策台账 D-01…D-32) · `sim/`(实验台)。
-- **Area(将来):** `src/renderer/maestro/control/src/store/` · `src/main/maestro/agent/` ·
+- **Area(将来):** `src/renderer/maestro/control/src/store/` · `src/main/agent/` ·
   `src/shared/maestro/coach.api.ts` · `src/preload/maestro/sqlite/maestroChat.dao.ts`
 
 ---

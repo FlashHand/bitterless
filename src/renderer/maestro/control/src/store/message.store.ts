@@ -1033,7 +1033,7 @@ export class MessageStoreState {
     return session.detail.compressedContext || ''
   }
 
-  private buildAgentContext(session: MessageSession, currentHumanMessageId?: string, attachedPaths?: string[]): AgentConversationContext {
+  buildAgentContext(session: MessageSession, currentHumanMessageId?: string, attachedPaths?: string[]): AgentConversationContext {
     const recentMessages: AgentConversationContext['recentMessages'] = []
     const recentBudget = Math.max(256, Math.min(Math.round((session.contextUsage.maxTokens || this.contextLimitK * 1024) * 0.35), 16000))
     let used = 0

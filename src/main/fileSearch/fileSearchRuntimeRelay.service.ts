@@ -3,6 +3,10 @@ import {
   OnlyPreviewContractError
 } from '@shared/onlypreview/onlyPreview.contract';
 import type { OnlyPreviewSearchBootstrap } from '@shared/onlypreview/onlyPreviewSearchBootstrap.types';
+import {
+  isOnlyPreviewSearchErrorPayload,
+  isOnlyPreviewSearchFailure
+} from '@shared/onlypreview/onlyPreviewSearchFailure.contract';
 import type {
   FileSearchRuntimeEventRequest,
   FileSearchRuntimeMethod,
@@ -15,12 +19,14 @@ import {
 import {
   ONLY_PREVIEW_BROWSE_LISTING_EVENT,
   ONLY_PREVIEW_SEARCH_BATCH_EVENT,
+  ONLY_PREVIEW_SEARCH_FAILURE_EVENT,
   ONLY_PREVIEW_SEARCH_MAX_BATCH_RESULTS,
   ONLY_PREVIEW_SEARCH_MAX_RESULTS,
   ONLY_PREVIEW_SEARCH_MAX_WATCH_PATHS,
   ONLY_PREVIEW_SEARCH_PROGRESS_EVENT,
   ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT,
-  ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT
+  ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT,
+  type OnlyPreviewSearchBuildProgress
 } from '@shared/onlypreview/onlyPreviewSearch.type';
 import {
   isOnlyPreviewGlobalSearchBatch,
@@ -31,10 +37,14 @@ import {
 } from './fileSearchGlobalResult.validator';
 import {
   FileSearchRetiredRequestRegistry,
-  type FileSearchPendingCall as PendingCall,
+  type FileSearchPendingCall,
   type FileSearchPendingExpectation as PendingExpectation
 } from './fileSearchRetiredRequest.registry';
 export type FileSearchRuntimeClient = FileSearchRuntimePrivateApi;
+
+interface PendingCall extends FileSearchPendingCall {
+  renewSearchTimeout?(): void;
+}
 
 interface ActiveRuntime {
   hostToken: string;
@@ -46,6 +56,8 @@ interface ActiveRuntime {
   retiredSearchRequests: FileSearchRetiredRequestRegistry;
   workspaceId: string | null;
   generation: number | null;
+  latestSnapshot: unknown;
+  buildProgress: OnlyPreviewSearchBuildProgress | null;
   broadcast(eventName: string, params: unknown): void;
   protocolFailure: OnlyPreviewContractError | null;
   protocolFailureSignal: Promise<OnlyPreviewContractError>;
@@ -63,27 +75,7 @@ const indexProtocolError = (): OnlyPreviewContractError =>
     'OnlyPreview Project search index returned an invalid response.'
   );
 
-const MAX_RUNTIME_ERROR_MESSAGE_CODE_UNITS = 4_096;
 const MAX_SEARCH_SNIPPET_CODE_UNITS = 65_536;
-const ONLY_PREVIEW_ERROR_CODES = new Set([
-  'INVALID_INPUT',
-  'HOST_NOT_FOUND',
-  'HOST_ROLE_DENIED',
-  'WORKSPACE_NOT_FOUND',
-  'WORKSPACE_ACCESS_DENIED',
-  'PATH_NOT_FOUND',
-  'PATH_PERMISSION_DENIED',
-  'PATH_OUTSIDE_WORKSPACE',
-  'PATH_NOT_REGULAR_FILE',
-  'PATH_UNSUPPORTED_DEVICE',
-  'TEXT_TOO_LARGE',
-  'SIGNATURE_MISMATCH',
-  'SETTINGS_INVALID',
-  'INDEX_FAILED',
-  'INDEX_PROTOCOL_ERROR',
-  'OPERATION_FAILED',
-  'PROTOCOL_ERROR'
-]);
 const INDEX_STATES = new Set(['building', 'reconciling', 'ready']);
 const NODE_KINDS = new Set(['file', 'directory', 'symlink']);
 const PREVIEW_HINTS = new Set([
@@ -139,8 +131,12 @@ export class FileSearchRuntimeRelayService {
   }): void {
     const carried =
       params.preserveWorkspace && this.active
-        ? { workspaceId: this.active.workspaceId, generation: this.active.generation }
-        : { workspaceId: null, generation: null };
+        ? {
+            workspaceId: this.active.workspaceId,
+            generation: this.active.generation,
+            buildProgress: this.active.buildProgress
+          }
+        : { workspaceId: null, generation: null, buildProgress: null };
     this.detach();
     let resolveStopped = (): void => undefined;
     const stopped = new Promise<void>((resolve) => {
@@ -160,6 +156,8 @@ export class FileSearchRuntimeRelayService {
       retiredSearchRequests: new FileSearchRetiredRequestRegistry(),
       workspaceId: carried.workspaceId,
       generation: carried.generation,
+      latestSnapshot: null,
+      buildProgress: carried.buildProgress,
       broadcast: params.broadcast,
       protocolFailure: null,
       protocolFailureSignal,
@@ -202,6 +200,8 @@ export class FileSearchRuntimeRelayService {
       if (method === 'initialize') {
         active.workspaceId = expectation.workspaceId;
         active.generation = expectation.generation;
+        active.latestSnapshot = null;
+        active.buildProgress = null;
         active.retiredSearchRequests.clear();
       } else if (method === 'search' && expectation.requestId !== null) {
         active.retiredSearchRequests.retireSuperseded(
@@ -222,10 +222,15 @@ export class FileSearchRuntimeRelayService {
       const result = await Promise.race([
         operation,
         new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(
-            () => reject(new Error('OnlyPreview file-search runtime request timed out.')),
-            timeoutMs
-          );
+          const renewTimeout = (): void => {
+            if (timeout) clearTimeout(timeout);
+            timeout = setTimeout(
+              () => reject(new Error('OnlyPreview file-search runtime request timed out.')),
+              timeoutMs
+            );
+          };
+          if (pending && method === 'search') pending.renewSearchTimeout = renewTimeout;
+          renewTimeout();
         }),
         active.stopped.then(() => {
           throw runtimeStoppedError();
@@ -246,6 +251,17 @@ export class FileSearchRuntimeRelayService {
         );
       }
       outcome = 'success';
+      // The first-snapshot acknowledgement can arrive after a newer broadcast. Never let that
+      // delayed building response regress Main's or the renderer's already-ready state.
+      if (
+        (method === 'initialize' || method === 'refresh') &&
+        this._isRecord(result) && result.ok === true &&
+        this._isRecord(active.latestSnapshot) &&
+        active.latestSnapshot.workspaceId === expectation.workspaceId &&
+        active.latestSnapshot.generation === expectation.generation
+      ) {
+        return { ok: true, value: active.latestSnapshot };
+      }
       return result;
     } finally {
       if (timeout) clearTimeout(timeout);
@@ -312,6 +328,7 @@ export class FileSearchRuntimeRelayService {
     const eventShape = {
       [ONLY_PREVIEW_BROWSE_LISTING_EVENT]: 'listing',
       [ONLY_PREVIEW_SEARCH_BATCH_EVENT]: 'batch',
+      [ONLY_PREVIEW_SEARCH_FAILURE_EVENT]: 'failure',
       [ONLY_PREVIEW_SEARCH_PROGRESS_EVENT]: 'progress',
       [ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT]: 'snapshot',
       [ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT]: 'commit'
@@ -337,19 +354,53 @@ export class FileSearchRuntimeRelayService {
       if (disposition === 'ignore') return;
       if (disposition === 'invalid') throw this._latchProtocolFailure(active);
     }
+    const progress = property === 'progress' && this._isBuildProgress(value) ? value : null;
     const valid =
       (property === 'snapshot' &&
         this._isSearchSnapshot(value, active.workspaceId, active.generation)) ||
       (property === 'listing' &&
         this._isBrowseListing(value, active.workspaceId, active.generation)) ||
-      (property === 'progress' && this._isBuildProgress(value)) ||
+      progress !== null ||
+      (property === 'failure' && isOnlyPreviewSearchFailure(value)) ||
       property === 'batch' ||
       (property === 'commit' && this._isWatchCommit(value));
     if (!valid) throw this._latchProtocolFailure(active);
+    if (property === 'snapshot') active.latestSnapshot = value;
+    if (progress) this._renewProgressingSearches(active, progress);
     active.broadcast(message.eventName, {
       hostId: active.hostId,
       [property]: value
     });
+  }
+
+  private _renewProgressingSearches(
+    active: ActiveRuntime,
+    progress: OnlyPreviewSearchBuildProgress
+  ): void {
+    const previous = active.buildProgress;
+    if (previous) {
+      if (progress.buildRevision < previous.buildRevision) return;
+      if (progress.buildRevision === previous.buildRevision) {
+        if (progress.phase === 'counting') return;
+        if (previous.phase === 'indexing' && progress.completed <= previous.completed) return;
+      }
+    }
+    // A late event from the completed build cannot extend a query after its ready snapshot.
+    if (
+      this._isRecord(active.latestSnapshot) && active.latestSnapshot.state === 'ready' &&
+      (!previous || progress.buildRevision <= previous.buildRevision)
+    ) return;
+    active.buildProgress = progress;
+    for (const pending of active.pending) {
+      const expected = pending.expectation;
+      if (
+        expected.method === 'search' &&
+        expected.workspaceId === progress.workspaceId &&
+        expected.generation === progress.generation &&
+        expected.requestId !== null &&
+        !active.retiredSearchRequests.find(progress.workspaceId, progress.generation, expected.requestId)
+      ) pending.renewSearchTimeout?.();
+    }
   }
 
   private _createPendingExpectation(
@@ -434,19 +485,7 @@ export class FileSearchRuntimeRelayService {
   }
 
   private _isFailureResult(value: Record<string, unknown>): boolean {
-    if (!this._hasExactKeys(value, ['error', 'ok']) || !this._isRecord(value.error)) return false;
-    const error = value.error;
-    return (
-      this._hasExactKeys(error, ['code', 'message']) &&
-      typeof error.code === 'string' &&
-      ONLY_PREVIEW_ERROR_CODES.has(error.code) &&
-      typeof error.message === 'string' &&
-      error.message.length >= 1 &&
-      error.message.length <= MAX_RUNTIME_ERROR_MESSAGE_CODE_UNITS &&
-      !error.message.includes('\0') &&
-      !error.message.includes('/') &&
-      !error.message.includes('\\')
-    );
+    return this._hasExactKeys(value, ['error', 'ok']) && isOnlyPreviewSearchErrorPayload(value.error);
   }
 
   private _isSearchResponse(value: unknown, expectation: PendingExpectation): boolean {
@@ -543,7 +582,9 @@ export class FileSearchRuntimeRelayService {
     return (value.highlightStart as number) + (value.highlightLength as number) <= graphemeCount;
   }
 
-  private _isBuildProgress(value: Record<string, unknown>): boolean {
+  private _isBuildProgress(
+    value: Record<string, unknown>
+  ): value is Record<string, unknown> & OnlyPreviewSearchBuildProgress {
     const commonValid =
       Number.isSafeInteger(value.buildRevision) && (value.buildRevision as number) > 0;
     if (!commonValid) return false;

@@ -1,10 +1,10 @@
 import { dialog } from 'electron';
 import { xpcMain } from 'electron-xpc/main';
-import { onlyPreviewHostRegistry } from '@main/onlypreview/onlyPreviewHost.registry';
-import { onlyPreviewTargetMutations } from '@main/onlypreview/onlyPreviewExplicitOpen.service';
-import { onlyPreviewRecentDirectoryService } from '@main/onlypreview/onlyPreviewRecentDirectory.service';
-import { onlyPreviewSelectionCoordinator } from '@main/onlypreview/onlyPreviewSelectionCoordinator.service';
-import { onlyPreviewPreviewRegionService } from '@main/onlypreview/views/onlyPreviewPreviewRegion.service';
+import { onlyPreviewHostRegistry } from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
+import { onlyPreviewTargetMutations } from '@main/miniapps/onlypreview/onlyPreviewExplicitOpen.service';
+import { onlyPreviewRecentDirectoryService } from '@main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
+import { onlyPreviewSelectionCoordinator } from '@main/miniapps/onlypreview/onlyPreviewSelectionCoordinator.service';
+import { onlyPreviewPreviewRegionService } from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
 import {
   ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT,
   type OnlyPreviewWorkspace

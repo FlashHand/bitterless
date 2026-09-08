@@ -36,7 +36,7 @@ test('auth teardown requests a pinned-Home boot and removes the Workbench overla
   assert.match(prepareForAuthShutdown, /tab\.kind === 'home' && tab\.pinned/);
   assert.ok(
     prepareForAuthShutdown.indexOf('await this.browserView.activateTab') <
-      prepareForAuthShutdown.indexOf('this.workbenchView.setVisible({ visible: false })')
+      prepareForAuthShutdown.indexOf('this.workbenchView.closeTab()')
   );
 });
 

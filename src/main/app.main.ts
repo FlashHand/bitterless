@@ -53,27 +53,27 @@ import {
   installOnlyPreviewProtocol,
   registerOnlyPreviewScheme,
   uninstallOnlyPreviewProtocol,
-} from '@main/onlypreview/onlyPreviewProtocol.service';
+} from '@main/miniapps/onlypreview/onlyPreviewProtocol.service';
 import { registerOnlyPreviewCoworkTab } from '@main/windows/onlyPreviewCoworkTab';
 import { registerOnlyPreviewMaestroOpener } from '@main/windows/onlyPreviewMaestroOpener';
 import {
   OnlyPreviewOpenQueue,
   resolveOnlyPreviewOpenTargets,
-} from '@main/onlypreview/onlyPreviewOpenRouter.service';
+} from '@main/miniapps/onlypreview/onlyPreviewOpenRouter.service';
 import {
   destroyOnlyPreviewForHostQuit,
   openOnlyPreviewAbsoluteTarget,
 } from './xpc/onlyPreview.handler';
-import { onlyPreviewSettingsService } from './onlypreview/onlyPreviewSettings.service';
-import { onlyPreviewRecentDirectoryService } from './onlypreview/onlyPreviewRecentDirectory.service';
-import { onlyPreviewRecentsService } from './onlypreview/onlyPreviewRecents.runtime';
+import { onlyPreviewSettingsService } from './miniapps/onlypreview/onlyPreviewSettings.service';
+import { onlyPreviewRecentDirectoryService } from './miniapps/onlypreview/onlyPreviewRecentDirectory.service';
+import { onlyPreviewRecentsService } from './miniapps/onlypreview/onlyPreviewRecents.runtime';
+import { onlyPreviewBookmarksService } from './miniapps/onlypreview/onlyPreviewBookmarks.runtime';
 import { trenchIoWindowService } from './trench/trenchIoWindow.service';
 import { registerTrenchGmgnIpc } from './coin/coinIpc.service';
 import { coinResourceService } from './coin/resources/coinResource.runtime';
 import { registerSnipingIpc } from './sniping/snipingIpc.service';
 import { snipingSessionService } from './sniping/snipingSession.service';
 import { registerMonitoringIpc } from './monitoring/monitoringIpc.service';
-import { claudeSubscriptionRuntime } from './claudeSubscription/claudeSubscription.runtime';
 
 const isMcpHelperMode = process.argv.includes('--mcp-helper');
 const isLegacyCodingAgentHookHelperMode = process.argv.includes('--coding-agent-hook-helper');
@@ -89,8 +89,12 @@ const assertE2EKeychainIsolation = (): void => {
 
 assertE2EKeychainIsolation();
 registerOnlyPreviewScheme();
-const onlyPreviewOpenQueue = new OnlyPreviewOpenQueue(openOnlyPreviewAbsoluteTarget);
-mcpBridgeServer.configurePreviewOpener(openOnlyPreviewAbsoluteTarget);
+const onlyPreviewOpenQueue = new OnlyPreviewOpenQueue((target) =>
+  openOnlyPreviewAbsoluteTarget(target, { preserveTreeSelection: true })
+);
+mcpBridgeServer.configurePreviewOpener((target) =>
+  openOnlyPreviewAbsoluteTarget(target, { preserveTreeSelection: true })
+);
 const CORE_SQLITE_STARTUP_TIMEOUT_MS = 60_000;
 const coreSqliteBoot = createBoundedTodoXpcClient(
   createXpcMainEmitter<CoreSqliteBootApi>('CoreSqliteBootDao'),
@@ -402,9 +406,6 @@ const cleanupResources = (): Promise<void> => {
     try { await stopEyesOnAgentsRuntime?.(); } catch {
       // Best-effort shutdown: the remaining application resources must still be released.
     }
-    try { await claudeSubscriptionRuntime.stop(); } catch {
-      // Best-effort shutdown: Claude account processes and loopback requests are already fenced.
-    }
     try { await mcpBridgeServer.stop(); } catch {}
     try {
       await withTodoXpcTimeout(
@@ -509,6 +510,11 @@ const startGui = async (): Promise<void> => {
       packageMainHelper.init();
       pathMainHelper.init();
       initDirectory();
+      // Must precede the first dynamic import of pi: it freezes TOOLS_DIR at import time, and
+      // without PI_CODING_AGENT_DIR every pi agent-dir read falls back to the user's own
+      // ~/.pi/agent (see docs/issues/pi-agent-dir-uses-global-home.md).
+      const { configureMaestroPiAgentDir } = await import('@maestro-main/llm/llmPaths');
+      console.log(`[maestro] pi agentDir=${configureMaestroPiAgentDir()}`);
       app.on('browser-window-created', (_, window) => {
         optimizer.watchWindowShortcuts(window);
       });
@@ -555,6 +561,7 @@ const startGui = async (): Promise<void> => {
       startupDiagnosticsService.clear('core-sqlite');
       onlyPreviewRecentDirectoryService.markStorageReady();
       onlyPreviewRecentsService.markStorageReady();
+      onlyPreviewBookmarksService.markStorageReady();
       void runDiagnosedStartupStage('application-language', async () => {
         await applicationLanguageService.initialize();
       });
@@ -573,6 +580,7 @@ const startGui = async (): Promise<void> => {
     handleCoreSqliteFailure: (err) => {
       onlyPreviewRecentDirectoryService.markStorageFailed();
       onlyPreviewRecentsService.markStorageFailed();
+      onlyPreviewBookmarksService.markStorageFailed();
       startupDiagnosticsService.report('core-sqlite', err);
       console.warn('[app] Core SQLite unavailable; continuing foreground startup:', err);
     },
@@ -587,11 +595,6 @@ const startOptionalIntegrations = async (
 
   await runDiagnosedStartupStage('mcp-bridge', async () => {
     await mcpBridgeServer.start();
-  });
-  if (!canStartNextStage()) return;
-
-  await runDiagnosedStartupStage('claude-subscription', async () => {
-    await claudeSubscriptionRuntime.start();
   });
   if (!canStartNextStage()) return;
 

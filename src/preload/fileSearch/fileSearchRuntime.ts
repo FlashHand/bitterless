@@ -19,6 +19,7 @@ import {
 import {
   ONLY_PREVIEW_BROWSE_LISTING_EVENT,
   ONLY_PREVIEW_SEARCH_BATCH_EVENT,
+  ONLY_PREVIEW_SEARCH_FAILURE_EVENT,
   ONLY_PREVIEW_SEARCH_PROGRESS_EVENT,
   ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT,
   ONLY_PREVIEW_SEARCH_WATCH_COMMIT_EVENT,
@@ -55,10 +56,20 @@ interface FileSearchRuntimeRegistration {
   emit(eventName: string, value: unknown): void;
 }
 
+interface PendingBuild {
+  response: Promise<OnlyPreviewSearchSnapshot>;
+  resolve(snapshot: OnlyPreviewSearchSnapshot): void;
+  reject(error: Error): void;
+  acknowledged: boolean;
+}
+
 interface ActiveRuntime {
   sessionId: number;
   workspaceId: string;
   generation: number;
+  bootstrap: OnlyPreviewSearchBootstrap;
+  initialized: boolean;
+  build: PendingBuild | null;
   coordinator: OnlyPreviewSearchCoordinator;
 }
 
@@ -144,16 +155,14 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
         sessionId,
         workspaceId: request.workspaceId,
         generation: request.generation,
+        bootstrap,
+        initialized: false,
+        build: null,
         coordinator
       };
       this.active = active;
       try {
-        const snapshot = await coordinator.initialize({
-          workspaceId: bootstrap.workspaceId,
-          generation: request.generation,
-          rootPath: bootstrap.rootPath,
-          databasePath: bootstrap.databasePath
-        });
+        const snapshot = await this._startBuild(active, () => this._initializeCoordinator(active));
         this._requireActive(active);
         return snapshot;
       } catch (error) {
@@ -189,10 +198,14 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
     return await runOperation(async () => {
       const request = parseOnlyPreviewSearchInitializeRequest(params);
       const active = this._requireActiveRequest(request);
-      return await active.coordinator.refresh({
-        workspaceId: request.workspaceId,
-        generation: request.generation
-      });
+      return await this._startBuild(active, () =>
+        active.initialized
+          ? active.coordinator.refresh({
+              workspaceId: request.workspaceId,
+              generation: request.generation
+            })
+          : this._initializeCoordinator(active)
+      );
     });
   }
 
@@ -300,6 +313,57 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
     await this._shutdownActive();
   }
 
+  private async _initializeCoordinator(active: ActiveRuntime): Promise<OnlyPreviewSearchSnapshot> {
+    const snapshot = await active.coordinator.initialize({
+      workspaceId: active.workspaceId,
+      generation: active.generation,
+      rootPath: active.bootstrap.rootPath,
+      databasePath: active.bootstrap.databasePath
+    });
+    active.initialized = true;
+    return snapshot;
+  }
+
+  /** The first snapshot acknowledges the RPC; the build keeps its own observed lifecycle. */
+  private _startBuild(
+    active: ActiveRuntime,
+    operation: () => Promise<OnlyPreviewSearchSnapshot>
+  ): Promise<OnlyPreviewSearchSnapshot> {
+    if (active.build) return active.build.response;
+    let resolve!: PendingBuild['resolve'];
+    let reject!: PendingBuild['reject'];
+    const response = new Promise<OnlyPreviewSearchSnapshot>((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
+    });
+    const build: PendingBuild = { response, resolve, reject, acknowledged: false };
+    active.build = build;
+    void runOperation(operation).then((result) => {
+      if (this.active !== active || this.sessionId !== active.sessionId) return;
+      if (active.build === build) active.build = null;
+      if (result.ok === true) {
+        build.resolve(result.value);
+      } else if (!build.acknowledged) {
+        build.reject(new OnlyPreviewContractError(result.error.code, result.error.message));
+      } else {
+        // The RPC already succeeded. Do not turn a failed background build into an unhandled
+        // rejection or a permanently spinning UI; keep the root listing available for browsing.
+        console.warn('[onlypreview-search] Background index build failed.', result.error.code);
+        this.registration.emit(ONLY_PREVIEW_SEARCH_FAILURE_EVENT, {
+          failure: {
+            workspaceId: active.workspaceId,
+            generation: active.generation,
+            error: result.error
+          }
+        });
+      }
+    }).catch(() => {
+      // Event delivery is best effort, but a transport failure must remain diagnosable.
+      console.warn('[onlypreview-search] Background index failure could not be delivered.');
+    });
+    return response;
+  }
+
   private _createCoordinator(sessionId: number): OnlyPreviewSearchCoordinator {
     return this.createCoordinator({
       diagnostics: this.diagnostics,
@@ -322,6 +386,11 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
         const active = this.active;
         if (!isOnlyPreviewSearchRuntimeEventCurrent(active, sessionId, snapshot)) return;
         this.registration.emit(ONLY_PREVIEW_SEARCH_SNAPSHOT_EVENT, { snapshot });
+        const build = active?.build;
+        if (build && !build.acknowledged) {
+          build.acknowledged = true;
+          build.resolve(snapshot);
+        }
       },
       onWatchCommit: (commit: OnlyPreviewSearchWatchCommit) => {
         const active = this.active;
@@ -392,6 +461,9 @@ export class FileSearchRuntime implements OnlyPreviewSearchRuntimeApi {
   private async _shutdownActive(): Promise<void> {
     const active = this.active;
     this.active = null;
+    active?.build?.reject(new OnlyPreviewContractError(
+      'OPERATION_FAILED', 'OnlyPreview search initialization was superseded.'
+    ));
     await active?.coordinator.shutdown().catch(() => undefined);
   }
 }

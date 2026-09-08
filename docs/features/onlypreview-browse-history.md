@@ -10,6 +10,17 @@ a narrow canonical port to Cowork `mini-020`. Directory preview task 127 remains
 
 ### State and persistence
 
+- Clarification, 2026-09-08: agent/MCP **file** preview is not a Project-selection gesture. Preserve
+  the active Project binding, directory/file selection, current directory, expansion and browse
+  state for both inside-Project and external targets. Update the preview and that Project's
+  Recents; a later explicit Locate can select/reveal an inside-Project target. A directory target
+  still explicitly opens/switches Project, and normal tree/search/OS/Markdown behavior is unchanged.
+  This refines the general inside-project rule below specifically for agent/MCP calls.
+  Main still tracks the currently previewed internal file; Shell's independent browsing selection
+  is not overwritten. Agent opens omit the tree-selection notification while retaining normal
+  presentation/Recents notifications. Locate resolves the live same-Project preview reference,
+  even when that file's parent listing has not yet loaded, and expands only on that explicit click.
+
 - Preserve the active Project root, index, expansion, selection/current directory and loaded tree
   listings when previewing an external file. External files receive existing **single-file**
   preview authority; they and their parent directories never enter Project indexing/browsing.

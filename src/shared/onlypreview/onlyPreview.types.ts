@@ -155,6 +155,7 @@ export type OnlyPreviewErrorCode =
   | 'INDEX_PROTOCOL_ERROR'
   | 'PDF_VIEWER_UNAVAILABLE'
   | 'OPERATION_FAILED'
+  | 'DEFAULT_APP_UNAVAILABLE'
   | 'PROTOCOL_ERROR';
 
 export interface OnlyPreviewErrorPayload {
@@ -437,6 +438,8 @@ export interface OnlyPreviewPreviewPresentation extends OnlyPreviewHostEvent {
   // outlives the selection, and every path that binds a Project clears the presentation right after
   // binding it, which would erase a stored value microseconds after it was set.
   projectIndexState: OnlyPreviewProjectIndexState | null;
+  // Independent root-listing state, derived at snapshot time even while indexing continues.
+  projectBrowseState: OnlyPreviewProjectBrowseState | null;
 }
 
 export interface OnlyPreviewPreviewRuntimeRequest extends OnlyPreviewHostRequest {
@@ -507,6 +510,7 @@ export const ONLY_PREVIEW_ALERT_STATE_EVENT = 'onlypreview/alertState' as const;
 // before an index exists emits no snapshot at all, so without it the preview pane would animate
 // "Loading project" forever while the Project rail already shows the failure.
 export type OnlyPreviewProjectIndexState = 'building' | 'reconciling' | 'ready' | 'failed';
+export type OnlyPreviewProjectBrowseState = 'pending' | 'ready' | 'failed';
 
 export interface OnlyPreviewCopyProjectItemEvent extends OnlyPreviewHostEvent {
   copyKind: Extract<OnlyPreviewProjectItemCopyKind, 'absolute-path' | 'name'>;
@@ -560,6 +564,16 @@ export interface OnlyPreviewRecentsSnapshot extends OnlyPreviewHostEvent {
 }
 
 export interface OnlyPreviewApi {
+  requestProjectDelete(params: OnlyPreviewHostRequest & {
+    workspaceId: string;
+    selection: import('./onlyPreviewDeleteSelection.shared').OnlyPreviewDeleteEntry[];
+  }): Promise<OnlyPreviewResult<void>>;
+  getBookmarks(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksRequest):
+    Promise<OnlyPreviewResult<import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarksSnapshot>>;
+  addBookmark(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarkRequest):
+    Promise<OnlyPreviewResult<void>>;
+  showBookmarkContextMenu(params: import('./onlyPreviewBookmarks.type').OnlyPreviewBookmarkRequest):
+    Promise<OnlyPreviewResult<void>>;
   getRecents(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<OnlyPreviewRecentsSnapshot>>;
   openRecent(params: OnlyPreviewHostRequest & {
     entryId: string;
@@ -628,6 +642,9 @@ export interface OnlyPreviewApi {
   minimizeWindow(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
   toggleMaximizeWindow(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
   closeWindow(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
+  showPreviewFileMenu(
+    params: OnlyPreviewHostRequest & { selectionRevision: number }
+  ): Promise<OnlyPreviewResult<'open' | 'reveal' | null>>;
   showFileContextMenu(
     params: OnlyPreviewHostRequest &
       OnlyPreviewFileRef & {

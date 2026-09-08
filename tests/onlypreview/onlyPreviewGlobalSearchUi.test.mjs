@@ -159,9 +159,9 @@ test('native shortcuts reserve only Shift+Cmd/Ctrl+F for Global Search', () => {
 test('Find to Global Search closes Find and delegates native overlay focus for every origin', () => {
   const helper = source('src/main/windows/onlyPreviewWindow.helper.ts');
   const windowService = source(
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts'
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts'
   );
-  const viewService = source('src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts');
   const focusBranch = helper.slice(
     helper.indexOf("if (command === 'focus-search')"),
     helper.indexOf("if (command === 'focus-project')")
@@ -193,7 +193,7 @@ test('Find to Global Search closes Find and delegates native overlay focus for e
     workspace,
     /event\.key === 'Escape'[\s\S]*onlyPreviewGlobalSearchStore\.handleEscape\(\)/
   );
-  const findService = source('src/main/onlypreview/views/onlyPreviewFind.service.ts');
+  const findService = source('src/main/miniapps/onlypreview/views/onlyPreviewFind.service.ts');
   const closeFind = findService.slice(
     findService.indexOf('close(): void'),
     findService.indexOf('isOpen(): boolean')
@@ -269,7 +269,7 @@ test('Global Search alone renders as one inset transparent floating surface', ()
   const helper = source('src/main/windows/onlyPreviewWindow.helper.ts');
   const app = source('src/renderer/onlypreview/globalSearch/src/App.vue');
   const canvasStyle = source('src/renderer/onlypreview/globalSearch/src/App.less');
-  const viewService = source('src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts');
   const workspaceStyle = source(
     'src/renderer/onlypreview/shell/src/components/GlobalSearch/GlobalSearchWorkspace.less'
   );
@@ -331,7 +331,7 @@ test('Global Search alone renders as one inset transparent floating surface', ()
     /onlyPreviewGlobalSearchWindowService\.updateBounds\(host\.hostToken, overlay, preview\)/
   );
   assert.match(
-    source('src/main/onlypreview/onlyPreviewSurfaceLayout.ts'),
+    source('src/main/miniapps/onlypreview/onlyPreviewSurfaceLayout.ts'),
     /overlay: \{ x: 0, y: 0, width, height \}/
   );
 });
@@ -374,7 +374,7 @@ test('Global Search context snapshot carries exact versioned visibility state', 
 
 test('the full-window Search renderer retires the Shell dismissal scrim', () => {
   const shared = source('src/shared/onlypreview/onlyPreview.types.ts');
-  const viewService = source('src/main/onlypreview/views/onlyPreviewGlobalSearchView.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchView.service.ts');
   const shellEvents = source(
     'src/renderer/onlypreview/shell/src/onlyPreviewShellEvents.service.ts'
   );

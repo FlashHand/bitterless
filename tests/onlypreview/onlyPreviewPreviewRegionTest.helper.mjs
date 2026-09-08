@@ -439,7 +439,7 @@ const findSpecs = {
 };
 
 const viewModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewPreviewView.service.ts',
+  'src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts',
   {
     electron: {
       BaseWindow: class {},
@@ -466,7 +466,7 @@ const viewModule = loadTypeScriptModule(
         resort: () => undefined
       }
     },
-    '@main/onlypreview/onlyPreviewProtocol.service': {
+    '@main/miniapps/onlypreview/onlyPreviewProtocol.service': {
       installOnlyPreviewSessionProtocol: (session, url) => {
         if (state.protocolError) throw state.protocolError;
         state.protocolInstalls.push({ session, url });
@@ -498,7 +498,7 @@ const cloneOnlyPreviewDescriptor = (descriptor, options = {}) => ({
 });
 
 const previewAdapterModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts',
+  'src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts',
   {
     '@shared/onlypreview/onlyPreview.contract': { cloneOnlyPreviewDescriptor }
   }
@@ -578,7 +578,7 @@ class FakePreviewReadBrokerService {
 }
 
 const selectedFileIdentityModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewSelectedFileIdentity.service.ts',
+  'src/main/miniapps/onlypreview/views/onlyPreviewSelectedFileIdentity.service.ts',
   {
     '@main/fileSearch/fileSearchWindow.service': {
       fileSearchWindowService: {
@@ -588,16 +588,16 @@ const selectedFileIdentityModule = loadTypeScriptModule(
         }
       }
     },
-    '@main/onlypreview/onlyPreviewWorkspace.registry': {
+    '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry': {
       onlyPreviewWorkspaceRegistry: workspaceRegistry
     },
     '@shared/onlypreview/onlyPreview.types': {}
   }
 );
 const previewOpenTraceModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts',
+  'src/main/miniapps/onlypreview/views/onlyPreviewPreviewOpenTrace.service.ts',
   {
-    '@main/onlypreview/onlyPreviewOpenDiagnostics.runtime': {
+    '@main/miniapps/onlypreview/onlyPreviewOpenDiagnostics.runtime': {
       onlyPreviewOpenDiagnostics: {
         trace: (_flow, fields) => {
           const record = { fields, marks: [], terminals: [] };
@@ -614,15 +614,15 @@ const previewOpenTraceModule = loadTypeScriptModule(
 );
 
 const previewRegionGuardsModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewPreviewRegionGuards.service.ts',
+  'src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegionGuards.service.ts',
   {
     '@shared/onlypreview/onlyPreview.contract': { OnlyPreviewContractError: ContractError },
-    '@main/onlypreview/onlyPreviewHost.registry': { onlyPreviewHostRegistry: hostRegistry }
+    '@main/miniapps/onlypreview/onlyPreviewHost.registry': { onlyPreviewHostRegistry: hostRegistry }
   }
 );
 
 const regionModule = loadTypeScriptModule(
-  'src/main/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
+  'src/main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service.ts',
   {
     './onlyPreviewPreviewOpenTrace.service': previewOpenTraceModule,
     './onlyPreviewPreviewRegionGuards.service': previewRegionGuardsModule,
@@ -711,10 +711,10 @@ const regionModule = loadTypeScriptModule(
         cancelOfficeRead: async (request) => state.officeCancels.push(request)
       }
     },
-    '@main/onlypreview/onlyPreviewAsset.registry': {
+    '@main/miniapps/onlypreview/onlyPreviewAsset.registry': {
       onlyPreviewAssetRegistry: assetRegistry
     },
-    '@main/onlypreview/onlyPreviewClassifier.service': {
+    '@main/miniapps/onlypreview/onlyPreviewClassifier.service': {
       onlyPreviewClassifierService: {
         describe: (...args) => state.describe(...args),
         readText: (...args) => {
@@ -723,18 +723,19 @@ const regionModule = loadTypeScriptModule(
         }
       }
     },
-    '@main/onlypreview/onlyPreviewDocument.registry': {
+    '@main/miniapps/onlypreview/onlyPreviewDocument.registry': {
       onlyPreviewDocumentRegistry: documentRegistry
     },
-    '@main/onlypreview/onlyPreviewProjectIndexState.service': {
+    '@main/miniapps/onlypreview/onlyPreviewProjectIndexState.service': {
       onlyPreviewProjectIndexStateService: {
-        get: (workspaceId) => state.projectIndexState?.[workspaceId] ?? null
+        get: (workspaceId) => state.projectIndexState?.[workspaceId] ?? null,
+        getBrowseState: (workspaceId) => state.projectBrowseState?.[workspaceId] ?? null
       }
     },
-    '@main/onlypreview/onlyPreviewHost.registry': {
+    '@main/miniapps/onlypreview/onlyPreviewHost.registry': {
       onlyPreviewHostRegistry: hostRegistry
     },
-    '@main/onlypreview/onlyPreviewWorkspace.registry': {
+    '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry': {
       onlyPreviewWorkspaceRegistry: workspaceRegistry
     },
     './onlyPreviewFind.service': { OnlyPreviewFindService: FakeFindService },

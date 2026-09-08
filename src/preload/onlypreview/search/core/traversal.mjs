@@ -423,6 +423,7 @@ export const createWorkspaceTraversal = async ({
 export const countWorkspaceSearchEntries = async ({
   rootPath,
   config,
+  onTreeEntry,
   isCancelled,
   workSlicer
 }) => {
@@ -431,6 +432,7 @@ export const countWorkspaceSearchEntries = async ({
     config,
     collectTreeEntries: false,
     metadataOnly: true,
+    onTreeEntry,
     isCancelled,
     workSlicer
   });

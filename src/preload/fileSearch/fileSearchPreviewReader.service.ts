@@ -27,7 +27,7 @@ import {
   getOnlyPreviewSignatureBytes,
   getOnlyPreviewTextAdapter,
   onlyPreviewClassifierService
-} from '@main/onlypreview/onlyPreviewClassifier.service';
+} from '@main/miniapps/onlypreview/onlyPreviewClassifier.service';
 
 const MAX_SELECTION_GRANTS = 8;
 const MAX_READ_SESSIONS = 256;

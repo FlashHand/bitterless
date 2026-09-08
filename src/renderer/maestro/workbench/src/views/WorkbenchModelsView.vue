@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { Button, Dropdown, Empty, Option, Select } from '@arco-design/web-vue'
-import { IconCircleCheckFilled, IconCircleDashed, IconCpu, IconGauge, IconLogin2, IconLogout, IconPercentage, IconSettings } from '@tabler/icons-vue'
+import { IconCircleCheckFilled, IconCircleDashed, IconCpu, IconGauge, IconLogin2, IconLogout, IconPercentage } from '@tabler/icons-vue'
 import type { LlmEffort, LlmLoginMethod } from '@maestro-shared/coach.api'
 import { workbenchStore as store } from '../workbench.store'
-import { useRouter } from 'vue-router'
 import './WorkbenchModelsView.less'
 
-const router = useRouter()
 const activeGroup = computed(() => store.activeLlmGroup)
-const activeIsLocal = computed(() => activeGroup.value?.provider === 'local')
 const activeModel = computed(() => store.activeLlmModel)
 const modelValue = computed(() => store.activeLlmModel?.model || '')
 const effortValue = computed(() => store.llmConfig?.effort || store.activeLlmModel?.effort || 'default')
@@ -34,7 +31,6 @@ const activeEffortLabel = computed(() => {
 })
 const authStatusLabel = computed(() => {
   const label = activeGroup.value?.label || '--'
-  if (activeIsLocal.value) return activeGroup.value?.ready ? `${label} ready` : `${label} needs an account`
   return activeGroup.value?.ready ? `${label} logged in` : `${label} not logged in`
 })
 
@@ -49,10 +45,6 @@ const login = (method: LlmLoginMethod = 'browser'): void => {
 
 const logout = (): void => {
   void store.logoutLlmProvider(activeGroup.value?.provider)
-}
-
-const configureLocal = (): void => {
-  void router.push({ name: 'sub2api' })
 }
 
 const setCompressionRemaining = (event: Event): void => {
@@ -149,19 +141,8 @@ onMounted(() => {
                 </div>
               </div>
 
-              <Button
-                v-if="activeIsLocal"
-                name="models__detail__configure__button"
-                size="small"
-                type="primary"
-                :disabled="store.llmLoading"
-                @click="configureLocal"
-              >
-                <template #icon><IconSettings :size="15" /></template>
-                Configure
-              </Button>
               <Dropdown
-                v-else-if="!activeGroup.ready && store.activeLlmLoginMethods.length > 1"
+                v-if="!activeGroup.ready && store.activeLlmLoginMethods.length > 1"
                 name="models__detail__login__dropdown"
                 trigger="click"
                 :disabled="store.llmTargetLocked || store.llmLoading"

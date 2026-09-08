@@ -34,6 +34,20 @@ The product-level rationale and visual direction live in
 `areas/only-preview/feature-design.md` in the private overmind parent. This document is the
 implementation contract inside Bitterless and contains no private user data.
 
+## Vue Preview scrollbars (2026-09-08)
+
+Vue Preview uses 8px vertical scrollbar width and 8px horizontal scrollbar height in both
+Bitterless and Cowork. Apply the same dimensions to native DOM scrolling and Monaco's custom
+scrollbars. Keep the current muted thumb, transparent track and rounded shape. Scope native CSS
+to the reusable preview surface; do not change the Project tree, chat, other application windows,
+or raw Chrome HTML/PDF views. Avoid `scrollbar-width: thin`, which does not specify an exact size.
+The Sheet tab strip must follow the same 8px contract. No renderer, search or loading changes.
+
+Verification completed: both projects' affected Vue script/template/TypeScript and Less compile;
+scoped CSS dimension assertions and Monaco initialization option AST checks pass. BL scoped lint
+and both projects' diff checks pass. Cowork has no ESLint executable available. No Electron/E2E,
+build, installation or Git sync was run; actual scrollbar appearance remains owner-tested.
+
 ## Ownership
 
 | Concern                                                                                          | Owner                                                                   |
@@ -109,7 +123,9 @@ Main capability/XPC supervisor ── private typed XPC ── hidden fileSearch
   match. Draw.io phase one, image/audio/video, and
   unsupported expose no text capability and do not open a fake session.
 - File identity, type, and native file actions stay in the Shell toolbar even when classification,
-  loading, or a content renderer fails. Presentation events carry only `{ hostId }` as an untrusted
+  loading, or a content renderer fails. A single dots IconBtn opens the Electron-native Open/Reveal
+  menu for the current presentation; stale or cancelled choices perform no action. Unsupported-file
+  recovery keeps its separate Open button. Presentation events carry only `{ hostId }` as an untrusted
   nudge; Shell and Vue refetch their own capability-scoped Main snapshots with local generation
   fences. Shell never receives an asset/document URL.
 - Shell input, Preview rendering, and search I/O do not share an event loop. The hidden `fileSearch`
@@ -556,6 +572,18 @@ current Preview-ready acknowledgement where one already exists. It reuses the pr
 policy and never makes Main wait for renderer readiness only for diagnostics. Like search timing,
 it records short local tags, fixed enums, and monotonic durations only—never a path, filename,
 workspace identity, query/content, URL, capability, renderer payload, or raw error.
+
+Startup restoration recovers explicit SQLite corruption (`SQLITE_CORRUPT` or `SQLITE_NOTADB`,
+including extended codes) once in the fileSearch preload. Close the failed handle, quarantine the
+exact derived cache database and its journal/WAL sidecars by same-volume rename, then build a
+fresh index. Preserve the quarantined cache and project files; never checksum/copy a large database
+on normal startup or rebuild a healthy cache merely because it was reopened. Other failures remain
+visible. Diagnostics include only fixed initialization stages and numeric SQLite codes (task160).
+
+Repeated workspace/target opens await the current surface's shared startup promise before using
+its authority, even if native window/host objects already exist. Failure or destruction rejects
+waiting opens; stale startup cleanup cannot tear down a newer host. This readiness boundary is
+owned by the window helper, not by a weakened XPC validator (task161).
 
 Index progress and Global Search availability are independent. When a complete SQLite index
 already exists, it remains the active read-only query authority while a separate candidate index is
@@ -1223,7 +1251,7 @@ Shift+Cmd/Ctrl+F:
 | `Cmd+Option+I` or `Ctrl+Shift+I` | Shell or Preview, debug profile             | toggle detached DevTools for the view that received the shortcut                                                        |
 | `Cmd/Ctrl+F`                     | Shell, Vue Preview, or raw Chromium         | focus the one Shell Find Bar for the current file; never invoke Global Search or Monaco's own find widget               |
 | drag/select text                 | Monaco or Markdown                          | show the selected grapheme count in the bottom status rail; hide it when selection collapses or leaves preview content  |
-| `Esc`                            | Find Bar / Global Search / Setting          | clear current-file find and restore content focus / clear query then close Global Search / close Setting without save   |
+| `Esc`                            | Find Bar / Global Search / Setting          | clear current-file find and restore content focus / close Global Search once / close Setting without save               |
 | double click                     | non-action MenuBar surface                  | toggle maximize/restore                                                                                                 |
 | minimize / maximize / close      | Windows MenuBar controls                    | control the current standalone `BaseWindow` through Main                                                                |
 

@@ -12,6 +12,7 @@ const moduleCache = new Map()
 
 const resolveTsModule = (specifier, parentDir = root) => {
   if (specifier.startsWith('@maestro-main/')) return join(root, 'main', 'maestro', `${specifier.slice('@maestro-main/'.length)}.ts`)
+  if (specifier.startsWith('@main/')) return join(root, 'main', `${specifier.slice('@main/'.length)}.ts`)
   if (specifier.startsWith('@maestro-shared/')) return join(root, 'shared', 'maestro', `${specifier.slice('@maestro-shared/'.length)}.ts`)
   if (specifier.startsWith('.')) {
     const base = join(parentDir, specifier)
@@ -52,8 +53,8 @@ const loadTsModule = (specifier, parentDir = root) => {
   return mod.exports
 }
 
-const { extractVariablesFromMessage } = loadTsModule('@maestro-main/agent/naturalLanguageVariables')
-const agentPromptSource = readFileSync(join(root, 'main/maestro/agent/runtime/agentPrompt.ts'), 'utf8')
+const { extractVariablesFromMessage } = loadTsModule('@main/agent/naturalLanguageVariables')
+const agentPromptSource = readFileSync(join(root, 'main/agent/runtime/agentPrompt.ts'), 'utf8')
 
 const bookingRecipe = {
   inputs: [

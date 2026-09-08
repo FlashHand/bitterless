@@ -6,10 +6,10 @@ import { source } from './onlyPreviewCoreTest.helper.mjs';
 test('window sources delegate dual Preview isolation and preserve generic Omni renderer cleanup', () => {
   const standalone = source('src/main/windows/onlyPreviewWindow.helper.ts');
   const rendererTarget = source(
-    'src/main/onlypreview/views/onlyPreviewRendererTarget.service.ts'
+    'src/main/miniapps/onlypreview/views/onlyPreviewRendererTarget.service.ts'
   );
   const globalSearchWindow = source(
-    'src/main/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts'
+    'src/main/miniapps/onlypreview/views/onlyPreviewGlobalSearchWindow.service.ts'
   );
   assert.match(standalone, /new BaseWindow\(/);
   assert.equal((standalone.match(/new WebContentsView\(/g) ?? []).length, 1);
@@ -23,7 +23,7 @@ test('window sources delegate dual Preview isolation and preserve generic Omni r
   // The composite's own chrome moved out of the window helper with the clamp that uses it: both
   // hosts need the same arithmetic from a different source of extent. Pinned at its new home, and
   // pinned as absent here so it cannot quietly come back window-side.
-  const surfaceLayout = source('src/main/onlypreview/onlyPreviewSurfaceLayout.ts');
+  const surfaceLayout = source('src/main/miniapps/onlypreview/onlyPreviewSurfaceLayout.ts');
   assert.match(surfaceLayout, /ONLY_PREVIEW_MIN_SIDEBAR_WIDTH\s*=\s*180/);
   assert.match(surfaceLayout, /ONLY_PREVIEW_RESIZE_HANDLE_WIDTH\s*=\s*5/);
   assert.match(surfaceLayout, /ONLY_PREVIEW_MENU_BAR_HEIGHT\s*=\s*32/);
@@ -381,7 +381,7 @@ test('Home, Omni, preload, i18n, logging, build, and installer sources include t
   assert.match(builder, /rank:\s*Alternate/);
   assert.match(builder, /CFBundleTypeRole:\s*Viewer/);
   assert.match(builder, /public\.data/);
-  const classifier = source('src/main/onlypreview/onlyPreviewClassifier.service.ts');
+  const classifier = source('src/main/miniapps/onlypreview/onlyPreviewClassifier.service.ts');
   const supportedExtensions = new Set();
   for (const catalogName of [
     'TEXT_EXTENSIONS',
@@ -504,8 +504,8 @@ test('renderers keep empty state distinct from index failure and PDF/Monaco runt
   assert.match(monaco, /domReadOnly:\s*true/);
   assert.match(monaco, /editor\.create/);
 
-  const adapter = source('src/main/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
-  const viewService = source('src/main/onlypreview/views/onlyPreviewPreviewView.service.ts');
+  const adapter = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewAdapter.service.ts');
+  const viewService = source('src/main/miniapps/onlypreview/views/onlyPreviewPreviewView.service.ts');
   assert.match(adapter, /descriptor\.kind === 'pdf'/);
   assert.match(adapter, /adapterId:\s*'chromium-pdf'/);
   assert.match(viewService, /plugins:\s*true/);

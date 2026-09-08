@@ -12,6 +12,34 @@
   font-size: 12px;
 }
 
+.onlypreview-preview,
+.onlypreview-preview * {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.onlypreview-preview::-webkit-scrollbar,
+.onlypreview-preview *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.onlypreview-preview::-webkit-scrollbar-track,
+.onlypreview-preview *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.onlypreview-preview::-webkit-scrollbar-thumb,
+.onlypreview-preview *::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: oklch(0.7 0 0 / 0.3);
+}
+
+.onlypreview-preview::-webkit-scrollbar-thumb:hover,
+.onlypreview-preview *::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.6 0 0 / 0.5);
+}
+
 .onlypreview-preview__body {
   position: relative;
   min-width: 0;

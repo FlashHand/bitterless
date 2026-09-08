@@ -3,11 +3,13 @@ import type { BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { injectable } from 'inversify'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import type { ViewRect } from '@maestro-shared/coach.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
 import { MAESTRO_PARTITION } from '@maestro-main/data/maestroDataRoot'
 import { createBoundsApplier } from './viewBounds'
+import { installControlLinkPolicy } from './maestroControlLinkPolicy'
 
 export const shouldOpenControlDevTools = (): boolean => {
   if (import.meta.env.VITE_MODE !== 'debug') return false
@@ -18,6 +20,13 @@ export const shouldOpenControlDevTools = (): boolean => {
 export interface MaestroControlViewServiceState {
   browserWindow: BrowserWindow | null
   emitTrace(event: TraceEvent): void
+  /**
+   * Where a web link clicked INSIDE the panel lands: a new operation tab (Ral 2026-09-08, ported
+   * from cowork). The alternative is Electron's default for an uninstalled window-open hook, which
+   * is a bare BrowserWindow inheriting this view's privileged preload — see
+   * `maestroControlLinkPolicy.ts`.
+   */
+  openTab(params: { url: string }): Promise<void>
 }
 
 @injectable()
@@ -39,11 +48,32 @@ export class MaestroControlViewService extends CommonService<MaestroControlViewS
     })
     view.setVisible(false)
     this.view = view
+    // These two chords belong to the focused chat, not the app menu's macOS Hide action.
+    // Keep DOM events intact; every other key (including key-up) restores normal menu routing.
+    view.webContents.on('before-input-event', (_event, input) => {
+      const command = process.platform === 'darwin' ? input.meta : input.control
+      view.webContents.setIgnoreMenuShortcuts(Boolean(
+        input.type === 'keyDown' && command && !input.alt && !input.shift &&
+        !input.isComposing && ['h', 'n'].includes(input.key.toLowerCase())
+      ))
+    })
     win.contentView.addChildView(view)
-    const load =
+    const entryFile = join(__dirname, '../renderer/maestro/control/index.html')
+    const devEntry =
       is.dev && process.env['ELECTRON_RENDERER_URL']
-        ? view.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/maestro/control/index.html`)
-        : view.webContents.loadFile(join(__dirname, '../renderer/maestro/control/index.html'))
+        ? `${process.env['ELECTRON_RENDERER_URL']}/maestro/control/index.html`
+        : ''
+    // The policy needs the url this view is actually AT — it is what tells "the panel reloading
+    // itself" apart from "a link trying to take the panel somewhere". Derived from the same two
+    // branches that load it, so the two can never disagree.
+    installControlLinkPolicy(
+      view.webContents,
+      devEntry || pathToFileURL(entryFile).toString(),
+      { openTab: (params) => this._state.openTab(params) }
+    )
+    const load = devEntry
+      ? view.webContents.loadURL(devEntry)
+      : view.webContents.loadFile(entryFile)
 
     if (shouldOpenControlDevTools()) {
       view.webContents.once('did-finish-load', () => {

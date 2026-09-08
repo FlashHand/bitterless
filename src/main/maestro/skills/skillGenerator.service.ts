@@ -1,6 +1,6 @@
 import type { CodexDebugEvent, SkillCreateResult, SkillInput, SkillSummary } from '@maestro-shared/coach.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
-import type { BaseAgent } from '@maestro-main/agent/BaseAgent'
+import type { BaseAgent } from '@main/agent/BaseAgent'
 import type { AuthHint } from '@maestro-main/drive/replayEngine'
 import { SkillRegistryService } from './skillRegistry.service'
 import type { SkillRecipe } from './skillRecipe.types'

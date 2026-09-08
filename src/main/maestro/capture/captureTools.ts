@@ -1,4 +1,4 @@
-import type { PiToolSpec } from '@maestro-main/agent/BaseAgent'
+import type { PiToolSpec } from '@main/agent/BaseAgent'
 
 interface CaptureToolHandlers {
   timeline(args: Record<string, unknown>): string

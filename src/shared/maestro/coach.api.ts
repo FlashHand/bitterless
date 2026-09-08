@@ -10,6 +10,12 @@ export const MAESTRO_FORCE_PINNED_HOME_QUERY = 'maestroForcePinnedHome'
 export const MAESTRO_FORCE_PINNED_HOME_QUERY_VALUE = '1'
 export const MAESTRO_LOCAL_HOME_DISPLAY_URL = 'bitterless://home'
 export const MAESTRO_AI_CRMS_LOGIN_DISPLAY_URL = 'bitterless://ai-crms-login'
+export const MAESTRO_WORKBENCH_DISPLAY_URL = 'bitterless://workbench'
+
+export interface WorkbenchTabState {
+  open: boolean
+  visible: boolean
+}
 
 export interface HomeRendererReadyParams {
   token: string
@@ -37,8 +43,10 @@ export interface CoachXpcContract {
   // for external login pages where DevTools/CDP attachment is undesirable.
   setTabDebugger(params: { id: string; enabled: boolean }): Promise<TabInfo[]>
   openDemo(): Promise<{ url: string }>
-  getWorkbenchVisible(): Promise<{ visible: boolean }>
-  setWorkbenchVisible(params: { visible: boolean }): Promise<{ visible: boolean }>
+  getWorkbenchTab(): Promise<WorkbenchTabState>
+  openWorkbenchTab(): Promise<WorkbenchTabState>
+  backgroundWorkbenchTab(): Promise<WorkbenchTabState>
+  closeWorkbenchTab(): Promise<WorkbenchTabState>
   // App identity for Workbench ▸ About — picked from the bundled package.json (see
   // MaestroWindowController.getPackageInfo mirrors the host package helper.
   getPackageInfo(): Promise<PackageInfo>
@@ -86,6 +94,7 @@ export interface CoachXpcContract {
   getActiveAgentTurn(): Promise<AgentTurnRecoverySnapshot>
   ackAgentTurnFinished(params: { sessionId: string; turnId: string }): Promise<void>
   sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply>
+  copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary>
   compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply>
   // `files` (md only, parsed to text in the renderer) are folded into the trainer turn as
   // reference/source material; they also render as a separate `type:'files'` user bubble.
@@ -266,7 +275,6 @@ export type WorkbenchPane =
   | 'injections'
   | 'tools'
   | 'models'
-  | 'sub2api'
   | 'apps'
   | 'connectors'
   | 'settings'
@@ -986,6 +994,16 @@ export interface AgentConversationContext {
   attachedPaths?: string[]
   workspace?: WorkspaceRef
 }
+
+export interface ContextExportRequest {
+  sessionId: string
+  draft: string
+  context?: AgentConversationContext
+}
+
+export type ContextExportSummary =
+  | { ok: true; chars: number; entries: number }
+  | { ok: false; error: string }
 
 export type AgentMessageIntent = 'root' | 'steering'
 

@@ -1,21 +1,14 @@
-/* Override Arco Tooltip into a softer, semi-transparent look — rounder corners + a translucent dark
-   background. Arco renders the bubble as `.arco-tooltip-content` (+ `.arco-tooltip-mini` for the mini
-   variant) and the arrow as `.arco-tooltip-popup-arrow`, teleported to <body>, so this has to be
-   GLOBAL and use !important to beat arco's runtime-injected styles.
-
-   NO backdrop-filter on purpose: `backdrop-filter: blur()` is suppressed by the browser while an
-   ancestor runs the popup's transform/opacity show animation, then snaps on the instant it ends — so
-   the bubble read as translucent mid-animation but frosted/opaque afterwards. It also only ever
-   applied to the content, never the arrow, so their transparency never matched. Plain rgba
-   translucency is consistent across the whole animation and lets the arrow match the bubble exactly. */
+/* Arco teleports Tooltip to body, so the theme is global. Keep the bubble opaque: the arrow's
+   rotated square extends inside it and shows through a translucent content background.
+   This gray preserves the previous rgba(29,33,41,.72) appearance over white, without overlap. */
 .arco-tooltip-content {
   border-radius: 10px !important; /* arco default: var(--border-radius-small) ≈ 2px */
-  background-color: rgba(29, 33, 41, 0.72) !important; /* arco default: opaque rgb(29,33,41) */
+  background-color: #5c5f65 !important;
   border: 0.5px solid rgba(255, 255, 255, 0.12) !important; /* hairline edge */
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18) !important; /* softer than arco's default shadow */
 }
 
-/* Arrow matches the bubble exactly — same rgba, no filter on either. */
+/* Keep the outside arrow seamless; placement and animation remain owned by Arco. */
 .arco-tooltip-popup-arrow {
-  background-color: rgba(29, 33, 41, 0.72) !important;
+  background-color: #5c5f65 !important;
 }

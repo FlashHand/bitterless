@@ -6,6 +6,13 @@ a child of the directory already open, so it should have been selected *in* the 
 
 Applies to bitterless and, by vendoring, to the micromeet-cowork port. Fix here (PQ-4).
 
+2026-09-08 follow-up: task150 already removed the external-file Main selection clear described
+below. A separate remaining side effect was the unconditional SELECTION_CHANGED event: Shell
+reapplied the old Project file to its independently selected directory. Agent/MCP file opens now
+follow [task153](../plan/tasks/onlypreview-agent-preserve-project-153.md)'s quiet tree-selection
+policy, preserving tree/current-directory state while presentation and Recents update normally.
+The older clear-on-outside behavior below is historical, not the current contract.
+
 ## What "deselected the project" actually is
 
 Worth pinning down, because the wording suggests the project got closed and it did not.
@@ -102,4 +109,3 @@ reintroduce this silently.
 
 bitterless: `typecheck` 0 errors, `test:onlypreview` 847/847. Synced to micromeet-cowork
 (node 93 / web 3 — unchanged baseline, 0 unresolved modules, build green, 7 guards green).
-

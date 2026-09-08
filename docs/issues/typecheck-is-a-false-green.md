@@ -38,7 +38,7 @@ FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed
 | --- | --- | --- | --- |
 | `src/main/**` ＋ `src/shared/**` | 否 | 69 | 5.9 |
 | `src/shared/**` | 否 | 4 | 1.6 |
-| `src/main/onlypreview` ＋ `src/main/fileSearch` | 否 | 27 | 1.5 |
+| `src/main/miniapps/onlypreview` ＋ `src/main/fileSearch` | 否 | 27 | 1.5 |
 | `src/main/maestro/**` | 否 | 30 | 2.9 |
 | `src/preload/onlypreview` ＋ `src/preload/fileSearch` | 否 | 4 | 1.4 |
 | **`src/preload/**`** | **是** | — | 83 |
