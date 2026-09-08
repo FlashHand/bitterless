@@ -23,8 +23,8 @@ import ts from 'typescript';
 import { build } from 'esbuild';
 
 const root = resolve(import.meta.dirname, '../..');
-// SDK 在仓外(overmind 的 projects/ 下,与 bitterless 平级)。这里按绝对路径读它的源码 ——
-// 和 scripts/maestro 那些守卫补 `@main/agent/` 解析分支是同一件事的两种写法。
+// agent 树在本仓内(`src/main/agent/`)。2026-09-08 它曾被抽进仓外的共享 maestro-agent-sdk,
+// 当日 Ral 决定放弃那条路:设计文档统一(`areas/agent-runtime/agent-design-parity.md`),实现两边各存一份。
 const sdk = resolve(root, 'src', 'main', 'agent');
 const read = path => readFileSync(resolve(root, path), 'utf8');
 const require = createRequire(import.meta.url);

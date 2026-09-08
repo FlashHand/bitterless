@@ -17,6 +17,10 @@
     "emitDecoratorMetadata": true,
     "baseUrl": ".",
     "paths": {
+      // `src/shared/**` 也编进 renderer,而 `maestro/maestroChat.api.ts` 从 agent 树 re-export
+      // 一组**纯类型**(压缩的领域词汇)。所以按需窄映射这一个模块 —— **不给 `@main/*`**:
+      // renderer 不该能解析 main,这条边界是刻意的。与 cowork 的 tsconfig.web.json 同一形状。
+      "@main/agent/compaction/compaction.types": ["src/main/agent/compaction/compaction.types"],
       "@renderer/*": [
         "src/renderer/*"
       ],

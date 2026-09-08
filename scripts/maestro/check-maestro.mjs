@@ -9,7 +9,7 @@ const checks = readdirSync(scriptsDirectory)
   .filter((name) => name.startsWith('check-') && name.endsWith('.mjs') && name !== 'check-maestro.mjs')
   .sort()
 
-assert(checks.length === 39, `expected 39 Maestro parity checks, found ${checks.length}`)
+assert(checks.length === 40, `expected 40 Maestro parity checks, found ${checks.length}`)
 assertMaestroAliasBoundary()
 assertNoStandaloneEntry()
 

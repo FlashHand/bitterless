@@ -37,6 +37,7 @@ import {
   resolveRuntimeMediaRefs
 } from '@main/agent/runtime/mediaRefResolver'
 import { sanitizeRuntimeError } from '@main/agent/runtime/errorSanitizer'
+import { usageLedger } from '@main/agent/runtime/usageLedger'
 import {
   broadcastAgentActivity,
   broadcastAgentStream,
@@ -306,7 +307,11 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
           onDebug: broadcastCodexDebug,
           onActivity: (step) => this.relayAgentActivity('default', step),
           onThinking: (state) => this.relayAgentThinking('default', state),
-          onStream: (delta) => this.relayAgentStream('default', delta)
+          onStream: (delta) => this.relayAgentStream('default', delta),
+          // 逐轮把**本回合累计**用量记到账本上。压缩的触发线要问「上一轮模型实际吃进去多少」,
+          // 而那个数只有模型往返知道 —— 渲染端自己的 token 计量是另一把尺。
+          // 与 cowork 同一份设计(`areas/agent-runtime/agent-design-parity.md`)。
+          onUsage: (_delta, total) => usageLedger.set('default', total)
         })
       )
     }
@@ -1367,7 +1372,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
           onDebug: broadcastCodexDebug,
           onActivity: (step) => this.relayAgentActivity(key, step),
           onThinking: (state) => this.relayAgentThinking(key, state),
-          onStream: (delta) => this.relayAgentStream(key, delta)
+          onStream: (delta) => this.relayAgentStream(key, delta),
+          // 同上 —— 按 sessionKey 记,压缩按 renderer 传来的 sessionId 取得对上。
+          onUsage: (_delta, total) => usageLedger.set(key, total)
         })
       )
       this.maestroAgents.set(key, agent)
@@ -1417,7 +1424,15 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     return agent
   }
 
-  private getExistingMaestroAgent(sessionId?: string): MaestroAgent | null {
+  /**
+   * 这个会话在 main 侧**已存在**的 agent —— 压缩的候选批从它的 pi entry 树来。
+   *
+   * public 而不是 private:`xpc/compaction.handler` 要它(与 cowork 的
+   * `getExistingCoworkAgent` 同一形状,`areas/agent-runtime/agent-design-parity.md`)。
+   * **"已存在"是承重的**:没有 pi 会话 ⇒ 模型侧没有上下文 ⇒ 压缩无事可做,
+   * 而不是开一个会话来凑一个候选批。
+   */
+  getExistingMaestroAgent(sessionId?: string): MaestroAgent | null {
     const key = this.agentSessionKey(sessionId)
     if (key === 'default') return this.pi
     return this.maestroAgents.get(key) ?? null
