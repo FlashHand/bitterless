@@ -1,6 +1,6 @@
 # Maestro chat：发送链路全黑、Cmd+H 历史空白，以及与 cowork 的结构差
 
-`status: 可观测性 + 历史刷新已修;发送无回复待一次真机复现定案`
+`status: 可观测性 + 历史刷新 + 未读蓝点已完成;发送无回复待一次真机复现定案`
 `reported: 2026-09-09（Ral：「cmd+h 不能展示历史消息 以及发送消息一直没回复，需要检查日志，没有日志就补充日志」）`
 
 ## 0. 先说清楚哪条是已定案的、哪条不是
@@ -103,10 +103,10 @@ cowork 那侧 `refreshHistory` 的实现是同一份形状（同样的吞错 cat
 
 ## 4. 待裁决（已发 BotAndI）
 
-- **未读点挂哪 + 什么颜色**：(i) 挂到 Cmd+H 抽屉的行上（改动最小，但人不开抽屉就看不见，
-  而未读的意义正是「不看也知道」）；(ii) 照 cowork 建常驻会话列表再挂（对齐最彻底，
-  但那是给 bl 的 maestro chat 加一个新的 UI 区块）；(iii) 先不做。
-  颜色另定：cowork 是蓝点。**这是设计决定，不自己拍。**
+- ~~未读点挂哪 + 什么颜色~~ **已定并已实现**：Ral 2026-09-09 选 (ii)「照 cowork 建常驻会话列表再挂」，
+  颜色「以 cowork 为准就是蓝点」。落地见 `docs/features/maestro-session-list-unread.md`
+  （提交 `bcfb537`）。实现时发现 cowork 的「常驻」其实是**工具条上的计数区块**、
+  列表本体在抽屉里；蓝取 bl 自己的强调色 `#4e5882` 而非 cowork 的 `#165dff`，两处理由都写在那份文档里。
 - **`ChatMessage.replyId`**：bl 缺的那个字段。cowork 用它做什么、bl 是否需要，得先看
   cowork 那侧的用法再决定要不要补 —— 不为了字段对齐而对齐。
 - **pre-dispatch 没有超时**：`withInactivityTimeout` 只护住投递之后。投递之前那 4 个 await
