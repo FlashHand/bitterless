@@ -317,7 +317,10 @@ export class CaptureService extends CommonService<CaptureServiceState> {
       yaml: result.yaml,
       ts: Date.now()
     })
-    return { yaml: result.yaml, nodeCount: result.nodeCount, walkControls: result.walkControls }
+    // **不带 `walkControls`** —— bl 的 walker 不产出它(cowork 的 `snapshot()` 返回类型里有,
+    // bl 这份没有)。它在 dep 里本来就是可选字段,cowork 只拿它做漏斗分母的对账,
+    // 而那个口径它自己标着"先量三个口径再换源",是临时的。少了它丢的是一个诊断量,不是能力。
+    return { yaml: result.yaml, nodeCount: result.nodeCount }
   }
 
   /**

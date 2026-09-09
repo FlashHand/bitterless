@@ -366,3 +366,12 @@ const looksLikeSecretLiteral = (value: string): boolean => {
     /^[A-Za-z0-9._~-]{120,}$/.test(value)
   )
 }
+
+// 从 cowork 的 `textUrl.helper.ts` 搬入(drill-001):摄取建议要判两个 host 是否同一注册站点。
+// 放在 `hostFromUrl` 旁边 —— 同一类 URL 判定,bl 侧本来就没有 textUrl.helper 这个家。
+export const sameRegistrableSite = (hostA: string, hostB: string): boolean => {
+  if (!hostA || !hostB) return false
+  if (hostA === hostB) return true
+  const tail = (host: string): string => host.split('.').slice(-2).join('.')
+  return tail(hostA) === tail(hostB)
+}

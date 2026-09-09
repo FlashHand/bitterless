@@ -65,3 +65,7 @@ export const INTEGRATION_TARGET_KEY_PREFIX = 'target:'
 // grows with patient/project/corporate data and must be queryable by target/entity/source key.
 export const INTEGRATION_MAPPING_CONFIG_DOMAIN = 'integration-mappings'
 export const INTEGRATION_MAPPING_KEY_PREFIX = 'map:'
+
+// apidoc 摄取自己的 config 域(drill-001)。与 cowork 同名同值 —— 两边的库虽然各自独立,
+// 但域名对齐能让同一份文档/排查经验在两侧都成立。
+export const APIDOC_CONFIG_DOMAIN = 'apidoc'
