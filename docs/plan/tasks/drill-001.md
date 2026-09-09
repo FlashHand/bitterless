@@ -65,12 +65,44 @@ electron(app, WebContents) · node:fs/promises · node:path
 「按 tab id 取 view + 条件跟随 + 锚点免 LRU 冷却 + 关后台节流 + 录制目标跟随锚点」。
 bl 这次**直接落在新形态上**，不重演一次那个 bug 再修。
 
+## 2.5 一个真实的分叉：边钻边摄摄进哪 —— **要 Ral 定**
+
+cowork 的边钻边摄把只读接口摄进 **apidoc 台账**（`createXpcMainEmitter<ApidocLedgerApi>('ApidocDao')`，
+任务卡写「摄取 apidoc · host」）。**bl 没有 apidoc** —— 全仓 `apidoc` 只出现在本次搬入的文件里。
+
+bl 的训练管线是**技能**：`skill.service.ts:120 ingestRecordingToSkills()`（与 cowork 同名的方法）。
+
+两条路：
+
+| | 做法 | 代价 |
+|---|---|---|
+| (i) | 边钻边摄接 bl 的 `ingestRecordingToSkills()`，**不移植 apidoc** | 钻探在 bl 产出的是**技能**而不是接口文档。语义与 cowork 不同 —— 同一个工具在两边产出不同的东西 |
+| (ii) | 把 apidoc 台账一起移植（DAO + schema + XPC handler + 那套 ON CONFLICT DO UPDATE 的覆盖补齐） | 又是一个子系统，且 bl 侧没有任何现存消费者会去读它 |
+| (iii) | bl 的钻探**只产出站点地图**，不做边钻边摄（`ingestWindow` 这个可选 dep 不接） | 最小、语义最干净；但「边钻边摄」是 Ral 2026-08-13 明确要的行为 |
+
+倾向 (i)：bl 的钻探价值在**站点地图 + 探索**，而它自己的产出物本来就是技能；
+硬搬一个没人读的 apidoc 台账是为对齐而对齐。但这条改变了工具在两边的产出语义，**不自己拍**。
+
+## 2.6 其余依赖 bl 全都有（已核）
+
+`agentSessionContext`（DEFAULT_AGENT_SESSION_KEY / currentChatSessionId）· `usageLedger` ·
+`agentBroadcast` · `taskRegistry` · `hostFromUrl` —— 五个全在。所以编排那一段除了 apidoc
+没有别的缺口。
+
 ## 3. 还没做
 
-- `explore_session` 工具注册（`src/main/agent/hostToolCatalog.ts`）+ 执行体分派
-- 钻探任务卡（进度播报，照 `ingest_recording` 那张卡）
-- 停止信号：`TaskHandle` 的取消位（bl 的 `taskRegistry.types` 里已有同一套注释与语义）
-- 适配器本体 `src/main/maestro/sitemap/drillHost.service.ts`
+- **编排状态机**（cowork `drill.service.ts` 里约 608 行）：run 代次、全局单例闸、主人会话、
+  重入判定、`abandonRun`。这一段**不能快搬** —— 它的不变量背后有三份 issue 文档
+  （`drill-must-be-global-singleton.md`、`drill-activity-bleeds-into-another-session.md`、
+  `drill-run-epoch-and-stop-gates.md`），每一条都是真出过 bug 才写下来的：
+  第二次 `begin` 夺舍正在跑的那一轮、活动播报盖上别的会话的章、停止后立刻重开变成
+  「新一轮一开始就是被停止的」。搬错的代价是这三个 bug 在 bl 重现一遍，而它们都**静默**。
+- `explore_session` 工具注册（`maestroWindow.controller.ts` 那处 `execute` 表）
+- 钻探任务卡
+- 锚点 tab 免 LRU 冷却的接线（bl 侧 `enforceWarmCap` 等价物）
+- **等 #2.5 定了才能接 `ingestWindow`**
+
+`drillHost.service.ts` 适配器**已完成**（见 #1 的提交）。
 
 ## 4. 验证边界
 
