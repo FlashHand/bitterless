@@ -1,5 +1,6 @@
+import { dirname } from 'node:path'
 import { dialog } from 'electron'
-import type { BrowserWindow, OpenDialogOptions } from 'electron'
+import type { BrowserWindow, OpenDialogOptions, WebContents } from 'electron'
 import { createXpcMainEmitter, xpcMain } from 'electron-xpc/main'
 import { createWriteStream, mkdirSync, writeFileSync, type WriteStream } from 'fs'
 import { join } from 'path'
@@ -291,6 +292,68 @@ export class CaptureService extends CommonService<CaptureServiceState> {
     if (prev && prev.id !== next.id) await prev.capture?.stopRecording()
     this.captureTargetTabId = next.id
     await next.capture?.startRecording()
+  }
+
+  /**
+   * 给 agent 的页面快照 —— **绕开录制闸**(drill-001;cowork 侧同因同法)。
+   *
+   * `captureSnapshot()` 在 `captureMode === 'api'` 或关了 `recordActions` 时会返回
+   * `'Action capture is off'`,而**探站就跑在 API 模式下** —— 钻探拿它当主输入的话一步都走不了。
+   * 所以这里是它的兄弟:不要求 `capturing`、不写 trace 的 `shot`,只取 a11y 树。
+   *
+   * 目标解析走 `currentCaptureTarget()`(激活 → 既有录制目标 → 任一可录 tab),
+   * 与录制目标同一个口径 —— 钻探自己那只 tab 由 `webContentsForTab()` 单独取,不经这条。
+   */
+  async pageSnapshotForAgent(): Promise<{ yaml: string; nodeCount: number; walkControls?: string[] } | null> {
+    const target = this.currentCaptureTarget()
+    if (!target?.capture) return null
+    const result = await target.capture.snapshot({ shot: false })
+    if (!result.ok) return null
+    this.emitTrace({
+      kind: 'snapshot',
+      url: target.url || this._state.currentUrl,
+      title: result.title,
+      nodeCount: result.nodeCount,
+      yaml: result.yaml,
+      ts: Date.now()
+    })
+    return { yaml: result.yaml, nodeCount: result.nodeCount, walkControls: result.walkControls }
+  }
+
+  /**
+   * 按 tab id 取它自己的 live webContents —— **不经过"激活"**(drill-001)。
+   *
+   * 钻探的全部 I/O 必须锚在**它自己那个 tab** 上,而不是"激活 tab 的镜像"。cowork 那侧
+   * 一开始就是后者,代价是每个动作前把激活 tab 钉回去(人因此看不了别的 tab),
+   * 2026-09-09 的 `conn-009` 才解耦。bl 这次直接落在解耦形态上,不重演那个 bug。
+   */
+  webContentsForTab(tabId: string): WebContents | null {
+    if (!tabId) return null
+    const tab = this._state.getOperationTabs().find((item) => item.id === tabId)
+    if (!this.isCapturableTab(tab)) return null
+    const wc = tab.view?.webContents
+    return wc && !wc.isDestroyed() ? wc : null
+  }
+
+  /**
+   * 把录制目标移到某个 tab —— 按 id,不经过激活(drill-001)。
+   *
+   * 为什么必须有:录制目标原来只跟着激活走。钻探不激活自己那只 tab 的话,录制目标会留在
+   * **人正在看的那个 tab** 上 —— 边钻边摄读的窗口就录成了别人的流量,摄出来的接口文档是错的,
+   * 而过程一声不响。这是 cowork 侧被守卫抓出来的那一处,不能在 bl 重犯。
+   *
+   * 不录制时是空操作 —— `switchCaptureTarget` 自己第一句就检查 `capturing`。
+   */
+  async retargetCaptureToTab(tabId: string): Promise<void> {
+    if (!tabId) return
+    const next = this._state.getOperationTabs().find((item) => item.id === tabId)
+    if (!next) return
+    await this.switchCaptureTarget(next)
+  }
+
+  /** 当前录制会话的目录 —— 钻探把它写进 run 文件(`captureSessionDir` dep)。 */
+  captureSessionDir(): string | null {
+    return this.traceFile ? dirname(this.traceFile) : null
   }
 
   async captureSnapshot(): Promise<SnapshotResult> {
