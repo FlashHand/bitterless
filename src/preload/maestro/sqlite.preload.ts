@@ -66,6 +66,9 @@ const bootSqlite = async (): Promise<void> => {
     await import('./sqlite/session.dao')
     await import('./sqlite/maestroChat.dao')
     await import('./sqlite/inject_btn.dao')
+    // apidoc 台账(drill-001)。注册是**构造副作用** —— 不 import 就等于没注册,
+    // 而症状是运行期 `xpc:ApidocDao/*` 找不到,不是编译错误。
+    await import('./sqlite/apidoc.dao')
 
     bootResult = { ok: true }
   } catch (err) {
