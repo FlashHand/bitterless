@@ -43,6 +43,8 @@ import {
   TRENCH_IO_PERSON_SCHEMA_VERSION_CODE,
   TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
   TRENCH_IO_SCHEMA_VERSION_CODE,
+  TRENCH_IO_MIGRATION_MANIFEST,
+  TRENCH_IO_TABLE_COLUMNS,
   type TrenchIoMigrationDatabase,
 } from '../../src/renderer/trench-io/trenchIo.migration'
 
@@ -1564,9 +1566,13 @@ const auditTrenchIo = (): void => {
     upgraded.prepare('INSERT INTO trench_repository_state VALUES (1,0,NULL,1)').run()
     applyTrenchIoMigrations(asTrenchMigrationDatabase(upgraded), currentVersionCode, 2)
     assertTrenchIoSchema(asTrenchMigrationDatabase(upgraded))
+    // 列清单**引用契约本体**,不再手抄一份。手抄那版在 2026-09-08 漂了:trench 侧给
+    // `trench_index_wallets` 加了第 11 列 `evidence_run_id`(迁移与 `TRENCH_IO_TABLE_COLUMNS`
+    // 都改了),而这里的内联副本还是 10 列 ⇒ 018 升级用例当场红,而 "fresh schema" 用例照旧绿
+    // (它只走 `assertTrenchIoSchema` 那条派生判据)。同文件 todoist 那几处用的是命名常量而不是
+    // 内联数组,这里跟上。
     assert.deepEqual(getColumns(upgraded, 'trench_index_wallets'), [
-      'run_id', 'wallet_account_id', 'chain', 'chain_rank', 'total_profit_usd', 'source_ca_count',
-      'profitable_ca_count', 'best_source_rank', 'realized_profit_usd', 'unrealized_profit_usd',
+      ...TRENCH_IO_TABLE_COLUMNS.trench_index_wallets,
     ])
     assertHealthy(upgraded)
     console.log('✓ trench-io 018 upgrade converges on current person-registry schema')
@@ -1744,7 +1750,12 @@ const auditTrenchIo = (): void => {
     assert.throws(() => applyTrenchIoMigrations(
       asTrenchMigrationDatabase(unknownLower), currentVersionCode, 2,
     ), /exact supported manifest prefix/)
-    assert.equal(getScalar(unknownLower, 'SELECT COUNT(*) FROM trench_schema_migrations'), 5)
+    // 期望值 = **真实迁移条数 + 那条脏数据**,从 manifest 派生而不是写死。
+    // 写死的那版(4 + 1 = 5)在 2026-09-08 加第 5 条迁移 `incremental-index-evidence` 时漂了。
+    assert.equal(
+      getScalar(unknownLower, 'SELECT COUNT(*) FROM trench_schema_migrations'),
+      TRENCH_IO_MIGRATION_MANIFEST.length + 1,
+    )
     assert.equal(getScalar(unknownLower,
       'SELECT revision FROM trench_repository_state WHERE id=1'), 0)
     assertHealthy(unknownLower)
