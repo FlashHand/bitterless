@@ -561,9 +561,11 @@
 }
 
 // ── 会话计数与未读指示物(docs/features/maestro-session-list-unread.md #3) ──────────
-// 蓝取 bl chat 自己的强调色 #4e5882(与发送按钮同一个),不是 cowork 的 #165dff:
-// 两者都是蓝,但 bl 里已经有一个强调蓝,再引入第二个会在同一个面板里打架。
-// 保留 cowork 的**设计意图**:蓝 = 等你看,灰 = 还没到你。
+// 蓝**严格取 cowork 的 #165dff**(Ral 2026-09-09 裁决:以 cowork 为准)。
+// 我先前用的是 bl 自己的强调色 #4e5882,理由是"不想在同一面板里出现第二种蓝" —— 撤回:
+// 未读点要的正是**跳出来**,与发送按钮同色反而让它退进背景;而"以 cowork 为准"这条裁决
+// 本来就包含色值。设计意图不变:蓝 = 等你看,灰 = 还没到你。
+@session-unread-blue: #165dff;
 
 .chat-panel__sessions-group {
   display: flex;
@@ -596,7 +598,7 @@
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  background: #4e5882;
+  background: @session-unread-blue;
   border-radius: 999px;
   box-shadow: 0 0 0 2px #fff;
   pointer-events: none;
@@ -639,7 +641,7 @@
   top: calc(50% - 6px);
   width: 12px;
   height: 12px;
-  border: 2px solid #4e5882;
+  border: 2px solid @session-unread-blue;
   border-top-color: transparent;
   border-radius: 999px;
   animation: chat-panel-spin 0.9s linear infinite;
@@ -649,7 +651,7 @@
   top: 50%;
   width: 8px;
   height: 8px;
-  background: #4e5882;
+  background: @session-unread-blue;
   border-radius: 999px;
   transform: translateY(-50%);
 }
