@@ -86,6 +86,7 @@ import type {
   CoachXpcContract,
   ContextExportRequest,
   ContextExportSummary,
+  SessionIoPathResult,
   AgentConversationContext,
   AgentActivityStep,
   AgentCompactReply,
@@ -168,6 +169,7 @@ import {
   fileThumbnail,
   type ThumbnailResult
 } from '@maestro-main/files/thumbnail.service'
+import { applyTabChrome, insetForControl } from './viewBounds'
 
 // Initial geometry used for the very first frame, before the home renderer reports
 // the real placeholder rects (see setViewBounds). The 36px tab strip plus the compact
@@ -236,8 +238,23 @@ class MaestroWindowController
   capture: DebuggerCapture | null = null
   replayEngine: ReplayEngine | null = null
   // operationView/capture/replayEngine above always point at the ACTIVE tab.
+  // `opBounds` holds the ALREADY-inset content rect — see setViewBounds().
   opBounds: ViewRect | null = null
+  // `controlBounds` stays exactly what the renderer reported: it is both the panel's own rect and
+  // the source of `controlVisible`, so an inset value here would poison the criterion itself.
   private controlBounds: ViewRect | null = null
+
+  /**
+   * 面板**没有 show/hide API** —— "关掉"就是渲染层把占位宽度动画到 0,主进程只看得见一个宽度为 0
+   * 的矩形(view 一直活着,开关状态只在 home 的 localStorage)。所以判据就是这个宽度,不新增状态、
+   * 不加 XPC、不改渲染层。null = 渲染层还没上报过,与 `layout()` 的首帧回退口径一致(按"面板在"算)。
+   *
+   * public 是因为 `MaestroBrowserViewService` / `MaestroWorkbenchViewService` 在把 view 摆到前台时
+   * 要问它 —— 它们通过各自的状态契约读,不能是 private。
+   */
+  get controlVisible(): boolean {
+    return (this.controlBounds?.width ?? SIDEBAR_W) > 0
+  }
   currentUrl = DEFAULT_COACH_START_URL
   private initialReady: Promise<void> = Promise.resolve()
   private backgroundReady: Promise<void> = Promise.resolve()
@@ -1034,6 +1051,10 @@ class MaestroWindowController
     return await this.agentService.copyNextTurnContext(params)
   }
 
+  async copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult> {
+    return await this.agentService.copySessionIoPath(params)
+  }
+
   async compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply> {
     return await this.agentService.compactConversation(params)
   }
@@ -1612,15 +1633,21 @@ class MaestroWindowController
     if (!this.browserWindow) return
     // Deferred views and native resize reuse the last complete renderer measurement. The next
     // Shell report supplies updated dimensions; the first-frame fallback must not reopen Chat.
+    //
+    // 这里**不能**回灌 `setViewBounds` —— `opBounds` 存的已经是内缩后的矩形,再过一次入口就是
+    // 第二次内缩(每拖一下窗口再窄 8px)。摆位本身与那条路共用 `applyContentBounds`。
     if (this.opBounds && this.controlBounds) {
-      this.setViewBounds({ operation: this.opBounds, control: this.controlBounds })
+      this.applyContentBounds(this.opBounds, this.controlBounds)
       return
     }
     const [w, h] = this.browserWindow.getContentSize()
     const viewH = Math.max(0, h - TOOLBAR_H)
     const webW = Math.max(0, w - SIDEBAR_W)
-    this.browserView.layout({ x: 0, y: TOOLBAR_H, width: webW, height: viewH })
-    this.workbenchView.layout({ x: 0, y: TOOLBAR_H, width: webW, height: viewH })
+    // 首帧回退也必须过**同一个**内缩,否则症状是"渲染层报上来之前那一瞬间没有空隙"。
+    const content = insetForControl({ x: 0, y: TOOLBAR_H, width: webW, height: viewH }, this.controlVisible)
+    this.browserView.layout(content)
+    this.workbenchView.layout(content)
+    // 面板自己不内缩 —— 让出来的那 8px 就在它左边。
     this.controlView.layout({ x: webW, y: TOOLBAR_H, width: SIDEBAR_W, height: viewH })
     this.browserView.refreshCompositeTabs()
   }
@@ -1632,14 +1659,30 @@ class MaestroWindowController
    */
   setViewBounds(params: { operation: ViewRect; control: ViewRect }): void {
     // Retain both rects so late-created views and activated tabs use the same measured layout.
-    this.opBounds = params.operation
+    // 原值,**不含内缩** —— 它同时是判据的来源与面板自己的矩形,污染了两处一起错。
     this.controlBounds = params.control
-    this.browserView.setBounds(params.operation)
-    this.workbenchView.setBounds(params.operation)
-    this.controlView.setBounds(params.control)
+    // 内缩在这里做完,而且只做这一次:`opBounds` 存的就是内缩后的矩形,四个消费者
+    // (workbench 复活、composite host contentRect、warm 补 bounds、`layout()` 的缓存分支)因此
+    // 自动跟随,三份互相独立的去重备忘录收到的也是同一个值。下游谁再缩一次就会变成 16px。
+    const content = insetForControl(params.operation, this.controlVisible)
+    this.opBounds = content
+    this.applyContentBounds(content, params.control)
+  }
+
+  /** 两条布局路径共用的摆位。内缩已经在调用方做完,这里只负责分发。 */
+  private applyContentBounds(content: ViewRect, control: ViewRect): void {
+    this.browserView.setBounds(content)
+    this.workbenchView.setBounds(content)
+    this.controlView.setBounds(control)
     // A composite mini-app tab is positioned by its own mount, not by a `WebContentsView` bounds
     // applier, so it has to be told separately or it keeps a stale rect through every resize.
     this.browserView.refreshCompositeTabs()
+    // 圆角**跟着 bounds 走**,不跟"翻转"走。放在这里(两条布局路径共用的出口)而不是 setViewBounds
+    // 里判翻转,是因为翻转判据漏掉了另一半:新建 / 冷复活的 view 成为前台内容时还是 0×0,那一刻
+    // 设的圆角会被原生实现静默丢掉,必须等它拿到够大的矩形再补一次。每帧调没有代价 ——
+    // `applyTabChrome` 按 view 记忆(见 viewBounds.ts)。
+    applyTabChrome(this.operationView, this.controlVisible)
+    this.workbenchView.applyChrome(this.controlVisible)
   }
 
   private getActiveTab(): OperationTab | undefined {

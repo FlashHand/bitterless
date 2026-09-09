@@ -7,6 +7,7 @@ import type {
   AgentConversationContext,
   ContextExportRequest,
   ContextExportSummary,
+  SessionIoPathResult,
   AgentCompactReply,
   AgentCompactRequest,
   AgentMessageRequest,
@@ -306,6 +307,10 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
 
   async copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary> {
     return await maestroWindowHelper.copyNextTurnContext(params)
+  }
+
+  async copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult> {
+    return await maestroWindowHelper.copySessionIoPath(params)
   }
 
   async compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply> {

@@ -12,7 +12,7 @@ import { BaseAgent, STEER_NOT_STREAMING, type PiToolSpec } from '@main/agent/Bas
 import { buildContextRecord, entriesOfSurface, renderContextText } from '@main/agent/contextExport.service'
 import { assertContextTextSize } from './runtime/contextExportLimit.service'
 import { MAESTRO_SYSTEM_PROMPT } from './prompt/maestroSysPrompt'
-import type { ContextExportRequest, ContextExportSummary } from '@maestro-shared/coach.api'
+import type { ContextExportRequest, ContextExportSummary, SessionIoPathResult } from '@maestro-shared/coach.api'
 import { MaestroAgent } from '@main/agent/MaestroAgent'
 import { CoachAgent } from '@main/agent/CoachAgent'
 import { DelegateAgent } from '@main/agent/DelegateAgent'
@@ -76,6 +76,7 @@ import {
 import { maestroDataRoot } from '@maestro-main/data/maestroDataRoot'
 import { buildUnknownConfirmPayload } from '@maestro-main/drive/confirmPayload'
 import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
+import { modelIoLog } from './runtime/modelIoLog'
 import { maestroAgentDir, maestroAuthPath, maestroModelsPath } from '@maestro-main/llm/llmPaths'
 import { describeLlmTarget, providerLabel, type LlmStoredTarget } from '@maestro-main/llm/llmModels'
 import { CoachRuntimeAdapter } from './runtime/coachRuntimeAdapter'
@@ -1059,6 +1060,34 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       const oldest = this.recentFinishedAgentTurns.keys().next().value as string | undefined
       if (!oldest) break
       this.recentFinishedAgentTurns.delete(oldest)
+    }
+  }
+
+  /**
+   * `/copy_session_path` —— 把这个会话的模型 I/O jsonl **目录**绝对路径写进剪贴板。
+   *
+   * 为什么是目录而不是文件:一个会话的 io 按 `part-NNN.jsonl` 分卷,给单个文件名只交出其中一段。
+   *
+   * 为什么不需要 runtime 活着:`modelIoLog.dirForSession()` 活桶优先、拿不到就按目录名后缀
+   * 在盘上找最近的一个 —— 所以**重启之后翻旧会话也能拿到路径**。这正是它作为取证工具的价值,
+   * 因此这里**故意不调** `assertAgentRuntimeActive()`(`copyNextTurnContext` 需要它,
+   * 因为那条要读活着的 runtime 上下文;这条只问盘上的路径)。
+   *
+   * 不新建审计子系统:`modelIoLog` 本来就在往那儿写,这里只是把位置说出来。
+   */
+  async copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult> {
+    try {
+      const sessionId = typeof params?.sessionId === 'string' ? params.sessionId.trim() : ''
+      if (!sessionId) throw new Error('A chat session is required.')
+      const dir = await modelIoLog.dirForSession(this.agentSessionKey(sessionId))
+      if (!dir) {
+        // 明确报"还没有",不给一个空串让人以为复制成功了。
+        return { ok: false, error: 'This session has no model I/O log yet — send a message first.' }
+      }
+      clipboard.writeText(dir)
+      return { ok: true, path: dir }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   }
 

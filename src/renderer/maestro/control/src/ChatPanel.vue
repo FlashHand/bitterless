@@ -32,7 +32,8 @@ const composerRef = ref<HTMLTextAreaElement | null>(null)
 const composerCaret = ref(0)
 const shortcutStore = reactive(new ShortcutStore([
   { name: '/clear', get hint() { return i18nHelper.maestroControl.chat.slashClear } },
-  { name: '/view_context', get hint() { return i18nHelper.maestroControl.chat.slashViewContext } }
+  { name: '/view_context', get hint() { return i18nHelper.maestroControl.chat.slashViewContext } },
+  { name: '/copy_session_path', get hint() { return i18nHelper.maestroControl.chat.slashCopySessionPath } }
 ]))
 const slashToken = computed(() => slashTokenAt(input.value, composerCaret.value))
 const slashVisible = computed(() => shortcutStore.open && shortcutStore.matches.length > 0)
@@ -550,6 +551,16 @@ async function commitShortcut(): Promise<void> {
   const draft = input.value.slice(0, token.start) + input.value.slice(token.end)
   const result = await shortcutStore.commit({
     newChat: startNewChat,
+    // 路径**同时**进剪贴板与时间线(Ral 2026-09-09:「复制到剪贴板,并在消息中回复这个路径」)。
+    // 只发 toast 不够:toast 会消失,而这个路径正是要拿去 audit 的东西,得留在会话里可选中。
+    // `promptExcluded: true` —— 它是给人看的留痕,不该占模型的上下文。
+    copySessionPath: async () => {
+      const reply = await coach.copySessionIoPath({ sessionId })
+      if (!reply.ok) throw new Error(reply.error)
+      if (composerDisposed || props.session.id !== sessionId) return
+      messageStore.pushLocalNote(sessionId, reply.path)
+      Message.success(i18nHelper.maestroControl.chat.slashPathCopied)
+    },
     copyContext: async () => {
       const context = messageStore.buildAgentContext(props.session, undefined, selectedFiles.value.map((file) => file.path))
       const summary = await coach.copyNextTurnContext({ sessionId, draft, context })

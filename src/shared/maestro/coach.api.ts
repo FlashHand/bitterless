@@ -95,6 +95,15 @@ export interface CoachXpcContract {
   ackAgentTurnFinished(params: { sessionId: string; turnId: string }): Promise<void>
   sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply>
   copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary>
+  /**
+   * 这个聊天会话的**模型 I/O jsonl 目录绝对路径** —— 写进剪贴板并回给渲染端
+   * (`/copy_session_path`,契约 `docs/features/maestro-slash-commands.md`)。
+   *
+   * 复制的是**目录**而不是单个文件:一个会话的 io 按 `part-NNN.jsonl` 分卷
+   * (`modelIoLog.append` 到量就换卷),给一个文件名等于只交出其中一段。
+   * 不新建任何审计子系统 —— 它只是把 `modelIoLog` 已经在写的那个目录说出来。
+   */
+  copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult>
   compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply>
   // `files` (md only, parsed to text in the renderer) are folded into the trainer turn as
   // reference/source material; they also render as a separate `type:'files'` user bubble.
@@ -1000,6 +1009,9 @@ export interface ContextExportRequest {
   draft: string
   context?: AgentConversationContext
 }
+
+/** `/copy_session_path` 的回包。`path` 是绝对路径,已经写进剪贴板。 */
+export type SessionIoPathResult = { ok: true; path: string } | { ok: false; error: string }
 
 export type ContextExportSummary =
   | { ok: true; chars: number; entries: number }

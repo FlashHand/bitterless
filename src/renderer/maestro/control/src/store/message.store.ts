@@ -715,6 +715,34 @@ export class MessageStoreState {
    * 兜底行为保持不变(仍然退化成空列表、不往上抛),改的只是**它会说话**;
    * 而「开抽屉时重拉」在 `ChatPanel.vue` 的 `toggleHistory()` 里补。
    */
+  /**
+   * 往时间线里插一条**本地留痕** —— 不经过模型,也不进模型的上下文。
+   *
+   * 目前唯一的用处是 `/copy_session_path` 把 jsonl 路径回在会话里(Ral 2026-09-09):
+   * toast 会消失,而那个路径正是要拿去 audit 的东西,得留在会话里可选中、可回翻。
+   *
+   * `promptExcluded: true` 是这条的关键 —— 少了它,一句给人看的路径会占进下一轮的提示词,
+   * 而且会被 `/view_context` 导出成"模型看过的历史",那是假的。
+   * 也**不落库**:它不改 `updatedAt`、不调 `persistSession` —— 一条本地留痕不值得让会话变"脏"。
+   */
+  pushLocalNote(sessionId: string, content: string): void {
+    const session = this.getSession(sessionId)
+    if (!session) return
+    this.turnService.appendTimelineEntry(
+      session,
+      this.withTokenCount({
+        id: uid(),
+        source: 'cowork',
+        role: 'ai',
+        content,
+        streaming: false,
+        promptExcluded: true,
+        ts: Date.now()
+      })
+    )
+    this.scrollToBottom()
+  }
+
   markUnread(sessionId: string): void {
     if (!sessionId || this.unreadSessionIds.includes(sessionId)) return
     this.unreadSessionIds = [...this.unreadSessionIds, sessionId]

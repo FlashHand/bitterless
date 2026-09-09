@@ -424,6 +424,8 @@ export const en = {
     chat: {
       history: 'Sessions',
       noHistory: 'No sessions',
+      slashCopySessionPath: 'Copy the model I/O jsonl folder for this session',
+      slashPathCopied: 'Session jsonl path copied',
       setupTimeout: 'Preparing this turn timed out at the {stage} step ({seconds}s). Nothing was sent — try again.',
       unreadSessions: '{count} session(s) with an unread reply',
       runningSessions: '{count} session(s) still working',

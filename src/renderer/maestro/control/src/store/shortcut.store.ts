@@ -45,9 +45,21 @@ export class ShortcutStore {
     this.pending = true
     this.close()
     try {
-      if (item.name === '/clear') return { ok: await context.newChat() }
-      await context.copyContext()
-      return { ok: true }
+      // **每条命令都显式分派。** 原来是「不是 /clear 就当 copyContext」的兜底 ——
+      // 那种写法在加第三条命令的那一刻就会静默跑错一条,而且不会有任何类型错误。
+      // 现在漏接一条的表现是 `unknown command`(可见的失败),不是跑错。
+      switch (item.name) {
+        case '/clear':
+          return { ok: await context.newChat() }
+        case '/view_context':
+          await context.copyContext()
+          return { ok: true }
+        case '/copy_session_path':
+          await context.copySessionPath()
+          return { ok: true }
+        default:
+          return { ok: false, error: `unknown command ${item.name}` }
+      }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     } finally {

@@ -55,6 +55,29 @@ Represent inline binary media as labeled metadata, not megabytes of base64 in th
 An export exceeding its 8MiB text budget must fail visibly without replacing the clipboard;
 do not silently truncate text/tool history or allocate an unbounded serialized copy on Main.
 
+`/copy_session_path`（Ral 2026-09-09 追加）把这个会话的**模型 I/O jsonl 目录绝对路径**写进剪贴板，
+并在会话里回一条本地留痕。它是取证工具：要 audit「模型到底看到了什么」，第一步是知道去哪看。
+
+- **复制目录，不是单个文件。** 一个会话的 io 按 `part-NNN.jsonl` 分卷（`modelIoLog.append` 到量换卷），
+  给单个文件名等于只交出其中一段。
+- **不新建审计子系统** —— `modelIoLog` 本来就在往那儿写，这条命令只是把位置说出来。
+  它是 `modelIoLog.dirForSession()` 的第一个真实调用者：那个函数上的注释一直写着
+  「`/view_context` 用它」，但全仓**没有任何调用者**，那句注释是过时的。
+- **不要求 runtime 活着。** `dirForSession()` 活桶优先、拿不到就按目录名后缀在盘上找最近的一个，
+  所以**重启后翻旧会话也拿得到路径** —— 这正是它作为取证工具的价值，因此实现里**故意不调**
+  `assertAgentRuntimeActive()`（`/view_context` 需要它，因为那条要读活着的 runtime 上下文；
+  这条只问盘上的路径）。没有日志目录时明确报「还没有」，不给空串让人以为复制成功了。
+- **同时进剪贴板与时间线。** 只发 toast 不够：toast 会消失，而这个路径正是要拿去 audit 的东西，
+  得留在会话里可选中、可回翻。那条留痕 `promptExcluded: true` ——
+  少了它，一句给人看的路径会占进下一轮提示词，还会被 `/view_context` 导出成"模型看过的历史"，那是假的。
+  它也不落库、不改 `updatedAt`：一条本地留痕不值得让会话变脏。
+- 名字用下划线（`/copy_session_path`）而不是空格：开菜单的 token 正则是 `\/([\w-]*)`，
+  带空格的名字根本不会被识别成命令。与既有的 `/view_context` 同一个写法。
+
+**顺带修掉一个会静默跑错的分派。** `ShortcutStore.commit()` 原来是「不是 `/clear` 就当
+`copyContext`」的兜底 —— 加第三条命令的那一刻它就会静默执行错的那条，而且**不会有任何类型错误**。
+已改成 `switch` 显式分派，漏接一条的表现是可见的 `unknown command`，不是跑错。
+
 ## Verification and handoff
 
 Unit/source tests cover triggers and non-triggers, filtering/order, keyboard/click/IME behavior,

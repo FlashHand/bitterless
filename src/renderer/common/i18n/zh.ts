@@ -418,6 +418,8 @@ export const zh: typeof en = {
     chat: {
       history: '会话',
       noHistory: '暂无会话',
+      slashCopySessionPath: '复制本会话的模型 I/O jsonl 目录',
+      slashPathCopied: '会话 jsonl 路径已复制',
       setupTimeout: '这一轮在 {stage} 阶段准备超时（{seconds} 秒）。消息没有发出，请重试。',
       unreadSessions: '{count} 个会话有未读回复',
       runningSessions: '{count} 个会话仍在进行',

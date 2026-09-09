@@ -772,7 +772,15 @@ export class TurnService extends CommonService<MessageStoreState> {
     this._state.bufferStreamDelta(session.id, payload.delta)
   }
 
-  /** 任务快照在推进也算回合活着(钻探 explore_session 每步 + 心跳)。 */
+  /**
+   * 任务快照在推进也算回合活着。
+   *
+   * **`explore_session` 那句描述的是 cowork,不是这里** —— bl 从来没有钻探能力
+   * (`src/main/sitemap` 在 bl 的整个历史里都不存在,agent 也不暴露 explore/drill 类工具;
+   * 见 `docs/issues/drill-skill-not-available-in-bitterless.md`)。这段代码是随 chat panel
+   * 一起从 cowork 移植过来的,判定本身通用,但别把那个工具名当成 bl 也有它的证据。
+   * bl 侧会推进任务快照的是 `ingest_recording` 一类。
+   */
   touchForTask(sessionId: string): void {
     const session = this._state.getSession(sessionId)
     if (session) this.touch(session)
