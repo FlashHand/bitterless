@@ -30,7 +30,8 @@ import type {
   MessageIntent,
   MessageSession,
   MessageSessionSummary,
-  MessageSource
+  MessageSource,
+  SessionListItem
 } from './message.type'
 import { TurnService, type SendResult } from './turn.service'
 import { turnDiagnostics } from './turnDiagnostics.service'
@@ -44,6 +45,27 @@ const maestroChat = createXpcRendererEmitter<MaestroChatApi>('MaestroChatDao')
  * (`areas/agent-runtime/agent-design-parity.md` 裁决一)。
  */
 const compaction = createXpcRendererEmitter<MaestroCompactionApi>('CompactionHandler')
+
+// 未读会话 id 的落点。localStorage 而不是库:它是**这台机器上这个人看没看过**,
+// 不是会话本身的属性 —— 换机器重新算一遍才是对的。cowork 侧同一份设计,键名各自独立。
+const UNREAD_STORAGE_KEY = 'bitterless.maestro.unreadSessions'
+
+const readUnreadIds = (): string[] => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(UNREAD_STORAGE_KEY) || '[]')
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+const writeUnreadIds = (ids: string[]): void => {
+  try {
+    localStorage.setItem(UNREAD_STORAGE_KEY, JSON.stringify(ids))
+  } catch {
+    /* 隐私模式/配额满 —— 未读退化成本次会话内有效,不值得为此报错 */
+  }
+}
 
 interface SessionOptions {
   title: string
@@ -200,6 +222,17 @@ export class MessageStoreState {
 
   sessions: MessageSession[] = []
   historySessions: MessageSessionSummary[] = []
+  unreadSessionIds: string[] = readUnreadIds()
+  /**
+   * 面板此刻显示的会话 —— **由 `channel.store` 单向写进来**。
+   *
+   * 不反过来让本文件读 `channel.store`:那边已经 import 了本文件,反向 import 会成环,
+   * 而 `iocHelper.bind()` 的即时 `container.get` 会把环变成启动崩溃
+   * (cowork 侧在 `serviceBag.types.ts` 顶部记过同一个坑)。
+   *
+   * 连接器 tab 活跃时是空串 —— 那时结束的回合**会**置未读,因为人确实没在看它。
+   */
+  activeSessionId = ''
   defaultWorkspace: WorkspaceRef | undefined = undefined
   contextLimitK = DEFAULT_CONTEXT_LIMIT_K
   contextLimitLabel = DEFAULT_CONTEXT_LIMIT_LABEL
@@ -578,6 +611,7 @@ export class MessageStoreState {
     if (!session || session.turn || session.archivedAt) return false
     if (!this.shouldPersistSession(session)) {
       this.sessions = this.sessions.filter((item) => item.id !== session.id)
+      this.markRead(session.id)
       await maestroChat.deleteSession({ id: session.id }).catch(() => ({ ok: false }))
       await this.refreshHistory()
       return true
@@ -595,6 +629,7 @@ export class MessageStoreState {
     const session = this.getSession(sessionId)
     if (!session || session.turn || this.shouldPersistSession(session)) return
     this.sessions = this.sessions.filter((item) => item.id !== session.id)
+    this.markRead(session.id)
     await maestroChat.deleteSession({ id: session.id }).catch(() => ({ ok: false }))
     await this.refreshHistory()
   }
@@ -680,6 +715,63 @@ export class MessageStoreState {
    * 兜底行为保持不变(仍然退化成空列表、不往上抛),改的只是**它会说话**;
    * 而「开抽屉时重拉」在 `ChatPanel.vue` 的 `toggleHistory()` 里补。
    */
+  markUnread(sessionId: string): void {
+    if (!sessionId || this.unreadSessionIds.includes(sessionId)) return
+    this.unreadSessionIds = [...this.unreadSessionIds, sessionId]
+    writeUnreadIds(this.unreadSessionIds)
+  }
+
+  markRead(sessionId: string): void {
+    if (!this.unreadSessionIds.includes(sessionId)) return
+    this.unreadSessionIds = this.unreadSessionIds.filter((id) => id !== sessionId)
+    writeUnreadIds(this.unreadSessionIds)
+  }
+
+  /**
+   * 会话列表:**未读 → 进行中 → 已读**,段内按 `updatedAt` 倒序
+   * (docs/features/maestro-session-list-unread.md #1)。
+   *
+   * 未读排在进行中之前,是因为进行中的**还会自己回来找你**(它结束时会变成未读),
+   * 而未读是已经等着你、且没人会再提醒的那些 —— 把「需要你现在做事」的排前面。
+   *
+   * 数据来自两处并合:活着的会话(带 `turn`,只有内存里有)+ 库里的概要(标题/预览/时间)。
+   * 两处都要遍历 —— 只读库的话「刚新建、还没发过消息」的会话不在列表里。
+   */
+  get sessionListItems(): SessionListItem[] {
+    const live = new Map(this.sessions.map((session) => [session.id, session]))
+    const seen = new Set<string>()
+    const items: SessionListItem[] = []
+    const push = (id: string, title: string, preview: string, updatedAt: number, archivedAt?: number): void => {
+      if (seen.has(id) || archivedAt) return
+      seen.add(id)
+      const session = live.get(id)
+      items.push({
+        id,
+        title: session?.title || title || 'Maestro',
+        preview,
+        updatedAt: session?.updatedAt || updatedAt,
+        running: Boolean(session?.turn),
+        unread: this.unreadSessionIds.includes(id)
+      })
+    }
+    for (const summary of this.historySessions) {
+      push(summary.id, summary.title || '', summary.preview || '', summary.updatedAt, summary.archivedAt)
+    }
+    for (const session of this.sessions) push(session.id, session.title, '', session.updatedAt, session.archivedAt)
+    const rank = (item: SessionListItem): number => (item.unread ? 0 : item.running ? 1 : 2)
+    return items.sort((a, b) => (rank(a) === rank(b) ? b.updatedAt - a.updatedAt : rank(a) - rank(b)))
+  }
+
+  /** 正在跑的会话数 —— 工具条上的转圈计数(灰的:在跑是「还没到你」)。 */
+  get runningSessionCount(): number {
+    return this.sessionListItems.filter((item) => item.running).length
+  }
+
+  /** 有未读结论的会话数 —— Sessions 图标上的蓝色角标。 */
+  get unreadSessionCount(): number {
+    return this.sessionListItems.filter((item) => item.unread).length
+  }
+
   async refreshHistory(): Promise<void> {
     try {
       const list = await maestroChat.listSessions({})

@@ -597,6 +597,12 @@ export class TurnService extends CommonService<MessageStoreState> {
             rootHumanMessageId: turn.rootHumanMessageId
           }
         : undefined
+    // **回合在它不是当前会话时结束 → 未读**(docs/features/maestro-session-list-unread.md #2)。
+    // 只有真的产出了正文(或文件)才算:一次被停止、或失败到没有正文的回合置未读,
+    // 只会让蓝点变成噪声。`activeSessionId` 由 channel.store 单向写入,connector 活跃时是空串。
+    if (this._state.activeSessionId !== session.id && !wasAborted && (safeReplyText || reply.files?.length)) {
+      this._state.markUnread(session.id)
+    }
     // Clear ownership synchronously before either persistence await. A completion broadcast and the
     // root XPC response may arrive back-to-back; the second finalizer must become a no-op.
     session.turn = undefined

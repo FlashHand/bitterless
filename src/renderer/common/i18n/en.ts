@@ -424,6 +424,10 @@ export const en = {
     chat: {
       history: 'Chat history',
       noHistory: 'No history',
+      unreadSessions: '{count} session(s) with an unread reply',
+      runningSessions: '{count} session(s) still working',
+      sessionRunning: 'Running',
+      sessionUnread: 'Unread reply',
       closeHistory: 'Close history',
       newChat: 'New chat',
       slashClear: 'Start a fresh chat; keep this conversation',

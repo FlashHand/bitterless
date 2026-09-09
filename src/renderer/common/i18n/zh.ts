@@ -418,6 +418,10 @@ export const zh: typeof en = {
     chat: {
       history: '会话历史',
       noHistory: '暂无历史会话',
+      unreadSessions: '{count} 个会话有未读回复',
+      runningSessions: '{count} 个会话仍在进行',
+      sessionRunning: '进行中',
+      sessionUnread: '未读回复',
       closeHistory: '关闭历史',
       newChat: '新建会话',
       slashClear: '新建会话，保留当前会话历史',

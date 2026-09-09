@@ -48,6 +48,9 @@ const historyContainer = ref<HTMLElement | null>(null)
 const historyList = ref<HTMLElement | null>(null)
 const historyCursor = ref(0)
 const shortcut = (key: string): string => `${navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+'}${key}`
+
+// i18n 文案里的 `{count}` 占位替换。不用 `$t()` / `useI18n()` —— 本项目一律走 i18nHelper。
+const withCount = (copy: string, count: number): string => copy.replace('{count}', String(count))
 const voiceRecording = ref(false)
 const voiceBusy = ref(false)
 
@@ -455,7 +458,7 @@ function toggleHistory(): void {
     closeHistory()
     return
   }
-  const index = messageStore.historySessions.findIndex((item) => item.id === props.session.id)
+  const index = messageStore.sessionListItems.findIndex((item) => item.id === props.session.id)
   historyCursor.value = Math.max(index, 0)
   historyVisible.value = true
   scrollHistoryCursor()
@@ -485,10 +488,10 @@ function onPanelKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') closeHistory()
   else if (event.key === 'Enter') {
     if (event.repeat) return
-    const item = messageStore.historySessions[historyCursor.value]
+    const item = messageStore.sessionListItems[historyCursor.value]
     if (item) void selectHistory(item.id)
   } else {
-    const count = messageStore.historySessions.length
+    const count = messageStore.sessionListItems.length
     if (!count) return
     historyCursor.value = (historyCursor.value + (event.key === 'ArrowDown' ? 1 : -1) + count) % count
     scrollHistoryCursor()
@@ -625,16 +628,47 @@ function setHistoryContainer(el: HTMLElement | null): void {
       </div>
     </div>
     <div class="chat-panel__toolbar">
-      <Tooltip :content="shortcut('H')" position="bottom" mini>
-        <IconBtn
-        class="chat-panel__history-button"
-        name="maestro__history"
-        :aria-label="i18nHelper.maestroControl.chat.history"
-        @click="toggleHistory"
-      >
-        <IconListDetails class="chat-panel__button-icon" :size="16" stroke="1.8" />
-      </IconBtn>
-      </Tooltip>
+      <!-- 常驻计数区块(docs/features/maestro-session-list-unread.md #0)。
+           未读做成 **Sessions 图标右上角的角标**,最多 `99+` —— 未读的意义是「不开抽屉也知道」,
+           所以只有计数必须常驻,列表本体留在抽屉里。
+           手写一个 span 而不是用 Arco 的 Badge:Badge 按 20px 基线设计,尺寸/字号/偏移都要逐项覆盖,
+           写一个 15px 的 span 反而更短、也不会被组件库升级改掉。 -->
+      <div class="chat-panel__sessions-group">
+        <div class="chat-panel__sessions-entry">
+          <Tooltip :content="shortcut('H')" position="bottom" mini>
+            <IconBtn
+              class="chat-panel__history-button"
+              name="maestro__history"
+              :aria-label="i18nHelper.maestroControl.chat.history"
+              @click="toggleHistory"
+            >
+              <IconListDetails class="chat-panel__button-icon" :size="16" stroke="1.8" />
+            </IconBtn>
+          </Tooltip>
+          <!-- 白色分隔环不是装饰:角标压在图标边缘上,没有它两个深色形状会糊成一块。
+               `pointer-events-none` —— 它盖在按钮上,不能把点击吃掉。 -->
+          <Tooltip
+            v-if="messageStore.unreadSessionCount"
+            :content="withCount(i18nHelper.maestroControl.chat.unreadSessions, messageStore.unreadSessionCount)"
+            position="bottom"
+            mini
+          >
+            <span name="maestro__sessions-unread" class="chat-panel__sessions-unread">
+              {{ messageStore.unreadSessionCount > 99 ? '99+' : messageStore.unreadSessionCount }}
+            </span>
+          </Tooltip>
+        </div>
+        <!-- 在跑是**灰的**:在跑是「还没到你」,未读才是「等你看」,只有后者用强调色抢注意力。 -->
+        <span
+          v-if="messageStore.runningSessionCount"
+          name="maestro__sessions-running"
+          class="chat-panel__sessions-running"
+          :title="withCount(i18nHelper.maestroControl.chat.runningSessions, messageStore.runningSessionCount)"
+        >
+          <span class="chat-panel__sessions-running-spinner"></span>
+          <span class="chat-panel__sessions-running-count">{{ messageStore.runningSessionCount }}</span>
+        </span>
+      </div>
       <Tooltip :content="shortcut('N')" position="bottom" mini>
         <Button
         name="maestro__new_chat"
@@ -678,11 +712,16 @@ function setHistoryContainer(el: HTMLElement | null): void {
           </IconBtn>
         </div>
         <div ref="historyList" name="maestro__history-list" class="chat-panel__history-list">
-          <div v-if="!messageStore.historySessions.length" class="chat-panel__history-empty">
+          <div v-if="!messageStore.sessionListItems.length" class="chat-panel__history-empty">
             {{ i18nHelper.maestroControl.chat.noHistory }}
           </div>
+          <!-- 数据源是 `sessionListItems` 而不是 `historySessions`:后者只有库里的概要,
+               **刚新建、还没发过消息的会话不在里面** —— 那会让「新建后它不在列表里」。
+               排序是未读 → 进行中 → 已读(store 的 getter 负责)。
+               行内右侧只有一个指示物:转圈(在跑)或蓝点(未读),两者不会同时出现 ——
+               回合结束的那一刻才置未读。 -->
           <Button
-            v-for="(item, index) in messageStore.historySessions"
+            v-for="(item, index) in messageStore.sessionListItems"
             :key="item.id"
             class="chat-panel__history-item"
             :class="{
@@ -699,6 +738,18 @@ function setHistoryContainer(el: HTMLElement | null): void {
             <IconArrowRight v-if="item.id === session.id" class="chat-panel__history-current" :size="12" stroke="2.4" />
             <span class="chat-panel__history-item-title">{{ item.title || 'Maestro' }}</span>
             <span class="chat-panel__history-item-preview">{{ item.preview || formatSessionTime(item.updatedAt) }}</span>
+            <span
+              v-if="item.running"
+              name="maestro__history-item-running"
+              class="chat-panel__history-item-running"
+              :title="i18nHelper.maestroControl.chat.sessionRunning"
+            ></span>
+            <span
+              v-else-if="item.unread"
+              name="maestro__history-item-unread"
+              class="chat-panel__history-item-unread"
+              :title="i18nHelper.maestroControl.chat.sessionUnread"
+            ></span>
           </Button>
         </div>
       </div>

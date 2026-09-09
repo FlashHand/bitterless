@@ -115,7 +115,8 @@
   min-width: 0;
   justify-content: flex-start;
   flex: 0 0 auto;
-  padding: 8px 12px 8px 20px !important;
+  // 右侧 28px 统一留给行内指示物(转圈/蓝点),**所有行都留** —— 只给有指示物的行留会让文字横向抖。
+  padding: 8px 28px 8px 20px !important;
   color: var(--color-text-2);
   border-radius: 8px;
   text-align: left;
@@ -557,6 +558,100 @@
 
 .chat-panel__file-input {
   display: none;
+}
+
+// ── 会话计数与未读指示物(docs/features/maestro-session-list-unread.md #3) ──────────
+// 蓝取 bl chat 自己的强调色 #4e5882(与发送按钮同一个),不是 cowork 的 #165dff:
+// 两者都是蓝,但 bl 里已经有一个强调蓝,再引入第二个会在同一个面板里打架。
+// 保留 cowork 的**设计意图**:蓝 = 等你看,灰 = 还没到你。
+
+.chat-panel__sessions-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-panel__sessions-entry {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+// 角标压在图标边缘上 —— 那圈白是**分隔**,不是装饰边框:没有它两个深色形状会糊成一块。
+// 偏移与尺寸照 cowork 目视定的那组:上 3px、右 4px、自身 15px、字号 9px。
+// `min-width` 而非固定宽:一位数是正圆,`99+` 自动撑成胶囊。
+.chat-panel__sessions-unread {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  display: flex;
+  height: 15px;
+  min-width: 15px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: #4e5882;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #fff;
+  pointer-events: none;
+}
+
+.chat-panel__sessions-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chat-panel__sessions-running-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentcolor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: chat-panel-spin 0.9s linear infinite;
+}
+
+.chat-panel__sessions-running-count {
+  font-variant-numeric: tabular-nums;
+}
+
+// 行内指示物。绝对定位在行右缘 —— 行里的 title/preview 是 block(见 .arco-btn-content),
+// 顺着排会掉到预览下面去。转圈用强调色(这一个会话正在为你跑),与工具条那个灰色聚合计数不同。
+.chat-panel__history-item-running,
+.chat-panel__history-item-unread {
+  position: absolute;
+  right: 10px;
+}
+
+// **不用 translateY(-50%) 居中**:`chat-panel-spin` 动的就是 `transform`,
+// 动画一跑就把居中的位移盖掉,转圈会掉下去半个身位。所以居中改由 `top` 直接算
+// (自身 12px ⇒ 减 6px);下面那个静态的蓝点没有动画,用 transform 无妨。
+.chat-panel__history-item-running {
+  top: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border: 2px solid #4e5882;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: chat-panel-spin 0.9s linear infinite;
+}
+
+.chat-panel__history-item-unread {
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: #4e5882;
+  border-radius: 999px;
+  transform: translateY(-50%);
 }
 
 @keyframes chat-panel-voice-wave-pulse {

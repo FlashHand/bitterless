@@ -108,3 +108,18 @@ export interface MessageSession {
 }
 
 export type MessageSessionSummary = MaestroChatSessionSummary
+
+/**
+ * 会话列表的一行(docs/features/maestro-session-list-unread.md #1)。
+ * 三种状态互斥地决定排序:`unread` → `running` → 已读。
+ */
+export interface SessionListItem {
+  id: string
+  title: string
+  preview: string
+  updatedAt: number
+  /** 这个会话此刻有回合在跑 —— 列表里转圈(灰的:在跑是「还没到你」)。 */
+  running: boolean
+  /** 有你没看过的结论 —— 蓝点,排最上。 */
+  unread: boolean
+}

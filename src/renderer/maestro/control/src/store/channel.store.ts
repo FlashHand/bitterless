@@ -19,6 +19,24 @@ class ChannelStoreState {
     return sessionId ? messageStore.getSession(sessionId) : undefined
   }
 
+  /**
+   * 把「面板此刻显示的是谁」单向写进 `message.store`,并给它置读。
+   *
+   * **一处收敛,不散写。** cowork 那侧是单一 `activeSessionId`,写在切会话那一个点上;
+   * bl 的会话是**按 operation tab 存的**(`maestroSessionByTabId`),能改变「显示的是谁」的
+   * 入口有五个(新建 / 全新 / 选历史 / 切 tab / 切 source)。散写五份必然漏,
+   * 所以从既有的 `activeSession` getter 取真源 —— 不新增第二份「当前是谁」的状态。
+   *
+   * 连接器 tab 活跃时 `activeSession` 为 undefined ⇒ 写空串。那时结束的回合**会**置未读,
+   * 这是对的:人正看着 connector,那条结论他确实没看到
+   * (docs/features/maestro-session-list-unread.md #1)。
+   */
+  private syncActiveSession(): void {
+    const sessionId = this.activeSession?.id || ''
+    messageStore.activeSessionId = sessionId
+    if (sessionId) messageStore.markRead(sessionId)
+  }
+
   async init(tabs: TabInfo[] = []): Promise<void> {
     if (this.initialized) return
     this.initialized = true
@@ -28,6 +46,7 @@ class ChannelStoreState {
 
   selectSource(source: ChannelSource): void {
     this.activeSource = source
+    this.syncActiveSession()
   }
 
   async startNewMaestroSession(sessionId: string): Promise<boolean> {
@@ -40,6 +59,7 @@ class ChannelStoreState {
 
     const session = messageStore.createSession({ title: 'Maestro', intent: 'chat', operationTabId: this.currentOperationTabId })
     this.maestroSessionByTabId[this.currentOperationTabId] = session.id
+    this.syncActiveSession()
     return true
   }
 
@@ -52,6 +72,7 @@ class ChannelStoreState {
 
     const session = messageStore.createSession({ title, intent: 'chat', operationTabId: this.currentOperationTabId })
     this.maestroSessionByTabId[this.currentOperationTabId] = session.id
+    this.syncActiveSession()
     return session
   }
 
@@ -60,6 +81,7 @@ class ChannelStoreState {
     if (!session) return false
     this.activeSource = 'cowork'
     this.maestroSessionByTabId[this.currentOperationTabId] = session.id
+    this.syncActiveSession()
     return true
   }
 
@@ -67,6 +89,7 @@ class ChannelStoreState {
     const activeTab = tabs.find((tab) => tab.active)
     this.currentOperationTabId = activeTab?.id || FALLBACK_OPERATION_TAB_ID
     await this.ensureMaestroSession(this.currentOperationTabId)
+    this.syncActiveSession()
   }
 
   private async ensureMaestroSession(operationTabId: string): Promise<MessageSession> {
