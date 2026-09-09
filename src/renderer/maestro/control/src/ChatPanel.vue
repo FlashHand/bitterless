@@ -823,19 +823,23 @@ function setHistoryContainer(el: HTMLElement | null): void {
         <div v-if="session.allowFiles" name="maestro__composer__context" class="chat-panel__composer-tools">
           <!-- The duplicate Skills shortcut is intentionally hidden. The Workbench Skills pane
                and its internal coach/workbench-pane broadcast remain available in Workbench. -->
-          <Tooltip v-if="session.allowFiles && !workspace" content="Set workspace" position="top">
-            <Button
-              name="maestro__composer__choose-workspace"
-              class="chat-panel__choose-workspace"
-              type="text"
-              size="small"
-              :disabled="turnLocked || Boolean(session.archivedAt)"
-              :aria-label="i18nHelper.maestroControl.chat.chooseWorkspace"
-              @click="chooseWorkspace"
-            >
-              {{ i18nHelper.maestroControl.chat.chooseWorkspace }}
-            </Button>
-          </Tooltip>
+          <!-- 不套 Tooltip(Ral 2026-09-09)。它原来弹的是 "Set workspace",而按钮上写着
+               "Choose workspace" —— 同一件事说两遍,且那句还是硬编码英文(违反本项目的 i18n 规则)。
+               `v-if` 从被删掉的 Tooltip 挪到按钮自己身上;下面那个 workspace 芯片是
+               `v-else-if`,两者必须**相邻**才成链,所以不能在中间插东西。
+               `aria-label` 留着 —— tooltip 是给眼睛的,读屏器读的是它。 -->
+          <Button
+            v-if="session.allowFiles && !workspace"
+            name="maestro__composer__choose-workspace"
+            class="chat-panel__choose-workspace"
+            type="text"
+            size="small"
+            :disabled="turnLocked || Boolean(session.archivedAt)"
+            :aria-label="i18nHelper.maestroControl.chat.chooseWorkspace"
+            @click="chooseWorkspace"
+          >
+            {{ i18nHelper.maestroControl.chat.chooseWorkspace }}
+          </Button>
           <div
             v-else-if="session.allowFiles && workspace"
             name="maestro__composer__workspace"
