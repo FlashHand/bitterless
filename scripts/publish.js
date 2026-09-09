@@ -633,14 +633,22 @@ const assertNoCrossChannelIdentityReuse = async (
     }
 
     const remoteTarget = `${channel}/${options.platform}`;
+    // 补救话术写在这里而不是留给人猜:看到「已经发布为 preview/… 0.0.94」时,第一反应必然是
+    // 「我就是想把那个包提升到 prod」—— 而这条流程不支持提升(见上面那段:一个 identity 只对应
+    // 一条二进制血脉,通道之间不共享)。不说清 `yarn patch`,人就会去删远端 manifest 或改守卫。
+    const remedy = [
+      'A release identity (version + version_code) names ONE binary lineage, so two channels never share one —',
+      'promoting an already-published binary to another channel is not this flow\'s shape.',
+      'Run `yarn patch` to mint a fresh version + version_code, then publish again.',
+    ].join(' ');
     if (String(remoteInfo.versionCode ?? '') === localVersionCode) {
       throw new Error(
-        `Refusing cross-channel version_code reuse: ${localVersionCode} is already published as ${remoteTarget} ${remoteInfo.version ?? 'unknown'}`,
+        `Refusing cross-channel version_code reuse: ${localVersionCode} is already published as ${remoteTarget} ${remoteInfo.version ?? 'unknown'}. ${remedy}`,
       );
     }
     if (String(remoteInfo.version ?? '') === localVersion) {
       throw new Error(
-        `Refusing cross-channel version reuse: ${localVersion} is already published as ${remoteTarget} with version_code ${remoteInfo.versionCode ?? 'unknown'}`,
+        `Refusing cross-channel version reuse: ${localVersion} is already published as ${remoteTarget} with version_code ${remoteInfo.versionCode ?? 'unknown'}. ${remedy}`,
       );
     }
   }
