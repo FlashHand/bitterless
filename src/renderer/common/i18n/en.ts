@@ -424,6 +424,7 @@ export const en = {
     chat: {
       history: 'Chat history',
       noHistory: 'No history',
+      setupTimeout: 'Preparing this turn timed out at the {stage} step ({seconds}s). Nothing was sent — try again.',
       unreadSessions: '{count} session(s) with an unread reply',
       runningSessions: '{count} session(s) still working',
       sessionRunning: 'Running',

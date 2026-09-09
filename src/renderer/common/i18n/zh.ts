@@ -418,6 +418,7 @@ export const zh: typeof en = {
     chat: {
       history: '会话历史',
       noHistory: '暂无历史会话',
+      setupTimeout: '这一轮在 {stage} 阶段准备超时（{seconds} 秒）。消息没有发出，请重试。',
       unreadSessions: '{count} 个会话有未读回复',
       runningSessions: '{count} 个会话仍在进行',
       sessionRunning: '进行中',

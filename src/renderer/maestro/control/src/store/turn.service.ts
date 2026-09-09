@@ -2,7 +2,7 @@ import { injectable } from 'inversify'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
-import { turnDiagnostics } from './turnDiagnostics.service'
+import { turnDiagnostics, type MaestroTurnStage } from './turnDiagnostics.service'
 import type {
   AgentActivityStep,
   AgentReply,
@@ -33,6 +33,62 @@ const CHAT_TURN_TIMEOUT_MS = 11 * 60_000
  * 放开并发 = 改 renderer + Main 两道 gate,再补上述归属,**不需要改状态结构**。
  */
 const MAX_CONCURRENT_TURNS = 1
+
+/**
+ * 投递**之前**那四档的墙钟预算。
+ *
+ * 为什么必须有:`withInactivityTimeout` 只护住投递之后。投递之前这四个跨进程 await
+ * 一个超时都没有,main 侧任一处不回,这一轮就永久挂着 —— turn 占着、Stop 常亮、
+ * 永远没有回复,而且 `finally` 里那句 abort 也永远不会执行,那个全局 root 闸就此锁死,
+ * **后续每一次发送都会被判成 busy**。这才是它真正的代价
+ * (docs/issues/maestro-chat-blind-send-path-and-cowork-parity.md #4)。
+ *
+ * **分档而不是一个统一值** —— 四档合理耗时差一个数量级,给同一个数必然误杀:
+ *  · `claim` 是个闸,main 侧只查一下全局占用就返回,给 15s 已经宽得离谱;
+ *  · `workspace` 是一次目录 stat,同上;
+ *  · `attachments` 要把文件登记进会话(大文件拷贝/读取),给 2 分钟;
+ *  · `compaction` **要在 main 里调模型生成摘要**,给 3 分钟 —— 给它 15s 会把正常的压缩当成
+ *    故障掐死,那比不加超时更糟。
+ *
+ * 超时的动作是**抛**,不是静默返回:抛出去正好落进 `send()` 既有的 catch ——
+ * 那里会把人的原话留在时间线上、给出一条错误气泡,`finally` 再把 root 闸释放掉。
+ * 换成静默返回反而会把输入框里的字还回去、且不留任何解释。
+ */
+const PRE_DISPATCH_BUDGET_MS: Record<MaestroTurnStage, number> = {
+  claim: 15_000,
+  workspace: 15_000,
+  attachments: 120_000,
+  compaction: 180_000,
+  // 投递本体不走这套 —— 它由 `withInactivityTimeout` 按「静默多久」判,而不是墙钟总时长。
+  dispatch: 0
+}
+
+const withStageTimeout = async <T>(stage: MaestroTurnStage, run: () => Promise<T>): Promise<T> => {
+  const budgetMs = PRE_DISPATCH_BUDGET_MS[stage]
+  if (!budgetMs) return await run()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                interpolateChatCopy(i18nHelper.maestroControl.chat.setupTimeout, {
+                  stage,
+                  seconds: Math.round(budgetMs / 1000)
+                })
+              )
+            ),
+          budgetMs
+        )
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 const uid = (): string => Math.random().toString(36).slice(2) + Date.now().toString(36)
 const interpolateChatCopy = (
@@ -388,33 +444,37 @@ export class TurnService extends CommonService<MessageStoreState> {
     let stagedFiles: Awaited<ReturnType<MessageStoreState['stageAttachments']>> = []
     let humanMessage: ChatMessage | undefined
     let reply: AgentReply
-    let claimed = false
     let dispatched = false
     try {
       // Main owns the global root gate. This is deliberately the first await after the renderer
       // reserves its local Turn; every later message carries explicit steering intent + turnId.
       const claim = await turnDiagnostics.stage(turn.id, 'claim', () =>
-        coach.claimAgentTurn({
-          sessionId: session.id,
-          operationTabId: session.operationTabId,
-          turnId: turn.id,
-          rootText: turn.rootText,
-          startedAt: turn.startedAt
-        })
+        withStageTimeout('claim', () =>
+          coach.claimAgentTurn({
+            sessionId: session.id,
+            operationTabId: session.operationTabId,
+            turnId: turn.id,
+            rootText: turn.rootText,
+            startedAt: turn.startedAt
+          })
+        )
       )
       if (!claim.ok) {
         if (session.turn?.id === turn.id) session.turn = undefined
         turnDiagnostics.emit('reject', { turnId: turn.id, reason: claim.reason || 'busy-elsewhere', at: 'claim-denied' })
         return { ok: false, reason: claim.reason || 'busy-elsewhere' }
       }
-      claimed = true
       turn.generation = claim.turn.generation
       if (this.turnLost(session, turn.id, 'after-claim')) return { ok: false, reason: 'not-sendable' }
 
-      await turnDiagnostics.stage(turn.id, 'workspace', () => store.refreshWorkspace(session.id))
+      await turnDiagnostics.stage(turn.id, 'workspace', () =>
+        withStageTimeout('workspace', () => store.refreshWorkspace(session.id))
+      )
       if (this.turnLost(session, turn.id, 'after-workspace')) return { ok: false, reason: 'not-sendable' }
 
-      stagedFiles = await turnDiagnostics.stage(turn.id, 'attachments', () => store.stageAttachments(session, files))
+      stagedFiles = await turnDiagnostics.stage(turn.id, 'attachments', () =>
+        withStageTimeout('attachments', () => store.stageAttachments(session, files))
+      )
       if (this.turnLost(session, turn.id, 'after-attachments')) return { ok: false, reason: 'not-sendable' }
       if (stagedFiles.length) {
         this.appendTimelineEntry(
@@ -441,7 +501,9 @@ export class TurnService extends CommonService<MessageStoreState> {
       store.updateSessionContextUsage(session)
       void store.persistSession(session)
       await turnDiagnostics.stage(turn.id, 'compaction', () =>
-        store.compactSessionIfNeeded(session, { protectMessageIds: new Set([humanMessage!.id]) })
+        withStageTimeout('compaction', () =>
+          store.compactSessionIfNeeded(session, { protectMessageIds: new Set([humanMessage!.id]) })
+        )
       )
       if (this.turnLost(session, turn.id, 'after-compaction')) return { ok: false, reason: 'not-sendable' }
 
@@ -498,7 +560,14 @@ export class TurnService extends CommonService<MessageStoreState> {
       // Every successful Main reservation must either reach root dispatch or be explicitly released.
       // This also covers early returns after workspace/attachment/compaction awaits; abort is exact
       // turnId scoped and therefore harmless if Stop already released it.
-      if (claimed && !dispatched) {
+      //
+      // **条件是 `!dispatched`,不是 `claimed && !dispatched`。** `withStageTimeout` 用的是
+      // `Promise.race`,它**不取消**底层那次调用 —— claim 超时后 `claimed` 仍是 false,而 main
+      // 完全可能随后才批准。用原来的条件就没人释放那个全局 root 闸,于是**后续每一次发送都被判 busy**,
+      // 症状比它要治的那个"这一轮没回复"更严重。
+      // abort 是按 turnId 精确作用的:没被批准过的 turnId 在 main 侧找不到,这一句就是空操作;
+      // claim 被拒时也一样 —— 它不会碰到别人那个正在跑的回合。所以宁可多发这一句。
+      if (!dispatched) {
         await coach.abortAgent({ sessionId: session.id, turnId: turn.id }).catch(() => undefined)
       }
     }

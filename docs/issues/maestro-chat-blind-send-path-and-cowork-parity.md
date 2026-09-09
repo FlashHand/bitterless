@@ -109,9 +109,17 @@ cowork 那侧 `refreshHistory` 的实现是同一份形状（同样的吞错 cat
   列表本体在抽屉里；蓝取 bl 自己的强调色 `#4e5882` 而非 cowork 的 `#165dff`，两处理由都写在那份文档里。
 - **`ChatMessage.replyId`**：bl 缺的那个字段。cowork 用它做什么、bl 是否需要，得先看
   cowork 那侧的用法再决定要不要补 —— 不为了字段对齐而对齐。
-- **pre-dispatch 没有超时**：`withInactivityTimeout` 只护住投递之后。投递之前那 4 个 await
-  一个超时都没有，挂住就是永久挂住、没有兜底。本轮**故意没加超时** —— 先让日志说话，
-  免得一个超时把证据改成另一种表象。定案后再决定要不要补这道兜底。
+- ~~pre-dispatch 没有超时~~ **已补**（Ral 2026-09-09「按你的建议修复」）。分档预算而不是统一值：
+  `claim` / `workspace` 各 15s（一个是闸、一个是目录 stat），`attachments` 120s（拷大文件），
+  `compaction` **180s** —— 它要在 main 里调模型生成摘要，给它 15s 会把正常的压缩当故障掐死，
+  那比不加超时更糟。超时的动作是**抛**，正好落进 `send()` 既有的 catch：人的原话留在时间线上、
+  给一条错误气泡、`finally` 释放 root 闸。
+
+  **一并补了一个更严重的洞**：`Promise.race` 不取消底层调用，claim 超时后 `claimed` 仍是 false，
+  而 `finally` 里的释放条件原本是 `claimed && !dispatched` ⇒ main 若随后才批准，那个全局 root 闸
+  **没人释放**，后续每一次发送都被判 busy —— 比它要治的「这一轮没回复」严重得多。
+  条件已收紧为 `!dispatched`；abort 按 turnId 精确作用，没批准过的 turnId 在 main 侧就是空操作。
+  `claimed` 因此成了死状态，已删。
 - **C 的定案**：需要一次真机复现，把 `[maestro-turn]` 那几行贴回来。
 
 ## 5. 本轮改了什么
