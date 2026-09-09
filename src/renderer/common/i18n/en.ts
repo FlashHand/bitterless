@@ -422,14 +422,14 @@ export const en = {
   },
   maestroControl: {
     chat: {
-      history: 'Chat history',
-      noHistory: 'No history',
+      history: 'Sessions',
+      noHistory: 'No sessions',
       setupTimeout: 'Preparing this turn timed out at the {stage} step ({seconds}s). Nothing was sent — try again.',
       unreadSessions: '{count} session(s) with an unread reply',
       runningSessions: '{count} session(s) still working',
       sessionRunning: 'Running',
       sessionUnread: 'Unread reply',
-      closeHistory: 'Close history',
+      closeHistory: 'Close sessions',
       newChat: 'New chat',
       slashClear: 'Start a fresh chat; keep this conversation',
       slashViewContext: 'Copy model context and pending input',

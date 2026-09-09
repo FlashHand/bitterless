@@ -115,8 +115,17 @@
   min-width: 0;
   justify-content: flex-start;
   flex: 0 0 auto;
-  // 右侧 28px 统一留给行内指示物(转圈/蓝点),**所有行都留** —— 只给有指示物的行留会让文字横向抖。
-  padding: 8px 28px 8px 20px !important;
+  /* 布局照 cowork 的 `session-list__item`(Ral 2026-09-09):
+     `relative flex items-center gap-2 rounded-lg py-2 pl-5 pr-3 text-left transition-colors`。
+     行是**横排**,两行文字由 `__body` 那层负责堆叠 —— title/preview 此前挤在一行,
+     成因是它们曾是行的直接 flex 子元素:Arco 2.57 的 Button 只渲染 `.arco-btn` ＋ 可选
+     `.arco-btn-icon`,**没有内容包装层**(所以原先那条 `.arco-btn-content` 规则是死的),
+     而 flex 子元素被 blockify 后仍按主轴排,`display: block` 管不了排布。
+     左侧 20px 是箭头位,所有行统一留 —— 否则加箭头那一行文字会横向抖。 */
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 20px !important;
+  transition: background-color 0.16s ease;
   color: var(--color-text-2);
   border-radius: 8px;
   text-align: left;
@@ -146,11 +155,11 @@
   transform: translateY(-50%);
 }
 
-.chat-panel__history-item .arco-btn-content {
-  display: block;
-  width: 100%;
+// 两行文字的容器 —— 照 cowork 的 `min-w-0 flex-1`。
+// `min-width: 0` 不是冗余:少了它,里面那两条的 `text-overflow: ellipsis` 会把行撑宽而不是省略。
+.chat-panel__history-item-body {
+  flex: 1 1 auto;
   min-width: 0;
-  text-align: left;
 }
 
 .chat-panel__history-item-title,
@@ -626,19 +635,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-// 行内指示物。绝对定位在行右缘 —— 行里的 title/preview 是 block(见 .arco-btn-content),
-// 顺着排会掉到预览下面去。转圈用强调色(这一个会话正在为你跑),与工具条那个灰色聚合计数不同。
+// 行内指示物 —— 照 cowork:它们是行的**普通 flex 子元素**,靠行的 `items-center` 居中、
+// 靠 `gap` 与文字分开。上一版为竖排布局做的绝对定位与 28px 右留白都撤掉了。
+// 顺带解决了一个坑:绝对定位时不能用 `translateY(-50%)` 居中转圈 —— `chat-panel-spin`
+// 动的就是 `transform`,动画一跑就把居中位移盖掉。现在靠 flex 居中,不占用 transform。
+// 转圈用强调色(这一个会话正在为你跑),与工具条那个灰色聚合计数不同。
 .chat-panel__history-item-running,
 .chat-panel__history-item-unread {
-  position: absolute;
-  right: 10px;
+  flex: 0 0 auto;
 }
 
-// **不用 translateY(-50%) 居中**:`chat-panel-spin` 动的就是 `transform`,
-// 动画一跑就把居中的位移盖掉,转圈会掉下去半个身位。所以居中改由 `top` 直接算
-// (自身 12px ⇒ 减 6px);下面那个静态的蓝点没有动画,用 transform 无妨。
 .chat-panel__history-item-running {
-  top: calc(50% - 6px);
   width: 12px;
   height: 12px;
   border: 2px solid @session-unread-blue;
@@ -648,12 +655,10 @@
 }
 
 .chat-panel__history-item-unread {
-  top: 50%;
   width: 8px;
   height: 8px;
   background: @session-unread-blue;
   border-radius: 999px;
-  transform: translateY(-50%);
 }
 
 @keyframes chat-panel-voice-wave-pulse {

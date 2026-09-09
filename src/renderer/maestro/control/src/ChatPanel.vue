@@ -736,8 +736,14 @@ function setHistoryContainer(el: HTMLElement | null): void {
             @click="selectHistory(item.id)"
           >
             <IconArrowRight v-if="item.id === session.id" class="chat-panel__history-current" :size="12" stroke="2.4" />
-            <span class="chat-panel__history-item-title">{{ item.title || 'Maestro' }}</span>
-            <span class="chat-panel__history-item-preview">{{ item.preview || formatSessionTime(item.updatedAt) }}</span>
+            <!-- 包裹层照 cowork 的 `session-list__item` 结构(Ral 2026-09-09):行本身是横排
+                 `flex items-center gap`,**两行文字靠这一层**在里面 block 堆叠。
+                 少了它,title 与 preview 就是行的直接 flex 子元素 —— 那时 `display: block`
+                 管不了排布(flex 子元素按主轴排),于是挤在一行。 -->
+            <span class="chat-panel__history-item-body">
+              <span class="chat-panel__history-item-title">{{ item.title || 'Maestro' }}</span>
+              <span class="chat-panel__history-item-preview">{{ item.preview || formatSessionTime(item.updatedAt) }}</span>
+            </span>
             <span
               v-if="item.running"
               name="maestro__history-item-running"
