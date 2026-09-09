@@ -2,6 +2,7 @@ import { injectable } from 'inversify'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
+import { turnDiagnostics } from './turnDiagnostics.service'
 import type {
   AgentActivityStep,
   AgentReply,
@@ -315,16 +316,40 @@ export class TurnService extends CommonService<MessageStoreState> {
     return reply
   }
 
+  /**
+   * 「这个 turn 还是我的吗」—— 原来这一判定在 `send()` 里逐字重复 5 次且**静默返回**,
+   * 是「发了没反应」最难查的一类:main 侧 finish/abort 掉了这个 turn,渲染端就一声不响地退出。
+   * 收成一处只为一件事:退出前留痕,说清是在哪一档之后丢的。判定语义一字未改。
+   */
+  private turnLost(session: MessageSession, turnId: string, at: string): boolean {
+    if (session.turn?.id === turnId) return false
+    turnDiagnostics.emit('reject', { turnId, reason: 'not-sendable', at, nowTurnId: session.turn?.id ?? 'none' })
+    return true
+  }
+
   async send(sessionId: string, message: string, files?: ChatAttachment[]): Promise<SendResult | null> {
     const store = this._state
     const session = store.getSession(sessionId)
     const text = message.trim()
-    if (!session || session.archivedAt || !text) return { ok: false, reason: 'not-sendable' }
+    // 长度而非正文 —— 日志不记人的消息(turnDiagnostics 文件头)。
+    turnDiagnostics.emit('send-start', { sessionId, textLen: text.length, files: files?.length ?? 0 })
+    if (!session || session.archivedAt || !text) {
+      turnDiagnostics.emit('reject', {
+        sessionId,
+        reason: 'not-sendable',
+        at: !session ? 'no-session' : session.archivedAt ? 'archived' : 'empty-text'
+      })
+      return { ok: false, reason: 'not-sendable' }
+    }
     // 回合活跃 → 这一条是 **steering**,插进那个还在跑的回合,不新开回合
     // (docs/features/maestro-turn-steering.md「对 turn 模型的修订」)。原来这里返回 `busy-here`,
     // 那正是三道闸的第一道。**投递方式(steer / followUp)不在这里判** —— 那是 main 侧策略的事。
-    if (session.turn) return await this.sendSteering(session, text)
+    if (session.turn) {
+      turnDiagnostics.emit('send-start', { sessionId, route: 'steering', turnId: session.turn.id })
+      return await this.sendSteering(session, text)
+    }
     if (this._state.sessions.filter((item) => item.turn).length >= MAX_CONCURRENT_TURNS) {
+      turnDiagnostics.emit('reject', { sessionId, reason: 'busy-elsewhere', at: 'max-concurrent' })
       return { ok: false, reason: 'busy-elsewhere' }
     }
 
@@ -368,26 +393,29 @@ export class TurnService extends CommonService<MessageStoreState> {
     try {
       // Main owns the global root gate. This is deliberately the first await after the renderer
       // reserves its local Turn; every later message carries explicit steering intent + turnId.
-      const claim = await coach.claimAgentTurn({
-        sessionId: session.id,
-        operationTabId: session.operationTabId,
-        turnId: turn.id,
-        rootText: turn.rootText,
-        startedAt: turn.startedAt
-      })
+      const claim = await turnDiagnostics.stage(turn.id, 'claim', () =>
+        coach.claimAgentTurn({
+          sessionId: session.id,
+          operationTabId: session.operationTabId,
+          turnId: turn.id,
+          rootText: turn.rootText,
+          startedAt: turn.startedAt
+        })
+      )
       if (!claim.ok) {
         if (session.turn?.id === turn.id) session.turn = undefined
+        turnDiagnostics.emit('reject', { turnId: turn.id, reason: claim.reason || 'busy-elsewhere', at: 'claim-denied' })
         return { ok: false, reason: claim.reason || 'busy-elsewhere' }
       }
       claimed = true
       turn.generation = claim.turn.generation
-      if (session.turn?.id !== turn.id) return { ok: false, reason: 'not-sendable' }
+      if (this.turnLost(session, turn.id, 'after-claim')) return { ok: false, reason: 'not-sendable' }
 
-      await store.refreshWorkspace(session.id)
-      if (session.turn?.id !== turn.id) return { ok: false, reason: 'not-sendable' }
+      await turnDiagnostics.stage(turn.id, 'workspace', () => store.refreshWorkspace(session.id))
+      if (this.turnLost(session, turn.id, 'after-workspace')) return { ok: false, reason: 'not-sendable' }
 
-      stagedFiles = await store.stageAttachments(session, files)
-      if (session.turn?.id !== turn.id) return { ok: false, reason: 'not-sendable' }
+      stagedFiles = await turnDiagnostics.stage(turn.id, 'attachments', () => store.stageAttachments(session, files))
+      if (this.turnLost(session, turn.id, 'after-attachments')) return { ok: false, reason: 'not-sendable' }
       if (stagedFiles.length) {
         this.appendTimelineEntry(
           session,
@@ -412,11 +440,14 @@ export class TurnService extends CommonService<MessageStoreState> {
       if (session.title === 'Maestro') session.title = summarizeTitle(text)
       store.updateSessionContextUsage(session)
       void store.persistSession(session)
-      await store.compactSessionIfNeeded(session, { protectMessageIds: new Set([humanMessage.id]) })
-      if (session.turn?.id !== turn.id) return { ok: false, reason: 'not-sendable' }
+      await turnDiagnostics.stage(turn.id, 'compaction', () =>
+        store.compactSessionIfNeeded(session, { protectMessageIds: new Set([humanMessage!.id]) })
+      )
+      if (this.turnLost(session, turn.id, 'after-compaction')) return { ok: false, reason: 'not-sendable' }
 
       dispatched = true
       this.settleRootDispatch(turn.id, true)
+      turnDiagnostics.emit('stage-start', { turnId: turn.id, stage: 'dispatch' })
       reply = await withInactivityTimeout(
         store.dispatch(
           session,
@@ -472,6 +503,13 @@ export class TurnService extends CommonService<MessageStoreState> {
       }
     }
 
+    turnDiagnostics.emit('send-terminal', {
+      turnId: turn.id,
+      outcome: reply.ok ? 'success' : 'failure',
+      dispatched,
+      elapsedMs: Date.now() - turn.startedAt,
+      reason: reply.ok ? undefined : reply.error
+    })
     await this.finishReply(session, turn, reply)
     return reply
   }

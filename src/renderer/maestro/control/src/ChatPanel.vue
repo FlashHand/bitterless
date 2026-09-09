@@ -459,6 +459,11 @@ function toggleHistory(): void {
   historyCursor.value = Math.max(index, 0)
   historyVisible.value = true
   scrollHistoryCursor()
+  // 打开就重拉一次。抽屉此前只吃 `init()` 那一次拉取的结果,启动期失败(或本窗口打开后
+  // 别处新建的会话)都会让它一直是空的 —— 这正是「Cmd+H 不展示历史消息」的成因
+  // (docs/issues/maestro-chat-blind-send-path-and-cowork-parity.md #2)。
+  // 不 await:先把抽屉开出来,列表到了再补上,免得打开动作被一次跨进程往返拖住。
+  void messageStore.refreshHistory().then(scrollHistoryCursor)
 }
 
 function onPanelKeydown(event: KeyboardEvent): void {
@@ -847,23 +852,23 @@ function setHistoryContainer(el: HTMLElement | null): void {
             <IconPlayerPause v-else-if="voiceRecording" class="chat-panel__button-icon" :size="18" stroke="1.8" />
             <IconMicrophone v-else class="chat-panel__button-icon" :size="18" stroke="1.8" />
           </IconBtn>
-          <Button
+          <!-- Stop 与 Send 同形同位、互斥显示 —— 以 cowork 的 `chat-panel__composer-stop` 为准
+               (Ral 2026-09-09:两边风格不一致,以 cowork 为准)。要点是**纯图标 + 软色底 + 无边框**:
+               原先那版是 Arco `type="outline" status="danger"` 的带框胶囊还带 "Stop" 字样,
+               在同一排 32px 图标按钮里既比别人高一截、又是这一排唯一有描边的东西。
+               文案不丢:它挪到 title / aria-label 上,i18n key 照旧。 -->
+          <IconBtn
             v-if="Boolean(session.turn)"
+            name="maestro__composer__stop"
             class="chat-panel__stop-button"
             :class="{ 'chat-panel__stop-button--aborting': session.turn?.aborting }"
-            type="outline"
-            status="danger"
-            size="small"
             :disabled="session.turn?.aborting"
             :title="session.turn?.aborting ? i18nHelper.maestroControl.chat.stopping : i18nHelper.maestroControl.chat.stop"
             :aria-label="session.turn?.aborting ? i18nHelper.maestroControl.chat.stopping : i18nHelper.maestroControl.chat.stop"
             @click="stop"
           >
-            <template #icon>
-              <IconPlayerStop class="chat-panel__button-icon" :size="15" stroke="1.8" />
-            </template>
-            {{ i18nHelper.maestroControl.chat.stop }}
-          </Button>
+            <IconPlayerStop class="chat-panel__button-icon" :size="15" stroke="1.8" />
+          </IconBtn>
           <IconBtn
             v-else
             name="maestro__composer__send"

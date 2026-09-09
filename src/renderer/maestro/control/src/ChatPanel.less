@@ -323,6 +323,19 @@
   margin-top: 8px;
 }
 
+// footer 那一排的控件高度以 cowork 为准 = **26px**(Ral 2026-09-09)。
+// cowork 写的是 Tailwind `h-8` = 2rem,而它和 bl 的根字号都是 13px(theme.less:35),
+// 所以那是 26px 不是 32px —— 本文件 `chat-panel__workspace` 处早就按这个数算过。
+// 共享的 `IconBtn` 全局是 32px,**不在这里改它**:todo / submodules 等窗口都用同一个组件。
+// 只压 footer 作用域,顺带把 26px 的 workspace 芯片与旁边的图标按钮拉回同一条基线
+// (改之前这一排是 26 和 32 混排,footer 因此比 cowork 高一截)。
+.chat-panel__composer-footer .icon-btn.arco-btn {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+}
+
 .chat-panel__composer-tools,
 .chat-panel__composer-actions {
   display: flex;
@@ -494,8 +507,26 @@
   animation: chat-panel-spin 0.8s linear infinite;
 }
 
+/* Stop:与 Send 同形同位的 32px 纯图标按钮,软红底、无边框 —— 以 cowork 的
+   `chat-panel__composer-stop` 为准(Ral 2026-09-09)。选择器带 `.chat-panel` 与
+   `.icon-btn.arco-btn` 是为了压过 Arco 自己的 text-button 配色,与上面 send 那两条同形。 */
 .chat-panel__stop-button.arco-btn {
   flex: 0 0 auto;
+}
+
+.chat-panel .chat-panel__stop-button.icon-btn.arco-btn {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.chat-panel .chat-panel__stop-button.icon-btn.arco-btn:hover:not([disabled]) {
+  background: #fecaca;
+}
+
+.chat-panel .chat-panel__stop-button.icon-btn.arco-btn[disabled] {
+  color: #b91c1c;
+  background: #fee2e2;
+  opacity: 0.6;
 }
 
 .chat-panel__stop-button--aborting.arco-btn {

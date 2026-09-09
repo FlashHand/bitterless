@@ -33,6 +33,7 @@ import type {
   MessageSource
 } from './message.type'
 import { TurnService, type SendResult } from './turn.service'
+import { turnDiagnostics } from './turnDiagnostics.service'
 
 const coach = createXpcRendererEmitter<CoachXpcContract>('CoachXpcHandler')
 const maestroChat = createXpcRendererEmitter<MaestroChatApi>('MaestroChatDao')
@@ -670,9 +671,23 @@ export class MessageStoreState {
     await this.persistSession(session)
   }
 
+  /**
+   * **失败不再静默。** 原来是 `.catch(() => [])`:启动期这一次要是失败(sqlite 窗口/preload 还没就绪
+   * 是现实可能),`historySessions` 会永久留空 —— 之后只有写操作才重拉,而空历史的新会话在发出
+   * 第一条之前不触发任何写。于是「Cmd+H 永远是空的」且没有任何痕迹
+   * (docs/issues/maestro-chat-blind-send-path-and-cowork-parity.md #2)。
+   *
+   * 兜底行为保持不变(仍然退化成空列表、不往上抛),改的只是**它会说话**;
+   * 而「开抽屉时重拉」在 `ChatPanel.vue` 的 `toggleHistory()` 里补。
+   */
   async refreshHistory(): Promise<void> {
-    const list = await maestroChat.listSessions({}).catch(() => [] as MessageSessionSummary[])
-    this.historySessions = list
+    try {
+      const list = await maestroChat.listSessions({})
+      this.historySessions = list
+      turnDiagnostics.emit('history', { action: 'refresh', ok: true, count: list.length })
+    } catch (err) {
+      turnDiagnostics.emit('history', { action: 'refresh', ok: false, error: String(err), kept: this.historySessions.length })
+    }
   }
 
   applyTaskSnapshot(tasks: MaestroTask[], remember = true): void {
