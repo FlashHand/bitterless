@@ -24,11 +24,27 @@ export interface ChatFile {
   isDirectory?: boolean
 }
 
+/** 时间线上的错误卡。`detail` 是全文,只在弹窗里显示。 */
+export interface ChatErrorCard {
+  title: string
+  subtitle?: string
+  detail: string
+}
+
 export interface ChatMessage {
   id: string
   source: MessageSource
   role: MessageRole
-  type?: 'text' | 'files' | 'compact' | 'task' | 'confirm'
+  type?: 'text' | 'files' | 'compact' | 'task' | 'confirm' | 'error'
+  /**
+   * `type: 'error'` 那张卡的内容(Ral 2026-09-10)。
+   *
+   * 为什么要**结构化**而不是把错误塞进 `content`:一条 `An object could not be cloned.`
+   * 混在正常气泡里就是一行红字,人看不出"这是哪一步失败的、要不要看全文"。
+   * 卡片给出三样:一行标题(是什么坏了)、一行副标题(在哪一步)、以及全文按需展开 ——
+   * 全文往往是几十行栈,直接铺在时间线上会把上下文顶掉。
+   */
+  errorCard?: ChatErrorCard
   content: string
   files?: ChatFile[]
   skill?: SkillSummary

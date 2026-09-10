@@ -555,6 +555,17 @@ export class TurnService extends CommonService<MessageStoreState> {
         store.updateSessionContextUsage(session)
       }
       reply = { ok: false, text: error, ts: Date.now(), error }
+      /**
+       * **抛出来的失败额外插一张错误卡**(Ral 2026-09-10)。
+       *
+       * 为什么不只靠 `finishReply` 那条气泡:气泡里是 `reply.text` 一行,而这一类失败的原文
+       * 往往是「一句话 + 几十行栈」—— 一行红字既看不出栈,也看不出是**哪一步**失败的。
+       * 2026-09-10 那次 `An object could not be cloned.` 就是这样查不下去的。
+       *
+       * 卡片走 `pushErrorCard` 这个**唯一入口**(errorCard.service),所以标题/副标题/全文的
+       * 口径在所有失败路径上一致。`subtitle` 由这里给 —— 只有这里知道自己是"投递"这一步。
+       */
+      store.pushErrorCard(session.id, err, { subtitle: i18nHelper.maestroControl.chat.errorDuringSend })
     } finally {
       if (!dispatched) this.settleRootDispatch(turn.id, false)
       // Every successful Main reservation must either reach root dispatch or be explicitly released.

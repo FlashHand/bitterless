@@ -423,6 +423,10 @@ export const en = {
     chat: {
       history: 'Sessions',
       noHistory: 'No sessions',
+      showErrorDetail: 'Show detail',
+      errorDuringSend: 'Failed while sending this message',
+      closeErrorDetail: 'Close error detail',
+      slashTestShowError: 'Show a sample error card (diagnostics)',
       slashCopySessionPath: 'Copy the model I/O jsonl folder for this session',
       slashPathCopied: 'Session jsonl path copied',
       setupTimeout: 'Preparing this turn timed out at the {stage} step ({seconds}s). Nothing was sent — try again.',

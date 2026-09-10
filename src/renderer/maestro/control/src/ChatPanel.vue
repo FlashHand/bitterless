@@ -11,6 +11,7 @@ import type { ContextGraphView } from '@maestro-shared/coach.api'
 import ContextGraphModal from './ContextGraphModal.vue'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
 import IconBtn from '../../../common/components/IconBtn/IconBtn.vue'
+import ChatErrorModal from './task/ChatErrorModal.vue'
 import MessageList from './MessageList.vue'
 import SlashMenu from './SlashMenu.vue'
 import { ShortcutStore, slashTokenAt } from './store/shortcut.store'
@@ -37,6 +38,7 @@ const shortcutStore = reactive(new ShortcutStore([
   { name: '/clear', get hint() { return i18nHelper.maestroControl.chat.slashClear } },
   { name: '/view_context', get hint() { return i18nHelper.maestroControl.chat.slashViewContext } },
   { name: '/copy_session_path', get hint() { return i18nHelper.maestroControl.chat.slashCopySessionPath } },
+  { name: '/test_show_error', get hint() { return i18nHelper.maestroControl.chat.slashTestShowError } },
   { name: '/view_context_graph', get hint() { return i18nHelper.maestroControl.chat.slashViewContextGraph } }
 ]))
 const slashToken = computed(() => slashTokenAt(input.value, composerCaret.value))
@@ -358,6 +360,17 @@ async function commitShortcut(): Promise<void> {
     // 路径**同时**进剪贴板与时间线(Ral 2026-09-09:「复制到剪贴板,并在消息中回复这个路径」)。
     // 只发 toast 不够:toast 会消失,而这个路径正是要拿去 audit 的东西,得留在会话里可选中。
     // `promptExcluded: true` —— 它是给人看的留痕,不该占模型的上下文。
+    // 诊断用:插一张示例错误卡,验证卡片与弹窗这条链路本身是好的
+    // (Ral 2026-09-10 要它,因为真错误没显示出来时无法区分"没发生"与"没渲染")。
+    testShowError: async () => {
+      messageStore.pushErrorCard(
+        sessionId,
+        new Error(
+          'An object could not be cloned.\n    at structuredClone (<anonymous>)\n    at MessagePort.postMessage\n    at coach.sendAgentMessage (message.store.ts)\n\n这是 /test_show_error 造的示例,用来验证错误卡与全文弹窗本身可用。'
+        ),
+        { subtitle: '/test_show_error · 示例(不是真的失败)' }
+      )
+    },
     copySessionPath: async () => {
       const reply = await coach.copySessionIoPath({ sessionId })
       if (!reply.ok) throw new Error(reply.error)
@@ -764,5 +777,12 @@ function setHistoryContainer(el: HTMLElement | null): void {
          面板本身按会话 id 重挂(`ControlApp.vue` 的 `<ChatPanel :key="activeSession.id">`),
          换会话时这份图随组件一起消失,不需要额外的跨会话清理。 -->
     <ContextGraphModal v-if="contextGraph" :graph="contextGraph" @close="contextGraph = null" />
+    <!-- 错误全文弹窗。挂这里的理由与上面那个一字不差(遮罩只盖这一个面板 + 落点同定位上下文),
+         状态挂在 store 上 —— 卡片长在消息列表深处,emit 冒不上来。 -->
+    <ChatErrorModal
+      v-if="messageStore.errorDetail"
+      :card="messageStore.errorDetail"
+      @close="messageStore.closeErrorDetail()"
+    />
   </div>
 </template>

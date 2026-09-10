@@ -417,6 +417,10 @@ export const zh: typeof en = {
     chat: {
       history: '会话',
       noHistory: '暂无会话',
+      showErrorDetail: '查看详情',
+      errorDuringSend: '发送这条消息时失败',
+      closeErrorDetail: '关闭错误详情',
+      slashTestShowError: '插入一张示例错误卡（诊断用）',
       slashCopySessionPath: '复制本会话的模型 I/O jsonl 目录',
       slashPathCopied: '会话 jsonl 路径已复制',
       setupTimeout: '这一轮在 {stage} 阶段准备超时（{seconds} 秒）。消息没有发出，请重试。',

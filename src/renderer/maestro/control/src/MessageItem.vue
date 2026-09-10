@@ -9,6 +9,7 @@ import type { AgentActivityStep, CoachXpcContract, FileStatusResult, ReplayResul
 import type { ChatFile, ChatMessage } from './store/message.type'
 import AttachmentCard from './AttachmentCard.vue'
 import ChatConfirm from './task/ChatConfirm.vue'
+import ChatErrorCard from './task/ChatErrorCard.vue'
 import TaskPart from './task/TaskPart.vue'
 import './MessageItem.less'
 
@@ -49,6 +50,9 @@ const artifactFiles = computed(() => (props.message.role === 'ai' ? (props.messa
 const taskParts = computed(() => (props.message.role === 'ai' ? props.message.tasks || [] : []))
 const isTaskRow = computed(() => props.message.type === 'task')
 const isConfirmRow = computed(() => props.message.type === 'confirm')
+// 错误卡与 task/confirm 同级:它是一张**行卡**,不是气泡里的一段文字 ——
+// 混在气泡里就只是一行红字,那正是 Ral 2026-09-10 说的「没展示出来」。
+const isErrorRow = computed(() => props.message.type === 'error')
 // 「刚被跳到的是不是我」—— **读 store,不在本组件里存第二份**。存副本就要自己接一个
 // watch 去清它,而清晚一帧就是两行同时在闪:哪条在闪只能有一个真相。
 const isJumped = computed(() => messageStore.highlightMessageId === props.message.id)
@@ -82,7 +86,7 @@ const replayAuth = (replay?: ReplayResult): string => {
 
 const showBubble = computed(() => {
   const m = props.message
-  if (isTaskRow.value || isConfirmRow.value) return false
+  if (isTaskRow.value || isConfirmRow.value || isErrorRow.value) return false
   if (m.role !== 'ai') return true
   return (
     Boolean(m.content) ||
@@ -191,13 +195,14 @@ watch(artifactPathKey, () => void refreshFileStatuses(), { immediate: true })
       class="message-item__content"
       :class="{
         'message-item__content--human': isMaestroHuman(props.message),
-        'message-item__content--timeline': isTaskRow || isConfirmRow
+        'message-item__content--timeline': isTaskRow || isConfirmRow || isErrorRow
       }"
     >
       <div v-if="isTaskRow" name="messageItem__tasks" class="message-item__tasks">
         <TaskPart v-for="part in taskParts" :key="part.taskId" :part="part" />
       </div>
       <ChatConfirm v-else-if="isConfirmRow" :message="props.message" />
+      <ChatErrorCard v-else-if="isErrorRow" :message="props.message" />
       <div
         v-else-if="showBubble"
         name="messageItem__bubble"

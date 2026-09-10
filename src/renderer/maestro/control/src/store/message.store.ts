@@ -29,12 +29,14 @@ import type {
   ChatMessage,
   MessageIntent,
   MessageSession,
+  ChatErrorCard,
   MessageSessionSummary,
   MessageSource,
   SessionListItem
 } from './message.type'
 import { TurnService, type SendResult } from './turn.service'
 import { turnDiagnostics } from './turnDiagnostics.service'
+import { buildErrorCard } from './errorCard.service'
 
 const coach = createXpcRendererEmitter<CoachXpcContract>('CoachXpcHandler')
 const maestroChat = createXpcRendererEmitter<MaestroChatApi>('MaestroChatDao')
@@ -755,6 +757,49 @@ export class MessageStoreState {
     this.scrollToBottom()
   }
 
+  /**
+   * 往时间线插一张**错误卡** —— 所有失败路径的**唯一出口**
+   * （Ral 2026-09-10：「需要统一的返回 error 的函数封装」；构造在 `errorCard.service.ts`）。
+   *
+   * `promptExcluded: true` 是关键:这张卡是给**人**看的诊断,不该占下一轮的提示词,
+   * 更不该被 `/view_context` 导出成"模型看过的历史" —— 模型从没见过这段栈。
+   */
+  pushErrorCard(sessionId: string, err: unknown, options?: { subtitle?: string; title?: string }): void {
+    const session = this.getSession(sessionId)
+    if (!session) return
+    this.turnService.appendTimelineEntry(
+      session,
+      this.withTokenCount({
+        id: uid(),
+        source: 'cowork',
+        role: 'ai',
+        type: 'error',
+        content: '',
+        errorCard: buildErrorCard(err, options),
+        error: true,
+        streaming: false,
+        promptExcluded: true,
+        ts: Date.now()
+      })
+    )
+    this.scrollToBottom()
+  }
+
+  /**
+   * 「看全文」弹窗当前展示的那一张。挂在 store 上而不是用 `emit` 往上冒:
+   * 卡片长在消息列表深处,而弹窗必须挂在**面板根**（遮罩只该盖住这一个面板，
+   * 且落点要与遮罩同一个定位上下文 —— 与 `ContextGraphModal` 同一条先例）。
+   */
+  errorDetail: ChatErrorCard | null = null
+
+  showErrorDetail(card: ChatErrorCard): void {
+    this.errorDetail = card
+  }
+
+  closeErrorDetail(): void {
+    this.errorDetail = null
+  }
+
   markUnread(sessionId: string): void {
     if (!sessionId || this.unreadSessionIds.includes(sessionId)) return
     this.unreadSessionIds = [...this.unreadSessionIds, sessionId]
@@ -1451,6 +1496,9 @@ export class MessageStoreState {
         activity: plainActivity(message.activity),
         tasks: message.tasks?.length ? jsonSafe(message.tasks) : undefined,
         confirm: message.confirm ? jsonSafe(message.confirm) : undefined,
+        // 同 confirm:走 jsonSafe —— 它同样来自响应式状态,直接递会撞 structured clone
+        // (与本文件 workspace 那两处同一根因)。
+        errorCard: message.errorCard ? jsonSafe(message.errorCard) : undefined,
         compressed: message.compressed,
         promptExcluded: message.promptExcluded,
         compactSummary: message.compactSummary,
@@ -1486,6 +1534,7 @@ export class MessageStoreState {
           activity: message.activity,
           tasks: message.tasks,
           confirm: message.confirm ? { ...message.confirm } : undefined,
+          errorCard: message.errorCard ? { ...message.errorCard } : undefined,
           compressed: message.compressed,
           promptExcluded: message.promptExcluded,
           compactSummary: message.compactSummary,

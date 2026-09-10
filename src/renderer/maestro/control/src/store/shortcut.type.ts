@@ -1,7 +1,7 @@
 export interface ShortcutItem {
   // 名字用下划线而不是空格:开菜单的 token 正则是 `\/([\w-]*)`,带空格的名字根本不会被识别成命令。
   // 与既有的 `/view_context` 同一个写法。
-  name: '/clear' | '/view_context' | '/copy_session_path' | '/view_context_graph'
+  name: '/clear' | '/view_context' | '/copy_session_path' | '/test_show_error' | '/view_context_graph'
   hint: string
 }
 
@@ -9,6 +9,7 @@ export interface ShortcutRunContext {
   newChat: () => Promise<boolean>
   copyContext: () => Promise<void>
   copySessionPath: () => Promise<void>
+  testShowError: () => Promise<void>
   /**
    * `/view_context_graph`:读一次上下文结构 + 在面板里开弹窗。由 `ChatPanel` **注入**,
    * 和上面三个同一条理由,但这条的理由更硬:
