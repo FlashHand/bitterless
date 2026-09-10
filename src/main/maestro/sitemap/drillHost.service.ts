@@ -78,6 +78,11 @@ export class DrillHostService {
     return this.session?.anchorTabId || ''
   }
 
+  /** 已经建出来的那一个（可能还没建）—— 收尾路径要它，且**不该顺手把它建出来**。 */
+  exploreSessionOrNull(): ExploreSessionService | null {
+    return this.session
+  }
+
   ensureSession(): ExploreSessionService {
     if (!this.session) this.session = new ExploreSessionService(this.deps())
     return this.session

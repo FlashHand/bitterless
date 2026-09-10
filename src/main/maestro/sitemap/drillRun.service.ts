@@ -195,6 +195,11 @@ export class DrillRunService {
     return runId
   }
 
+  /** 本轮的 explore 任务卡（可能缺席：重入不建卡、摄取阶段没有它）。 */
+  get exploreTaskHandle(): TaskHandle | null {
+    return this.exploreTask
+  }
+
   setExploreTask(task: TaskHandle | null): void {
     this.exploreTask = task
   }

@@ -793,18 +793,33 @@ export class TurnService extends CommonService<MessageStoreState> {
    *
    * 没有活跃回合 → 不绑:操作者从 Workbench 起的任务属于那条任务条,不属于某个不相干的气泡。
    */
+  /**
+   * 任务卡绑到哪个会话 —— **按 `task.sessionId` 路由,不猜**
+   * (cowork `drill-activity-bleeds-into-another-session.md` 的接收端那半)。
+   *
+   * 原来这里是 `activeSession()` + 「只认这一轮开始之后起的任务」两道:
+   *  · `activeSession()` 是**猜** —— 任务带着自己的主人,读它就好。按"此刻哪个会话活跃"路由,
+   *    在多 operation tab 之下必然把 A 的卡画进 B;
+   *  · 那道 `time.start < turn.startedAt` 栅栏**不是安全网**:主人的回合先于任务开始,
+   *    所以它照样放行 —— 那正是 cowork 当初那些卡被放进来的原因。它真正的活现在由
+   *    「归属 + 存活 + 恢复时补种绑定」三条接过去了。
+   *
+   * **`session.turn` 不再是前置条件**,这是钻探能用的关键:后台摄取跑 15–20 分钟、**活得比回合长**,
+   * 完成报告在几分钟后才从后台任务的 `.then()` 里发出。要求有 turn 的话,那份报告永远绑不上,
+   * 卡直接被丢 —— 而人看到的是"钻探跑完了但什么都没出现"。
+   *
+   * 三道 fail-closed:无主人 → 丢(宁可无主也不要一个猜出来的主人)、会话不在或已归档 → 丢、
+   * 任务已终结 → 丢(终结的任务不该在新会话里冒出一张卡)。
+   */
   bindTask(task: MaestroTask): { sessionId: string } | null {
     // 临时任务不建卡 —— 它只是一次挂起(审批),没有阶段也没有产出,而卡片会占着时间线位置
     // 把 confirm 留档往上顶,那正是底部操作面要解决的问题(approval-task-card-is-timeline-noise.md)。
     // 判据是结构化字段,不是任务名 —— 按名字匹配下一次换个名字就静默失效。
     if (task.transient) return null
-    const session = this.activeSession()
-    if (!session?.turn) return null
-    // **只认这一轮【开始之后】起的任务。** 快照带着全部活的 + 最近 20 个已结束的任务,而从
-    // Workbench 起的任务永远绑不上(那时没有回合)—— 它们会在每次广播里重新尝试。不卡这一下的话,
-    // 人下一次在聊天里说句话,那些早就跑完的任务会一次性涌进新回合;任务独立成条之后,那是一整屏
-    // 与这句话毫无关系的卡片。
-    if (task.state.time.start < session.turn.startedAt) return null
+    if (!task.sessionId) return null
+    const session = this._state.getSession(task.sessionId)
+    if (!session || session.archivedAt) return null
+    if (task.state.status === 'completed' || task.state.status === 'error') return null
     return { sessionId: session.id }
   }
 

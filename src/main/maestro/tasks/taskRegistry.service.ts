@@ -9,6 +9,7 @@
 // would create a second, diverging history of the same event.
 
 import { xpcMain } from 'electron-xpc/main'
+import { currentChatSessionId } from '@main/agent/runtime/agentSessionContext'
 import {
   MAX_FINISHED_TASKS,
   MAX_TASK_OUTPUT,
@@ -62,7 +63,18 @@ class TaskRegistry {
       name: params.name,
       kind: params.kind || 'builtin',
       callId: params.callId,
-      sessionId: params.sessionId,
+      /**
+       * **任务一出生就带主人。** 默认取 `currentChatSessionId()` —— 它把退化键 `'default'`
+       * 映成 `undefined`,所以这里永远不会盖上一个匹配不到任何真实会话的假主人
+       * (cowork `drill-activity-bleeds-into-another-session.md`:宁可无主,也不要一个会骗人的主人)。
+       *
+       * 渲染端的 `bindTask` 现在**按这个字段路由**,不再猜"哪个会话此刻活跃" ——
+       * 所以不带主人的任务会被丢弃(仍可在日志与 Workbench 名册上看到)。
+       *
+       * 长流程要**显式传**:钻探的续跑循环跑在 `sendAgentMessage` 返回之后,
+       * 已经不在 `runInAgentSession` 里了,那时 ALS 默认值是 undefined。
+       */
+      sessionId: params.sessionId ?? currentChatSessionId(),
       messageId: params.messageId,
       input: params.input || {},
       ...(params.transient ? { transient: true } : {}),
