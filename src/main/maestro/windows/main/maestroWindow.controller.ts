@@ -41,6 +41,10 @@ import { CoachSettingsService } from '@maestro-main/settings/coachSettings.servi
 import { SkillGeneratorService } from '@maestro-main/skills/skillGenerator.service'
 import { SkillRegistryService } from '@maestro-main/skills/skillRegistry.service'
 import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
+import { buildDrillTools } from '@maestro-main/sitemap/drillTools'
+import { DrillHostService } from '@maestro-main/sitemap/drillHost.service'
+import { DrillRunService } from '@maestro-main/sitemap/drillRun.service'
+import { DrillToolsHost } from '@maestro-main/sitemap/drillTools.host'
 import { buildUnknownConfirmPayload } from '@maestro-main/drive/confirmPayload'
 import {
   SkillService,
@@ -854,7 +858,23 @@ class MaestroWindowController
   }
 
   async sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply> {
-    return await this.agentService.sendAgentMessage(params)
+    const reply = await this.agentService.sendAgentMessage(params)
+    /**
+     * **钻探的续跑挂在这里。** 钻探开着就用合成 turn 一轮一轮推下去,没开就原样返回 ——
+     * 整段逻辑在 `DrillToolsHost.continueAfterTurn`(与 cowork 同一位置、同一形状)。
+     *
+     * 为什么必须在**这一层**而不是渲染端:一个普通回合在模型停止调工具的那一刻就结束了,
+     * 而"继续钻探"是**宿主驱动**的 —— 渲染端只知道"这一轮回来了",不知道站点还剩多少地点没开。
+     * 少了这一挂,agent 讲一句"已进入 X"就停在那里(Ral 2026-09-10 报的正是这个形状)。
+     *
+     * 只对**根**消息续跑:steering 是并进一个还在跑的回合,续跑的前提("上一个回合已结束")不成立
+     * —— `continueAfterTurn` 自己第一句也会用 `reply.mergedIntoTurn` 再挡一次。
+     */
+    if (params.intent !== 'root') return reply
+    return await this.drillTools().continueAfterTurn(
+      { message: params.message, sessionId: params.sessionId, context: params.context },
+      reply
+    )
   }
 
   async copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary> {
@@ -984,12 +1004,109 @@ class MaestroWindowController
   // The runtime agent's tools. The tool LIST is static (so the session never goes
   // stale); each executor looks the recipe up fresh per call, so skills ingested
   // mid-session are immediately usable.
+  /**
+   * 钻探的三件套 —— 惰性建、只建一次。
+   *
+   * `DrillRunService`(谁在钻/哪一次/能不能开) · `DrillHostService`(17 个 dep 的接法) ·
+   * `DrillToolsHost`(三个工具的执行体 + 续跑循环)。分成三个而不是一个大类,是因为它们的
+   * 变更理由不同:状态机跟着不变量走、适配器跟着宿主 API 走、执行体跟着工具契约走。
+   */
+  private drillTrio: { run: DrillRunService; host: DrillHostService; tools: DrillToolsHost } | null = null
+
+  private drillTools(): DrillToolsHost {
+    if (this.drillTrio) return this.drillTrio.tools
+    const capture = this.captureService
+    const host = new DrillHostService({
+      currentUrl: () => this.currentUrl,
+      getOperationTabs: () => this.getOperationTabs().map((tab) => ({ id: tab.id, url: tab.url })),
+      getActiveOperationTabId: () => this.getActiveOperationTabId(),
+      webContentsForTab: (tabId) => capture.webContentsForTab(tabId),
+      retargetCaptureToTab: (tabId) => capture.retargetCaptureToTab(tabId),
+      pageSnapshotForAgent: () => capture.pageSnapshotForAgent(),
+      captureSessionDir: () => capture.captureSessionDir(),
+      recordingStartedAt: async () => (await capture.getCaptureRecords().catch(() => null))?.startedAt,
+      activateTab: async (tabId) => void (await this.activateTab({ id: tabId }).catch(() => undefined)),
+      closeTab: async (tabId) => void (await this.closeTab({ id: tabId }).catch(() => undefined)),
+      // 边钻边摄接 bl 自己的技能摄取(它没有 apidoc 那条路,见 drill-001 #2.5)。
+      ingestWindow: async () => ({ text: await this.ingestRecordingToSkills() }),
+      broadcastActivity: (phase, label, ok) => this.broadcastActivity(phase, label, ok),
+      debugCodex: (event) => this.debugCodex(event),
+      noteDuringDrill: (text) =>
+        xpcMain.broadcast('coach/drill-note', { text, sessionId: this.drillTrio?.run.ownerSessionId, ts: Date.now() })
+    })
+    const run = new DrillRunService({
+      debugCodex: (event) => this.debugCodex(event),
+      setAutoDismissFileDialogs: (on) => capture.setAutoDismissFileDialogs(on),
+      stopCaptureIfAgentStarted: (reason) => capture.stopCaptureIfAgentStarted(reason),
+      exploreSession: () => host.exploreSessionOrNull()
+    })
+    const tools = new DrillToolsHost(
+      {
+        currentUrl: () => this.currentUrl,
+        /**
+         * bl 的 `OperationTab` **没有 `miniappId`** —— 它没有 cowork 那套 mini-app tab。
+         * 所以这道拒只按 `kind` 判:bl 自己的可录判据本来就是 `kind === 'browser'`,
+         * 非 browser 的面(onlypreview 之类的复合 tab)同样不是可探索的站点。
+         */
+        activeTabKind: () => {
+          const active = this.getOperationTabs().find((tab) => tab.id === this.getActiveOperationTabId())
+          return active ? { kind: active.kind === 'browser' ? 'browser' : 'miniapp' } : null
+        },
+        setAutoDismissFileDialogs: (on) => capture.setAutoDismissFileDialogs(on),
+        announceCaptureState: () => capture.announceCaptureState(),
+        debugCodex: (event) => this.debugCodex(event),
+        /**
+         * 合成一条 turn 发回给 agent —— 续跑循环靠它。
+         *
+         * **bl 与 cowork 在这里是架构差异**:cowork 的 `sendAgentMessage({message, sessionId?})`
+         * 没有回合概念;bl 后来加了回合认领闸,`sendAgentMessage` 要求 `turnId`,
+         * 而 `activeTurnFor()` 找不到就返回 `turn-not-active`。所以这里必须**先认领再发**,
+         * 与渲染端 `turn.service.send()` 做的是同一件事。
+         *
+         * 认领不到(别处正忙)就把它当一次失败返回 —— 续跑循环读 `!reply.ok` 会停,
+         * 那正确:此刻不该硬塞一轮进去。
+         */
+        sendAgentMessage: async (params) => {
+          const sessionId = params.sessionId || ''
+          if (!sessionId) return { ok: false, text: 'no session', ts: Date.now(), error: 'no-session' }
+          const turnId = `drill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+          const claim = this.claimAgentTurn({
+            sessionId,
+            turnId,
+            rootText: params.message,
+            startedAt: Date.now()
+          })
+          if (!claim.ok) {
+            return { ok: false, text: 'turn busy', ts: Date.now(), error: claim.reason || 'busy' }
+          }
+          return await this.agentService.sendAgentMessage({
+            sessionId,
+            turnId,
+            intent: 'root',
+            message: params.message
+          })
+        },
+        persistAgentRun: async () => ({ ok: true })
+      },
+      host,
+      run
+    )
+    this.drillTrio = { run, host, tools }
+    return tools
+  }
+
   buildPiTools(opts: { ingest?: boolean; sessionKey?: string } = {}): PiToolSpec[] {
     const sessionKey = opts.sessionKey || 'default'
     return this.agentService.wrapHostTools('cowork', [
       this.agentService.buildHostToolCatalogTool('cowork'),
       ...buildFileTools(this.workspaceFile, sessionKey),
       ...buildArchiveTools(this.workspaceFile, sessionKey),
+      /**
+       * 钻探三件（`drill-001` 收尾）。**这是「钻探能不能用」的最后一根线** ——
+       * 在此之前 agent 收到「开始钻探」只能用通用工具即兴走两步就停
+       * （Ral 2026-09-10 报的那个形状；日志里 `explore_session` 是 0 命中）。
+       */
+      ...buildDrillTools(this.drillTools(), sessionKey),
       {
         name: 'inject_button',
         description:

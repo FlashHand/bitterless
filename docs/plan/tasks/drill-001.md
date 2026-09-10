@@ -1,7 +1,7 @@
 ---
 id: drill-001
 scope: 把 cowork 的钻探（explore_session）移植进 bitterless 的 maestro 侧
-status: in-progress
+status: 已接通;待真机验收
 depends-on: []
 verify: typecheck:node + typecheck:web + check:chat-composer + tests/maestro/drillDeps.test.mjs
 ---
@@ -89,7 +89,36 @@ bl 的训练管线是**技能**：`skill.service.ts:120 ingestRecordingToSkills(
 `agentBroadcast` · `taskRegistry` · `hostFromUrl` —— 五个全在。所以编排那一段除了 apidoc
 没有别的缺口。
 
-## 3. 还没做
+## 3. 已接通（2026-09-10）
+
+Ral 报「钻探没法持续自动进行」时,日志给出了确切原因:`explore_session` **0 命中**、
+「继续钻探」**0 命中** —— agent 只能用通用工具即兴走两步就结束回合。**一个普通回合在模型
+停止调工具的那一刻就结束了**,没有任何东西推它继续。cowork 能持续靠的是宿主每轮合成一条新 turn。
+
+补完的四件:
+
+| 件 | 说明 |
+|---|---|
+| 续跑循环 | `continueAfterTurn` 163 行逐字搬入,挂在 `sendAgentMessage` 出口（只对 `intent === 'root'`）。**这是「自动持续」的唯一来源** |
+| 工具注册 | `buildDrillTools` 进 `buildPiTools`;三件套（`DrillRunService` / `DrillHostService` / `DrillToolsHost`）惰性建 |
+| 内置技能 | `DRILL_BUILTIN_SKILL` **prepend** 进 skillBriefs（**不能混进 `recordings`** —— 会被确定性快路径当文件技能去读 recipe,而它没有 recipe,整条触发静默失效）。中英文触发词齐 |
+| 提示词 | 钻探那 56 行从 cowork 逐字搬入,**话术一字未改**（含 09-10 加的「永不反问下一个钻哪个」） |
+
+三处**bl 与 cowork 的真实架构差异**,不是抄写差错：
+
+1. **合成 turn 要先认领回合。** cowork 的 `sendAgentMessage({message, sessionId?})` 没有回合概念;
+   bl 有认领闸、要求 `turnId`,`activeTurnFor()` 找不到就返回 `turn-not-active`。
+   所以续跑先 `claimAgentTurn` 再发,与渲染端 `turn.service.send()` 同一件事。认领不到就当失败返回
+   —— 续跑读 `!reply.ok` 会停,那是对的:此刻不该硬塞一轮。
+2. **`OperationTab` 没有 `miniappId`。** bl 没有 cowork 那套 mini-app tab,所以 begin 的那道拒
+   只按 `kind` 判（bl 自己的可录判据本来就是 `kind === 'browser'`）。
+3. **活动播报阶段用 `'tool'`。** bl 的 `AgentActivityStep['phase']` 是封闭枚举,
+   为钻探单开一档要改共享契约 + 渲染端图标映射,而钻探每一步本来就是一次工具调用。
+
+工具轮次上限提到 200（`MAESTRO_CHAT_MAX_TOOL_ROUNDS`）—— 运行时默认 12 会把钻探砍断,
+而它必须高于 exploreSession 自己的 120 分钟预算,否则边界就不是「时间预算 + 无进展检测」了。
+
+## 4. 还没做
 
 - **编排状态机**（cowork `drill.service.ts` 里约 608 行）：run 代次、全局单例闸、主人会话、
   重入判定、`abandonRun`。这一段**不能快搬** —— 它的不变量背后有三份 issue 文档
@@ -104,7 +133,7 @@ bl 的训练管线是**技能**：`skill.service.ts:120 ingestRecordingToSkills(
 
 `drillHost.service.ts` 适配器**已完成**（见 #1 的提交）。
 
-## 4. 验证边界
+## 5. 验证边界
 
 能自动验的：编译、`ExploreSessionDeps` 的映射（每个 dep 接到 bl 的哪个真源）、快照绕闸的分叉。
 **不能自动验的：一次真实钻探。** 那需要真机跑，且 E2E 按项目规则不自行发起。

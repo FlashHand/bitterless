@@ -44,7 +44,14 @@ export interface DrillHostState {
     moduleName: string
     snapshot: string | null
   }): Promise<{ text: string; documented?: number; created?: number; lost?: number; createdKeys?: string[] }>
-  broadcastActivity(phase: 'drill', label: string, ok?: boolean): void
+  /**
+   * 钻探的活动播报。
+   *
+   * 阶段用 `'tool'` 而不是新加一个 `'drill'`:bl 的 `AgentActivityStep['phase']` 是个封闭枚举
+   * (api / skill / observe / act / tab / tool / think / api-read / api-call),
+   * 为钻探单开一档要改共享契约 + 渲染端的图标映射,而钻探的每一步本来就是一次工具调用。
+   */
+  broadcastActivity(phase: 'tool', label: string, ok?: boolean): void
   debugCodex(event: CodexDebugEvent): void
   /** 钻探中途要人知道的一件事 —— 播成聊天里的一条留痕。 */
   noteDuringDrill(text: string): void
@@ -122,8 +129,8 @@ export class DrillHostService {
       closeTab: (id: string) => host.closeTab(id),
       ingestWindow: (params) => host.ingestWindow(params),
       recordingStartedAt: () => host.recordingStartedAt(),
-      onWaiting: (what) => host.broadcastActivity('drill', what ? `waiting: ${what}` : 'waiting', true),
-      onActivity: (text, ok) => host.broadcastActivity('drill', text, ok),
+      onWaiting: (what) => host.broadcastActivity('tool', what ? `waiting: ${what}` : 'waiting', true),
+      onActivity: (text, ok) => host.broadcastActivity('tool', text, ok),
       onNote: (text) => host.noteDuringDrill(text),
       onDebug: (event) =>
         host.debugCodex({

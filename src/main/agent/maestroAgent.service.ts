@@ -222,6 +222,31 @@ type AgentTurnIdentity = Pick<AgentTurnSnapshot, 'sessionId' | 'turnId' | 'gener
  * hydration, media and attachment registration, turn results, model targeting, host-tool policy,
  * approval history, and shutdown disposal.
  */
+/**
+ * 内置「钻探」技能 —— **常驻目录项**,不依赖用户录过什么。
+ * 从 cowork 逐字搬入(`drill-001`);`id` 是稳定标识,触发词中英文都要有。
+ */
+const DRILL_BUILTIN_SKILL: AgentSkillBrief = {
+  id: 'builtin:drill',
+  name: '钻探 (Drill)',
+  triggers: ['钻探', 'drill', '探站', 'explore this site', '钻探这个站', 'map this site', '自动探站', 'probe the site', 'discover the endpoints'],
+  description:
+    '对当前站点做一次完整钻探,产出站点地图(sitemap)+ 接口文档(apidoc),会覆盖已有产物。' +
+    '内置流程,不用 get_skill_contract —— 按系统提示的钻探步骤做:start_recording→explore_session begin/循环/end→ingest_recording。',
+  // bl 的 `AgentSkillBrief` 这三项是必填(cowork 那边可选)。内置技能没有 recipe 文件,
+  // 所以没有输入契约、没有种子、也没有缺项 —— 给空值而不是省略。
+  inputs: [],
+  seed: {},
+  missing: []
+}
+
+/**
+ * 钻探是**一个回合里循环几十次工具调用**,运行时默认的 12 轮会把它砍断。
+ * **必须高于 exploreSession 自己的 120 分钟预算**,否则它会先于钻探的预算掐断 ——
+ * 而钻探的边界本该是「自己的时间预算 + 无进展检测」,不是工具轮次。
+ */
+const MAESTRO_CHAT_MAX_TOOL_ROUNDS = 200
+
 @injectable()
 export class MaestroAgentService extends CommonService<MaestroAgentServiceState> {
   private pi: MaestroAgent | null = null
@@ -1521,8 +1546,17 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     })
   }
 
+  /**
+   * 钻探必须**prepend**进 skillBriefs,**不能混进 `recordings`**（cowork `check-auto-explore` 钉着这条）——
+   * 混进去会被确定性快路径当成**文件技能**去读 recipe,而它没有 recipe 文件,于是整条触发静默失效。
+   *
+   * 中英文都要能触发（Ral 2026-08-11）:他会说「钻探」也会说 drill / 探站。
+   * `id: 'builtin:drill'` 是稳定标识,不许改。
+   */
   private agentSkillBriefs(message: string, recordings: SkillSummary[], registry: SkillRegistryService): AgentSkillBrief[] {
-    return recordings.map((skill) => {
+    return [
+      DRILL_BUILTIN_SKILL,
+      ...recordings.map((skill) => {
       const recipe = registry.readRecipe(skill.id)
       const seed = recipe ? extractVariablesFromMessage(message, recipe) : {}
       const missing = recipe ? requiredInputNames(recipe).filter((name) => !seed[name]) : []
@@ -1535,7 +1569,8 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         seed,
         missing
       }
-    })
+      })
+    ]
   }
 
   private async handleAgentTurn(
