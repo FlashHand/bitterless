@@ -1362,7 +1362,24 @@ export class MessageStoreState {
       compactSummary: this.latestCompactSummary(session),
       recentMessages,
       attachedPaths: attachedPaths?.length ? attachedPaths.slice() : undefined,
-      workspace: session.detail.workspace
+      /**
+       * **必须 clone,不能按引用递。**
+       *
+       * `session` 住在 `reactive()` 里,所以 `session.detail.workspace` 是一个 **Proxy**,
+       * 而 Proxy **过不了 structured clone** —— 整个 `sendAgentMessage` 会在跨进程边界当场抛
+       * `An object could not be cloned.`,消息**根本没离开渲染进程**(所以 main 侧一行日志都没有,
+       * 耗时 0ms)。症状是「发了没回复、状态条永久 waiting」(Ral 2026-09-10)。
+       *
+       * 为什么以前没坏:`workspace` 只在**绑定了工作区之后**才非空 —— 没绑时是 `undefined`,
+       * 可克隆。所以它是"绑了工作区就再也发不出消息",不是随机故障。
+       *
+       * 上面那三个字段本来就安全:`recentMessages` 每一项都是新建的字面量、`attachedPaths`
+       * 是 `.slice()` 出来的字符串数组、`compactSummary` 是字符串。**只有这一个是引用**。
+       *
+       * `cloneWorkspace()` 这个方法本来就在(refreshWorkspace / applyWorkspaceBroadcast 都用它),
+       * 唯独这里漏了。`WorkspaceRef` 全是原始值,浅拷贝就够。
+       */
+      workspace: this.cloneWorkspace(session.detail.workspace)
     }
   }
 
@@ -1413,7 +1430,11 @@ export class MessageStoreState {
         compressedContext: session.detail.compressedContext || '',
         compressedUntilMessageId: session.detail.compressedUntilMessageId,
         compressedAt: session.detail.compressedAt,
-        workspace: session.detail.workspace
+        // 同 `buildAgentContext`:**必须 clone**。`saveSession` 也是跨进程边界,
+        // 递一个响应式 Proxy 会让整次持久化抛 `An object could not be cloned.` ——
+        // 而 `persistSession` 把它 `catch { /* best effort */ }` 吞了,于是
+        // **只要绑了工作区,会话就一直静默存不进库**(2026-09-10 与发送失败同一根因)。
+        workspace: this.cloneWorkspace(session.detail.workspace)
       },
       messages: session.messages.map((message) => ({
         id: message.id,
