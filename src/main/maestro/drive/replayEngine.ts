@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { HumanMouse } from './humanMouse'
 import type { ReplayResult } from '@maestro-shared/coach.api'
 import type { RecipeStep, SkillRecipe } from '@maestro-main/skills/skillRecipe.types'
 
@@ -90,6 +91,20 @@ export interface ApiCallResult {
 }
 
 export class ReplayEngine {
+  /**
+   * 拟人指针 —— **持有当前坐标**,所以下一次移动从上一次的落点出发;
+   * 否则每次都从原点起跳,轨迹就没有连续性可言(humanMouse.ts)。
+   *
+   * 惰性建而不是字段初始化:字段的初始化跑在构造参数赋值**之前**,
+   * 那时 `this.wc` 还是 undefined(TS2729 会指出来)。
+   */
+  private mouseInstance: HumanMouse | null = null
+
+  private get mouse(): HumanMouse {
+    if (!this.mouseInstance) this.mouseInstance = new HumanMouse(this.wc)
+    return this.mouseInstance
+  }
+
   constructor(private readonly wc: WebContents) {}
 
   async replay(recipe: SkillRecipe, variables: Record<string, string>): Promise<ReplayResult> {
@@ -239,7 +254,15 @@ export class ReplayEngine {
         returnByValue: true
       })) as {
         result?: {
-          value?: { ok: boolean; x?: number; y?: number; error?: string; desc?: { tag: string; id: string; name: string } }
+          value?: {
+            ok: boolean
+            x?: number
+            y?: number
+            width?: number
+            height?: number
+            error?: string
+            desc?: { tag: string; id: string; name: string }
+          }
         }
       }
       const v = located.result?.value
@@ -247,25 +270,16 @@ export class ReplayEngine {
         return { ok: false, error: v?.error || 'click target not located', desc: v?.desc }
       }
       const { x, y, desc } = v
-      await this.wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, buttons: 0 })
-      await wait(60)
-      await this.wc.debugger.sendCommand('Input.dispatchMouseEvent', {
-        type: 'mousePressed',
-        x,
-        y,
-        button: 'left',
-        buttons: 1,
-        clickCount: 1
-      })
-      await wait(30)
-      await this.wc.debugger.sendCommand('Input.dispatchMouseEvent', {
-        type: 'mouseReleased',
-        x,
-        y,
-        button: 'left',
-        buttons: 0,
-        clickCount: 1
-      })
+      /**
+       * **拟人指针**:沿 Bézier 轨迹逐点 `mouseMoved` 走过去,**到位之后**才 press/release
+       * (`humanMouse.ts`;Ral 2026-09-10「cowork 钻探有虚拟鼠标和鼠标轨迹的彗星尾巴,bl 也缺失了」)。
+       *
+       * 原来这里是**一次瞬移**到目标点再点 —— 页面从没收到过路径上的移动,于是 hover 才出现的
+       * 二级菜单、行内操作按钮、tooltip 都打不开(管理后台里这类控件很多),而且单点跳变是最好认的
+       * 自动化特征。同一条轨迹还会被画成可见的蓝光标 + 彗星尾巴 ——
+       * "看到的"与"页面收到的"因此是同一条线,而不是两回事。
+       */
+      await this.mouse.click({ x, y, width: v.width ?? 1, height: v.height ?? 1 })
       return { ok: true, desc }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
@@ -564,7 +578,16 @@ function clickLocator(step: RecipeStep): Promise<{
     if (rect.width === 0 && rect.height === 0) {
       return { ok: false, error: 'element has no box (0x0); cannot click by coordinate', desc }
     }
-    return { ok: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, desc }
+    // 宽高一起带出来:拟人轨迹要按**目标大小**算瞄准(Fitts's Law),而且落点是元素框里的一个
+    // 随机点而不是死磕中心 —— 只给中心点的话每次都精确命中同一像素,那是最好认的自动化特征。
+    return {
+      ok: true,
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      desc
+    }
   })()
 }
 
