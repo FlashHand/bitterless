@@ -19,7 +19,7 @@ import {
   createCodexBrowserCallbackCapture,
   type CodexBrowserCallbackCapture
 } from '../../../src/main/codex/codexCallbackCapture';
-import { codexAuthPath, codexModelsPath } from '../../../src/main/codex/codexPaths';
+import { codexAuthPath, codexLegacyAuthPath, codexModelsPath } from '../../../src/main/codex/codexPaths';
 import { connect } from 'node:net';
 
 const deferred = <T>() => {
@@ -148,8 +148,8 @@ const createService = (
   overrides: Partial<ConstructorParameters<typeof CodexCredentialService>[0]> = {}
 ) =>
   new CodexCredentialService({
-    authPath: () => '/profile/cowork/pi/auth.json',
-    modelsPath: () => '/profile/cowork/pi/models.json',
+    authPath: () => '/profile/.pi/auth.json',
+    modelsPath: () => '/profile/.pi/models.json',
     loadPiAuthModule: async () => pi.module,
     openExternal: async () => undefined,
     createBrowserCallbackCapture: async () => createCapture(),
@@ -159,20 +159,33 @@ const createService = (
     ...overrides
   });
 
-test('keeps the compatibility auth and model paths under userData/cowork/pi', async () => {
-  assert.equal(codexAuthPath('/profile'), join('/profile', 'cowork', 'pi', 'auth.json'));
-  assert.equal(codexModelsPath('/profile'), join('/profile', 'cowork', 'pi', 'models.json'));
+/**
+ * 2026-09-10:这条测试原名「keeps the compatibility auth and model paths under userData/cowork/pi」,
+ * 钉的是"别把已有用户的凭据文件搬走"。**那个保证仍然成立,但换了机制**:凭据现在落在回合真正读的
+ * `<userData>/.pi/`,而存量由 `maestroAuthPath()` 每次调用时的**逐 provider 前向合并**接住
+ * (旧库仍可达,见 `codexLegacyAuthPath`)。
+ *
+ * 为什么必须搬:原来登录、退出登录、以及「已连接」指示灯全用 `cowork/pi`,而每个回合读 `.pi` ——
+ * 于是界面说登录成功、回合说没登录、重登无效,而且**永久**如此(pi 的 `AuthStorage` 会把 `.pi/auth.json`
+ * 造成 `"{}"` 空壳,一次性 copy-if-absent 从此不再补)。
+ * 完整证据链:`docs/issues/codex-login-writes-a-store-the-turn-never-reads.md`。
+ */
+test('uses the single pi store the turn reads, and keeps the retired path reachable for the merge', async () => {
+  assert.equal(codexAuthPath('/profile'), join('/profile', '.pi', 'auth.json'));
+  assert.equal(codexModelsPath('/profile'), join('/profile', '.pi', 'models.json'));
+  // 退役位置仍然可达 —— 前向合并与退出登录都要够得着它,否则存量登录会在升级那一刻消失。
+  assert.equal(codexLegacyAuthPath('/profile'), join('/profile', 'cowork', 'pi', 'auth.json'));
 
   const pi = createFakePi({ connected: true });
   const status = await createService(pi).getStatus();
   assert.equal(status.connected, true);
-  assert.equal(pi.authPaths[0], '/profile/cowork/pi/auth.json');
-  assert.equal(pi.modelPaths[0], '/profile/cowork/pi/models.json');
+  assert.equal(pi.authPaths[0], '/profile/.pi/auth.json');
+  assert.equal(pi.modelPaths[0], '/profile/.pi/models.json');
 });
 
 test('app-owned credential stores preserve the Pi auth file contract', async () => {
   const root = mkdtempSync(join(tmpdir(), 'bitterless-codex-credential-'));
-  const authPath = join(root, 'cowork', 'pi', 'auth.json');
+  const authPath = join(root, '.pi', 'auth.json');
   const credential = {
     type: 'oauth',
     refresh: 'refresh',
@@ -394,8 +407,8 @@ test('modern browser login keeps Pi as credential owner across the IPv6 companio
     }
   } as unknown as PiAuthModule;
   const service = new CodexCredentialService({
-    authPath: () => '/profile/cowork/pi/auth.json',
-    modelsPath: () => '/profile/cowork/pi/models.json',
+    authPath: () => '/profile/.pi/auth.json',
+    modelsPath: () => '/profile/.pi/models.json',
     loadPiAuthModule: async () => pi,
     openExternal: async () => {
       events.push('auth-url-opened');

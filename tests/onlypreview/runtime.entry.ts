@@ -15,3 +15,4 @@ export * from '../../src/renderer/onlypreview/shell/src/onlyPreviewBrowseProject
 export * from '../../src/main/miniapps/onlypreview/onlyPreviewWindowBounds.service';
 export * from '../../src/main/miniapps/onlypreview/onlyPreviewGlobalSearchFocus.service';
 export * from '../../src/main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
+export * from '../../src/shared/onlypreview/onlyPreviewTargetInput';

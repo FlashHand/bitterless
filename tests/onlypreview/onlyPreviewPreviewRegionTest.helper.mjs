@@ -751,6 +751,14 @@ const regionModule = loadTypeScriptModule(
     '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry': {
       onlyPreviewWorkspaceRegistry: workspaceRegistry
     },
+    // 地址栏跟着预览走那一格(Ral 2026-09-10)。记进 `state` 而不是丢掉:预览区在每次
+    // `publishPresentation` 上通知它,所以"通知了几次、带的是哪个 hostToken"是可断言的行为。
+    '@main/miniapps/onlypreview/onlyPreviewDisplayUrl.registry': {
+      notifyOnlyPreviewDisplayUrl: (hostToken) => {
+        state.displayUrlNotifications = state.displayUrlNotifications ?? [];
+        state.displayUrlNotifications.push(hostToken);
+      }
+    },
     './onlyPreviewFind.service': { OnlyPreviewFindService: FakeFindService },
     './onlyPreviewPreviewAdapter.service': previewAdapterModule,
     './onlyPreviewPreviewView.service': viewModule,

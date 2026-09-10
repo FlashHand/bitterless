@@ -6,12 +6,21 @@ design document.
 
 ## Feature contracts
 
-- [macOS tray documentation master](plan/tasks/tray-mac-document-master-runtime-171.md) — implemented; owner testing pending;
-  regenerate 24px / Retina 48px assets from `doc/bitterless-tray-mac.png` for a 24x24 macOS tray image.
+- [INDEX CA list and Generate](plan/tasks/trench-index-generate-031.md) - Add saves metadata;
+  Generate explicitly rebuilds the selected chain.
+
+- [macOS and Windows tray artwork](plan/tasks/tray-mac-document-master-runtime-171.md) — implemented; owner testing pending;
+  approved larger/raised-eye cat head, macOS 22px / Retina 44px assets and Windows `#4E5882` multi-size ICO.
 
   control 展开时内容区左右各让 8px、前台 view 走原生 16px 圆角。内缩只在唯一入口做一次
   (`layout()` 的缓存分支不再回灌 `setViewBounds`),圆角只在翻转 / 成为前台时设,不进每帧路径。
   姊妹落地在 micromeet-cowork,两份要一起改。
+
+- [Folding icons render as boxes](issues/onlypreview-folding-icons-render-as-boxes.md) — fixed in BL/Cowork; owner testing pending;
+  the API-only Monaco entry never loaded the codicon font the fold chevrons are drawn with.
+
+- [第一次打开工作区外的文件没反应](issues/onlypreview-first-external-open-is-replaced-by-the-restored-project.md) — fixed; owner testing pending;
+  恢复项目时顺手呈现了那个项目记住的文件,把刚呈现的外部文件静默换掉。是同日另一个修复引入的回归。
 
 - [OnlyPreview 承载方式持久化](features/onlypreview-host-mount-persistence.md) — implemented; owner testing pending;
   上次 tab 就 tab、上次窗口就窗口(尺寸/位置/屏幕本来就已经持久化了)。含「先问承载再问偏好」的顺序理由。
@@ -24,14 +33,23 @@ design document.
   maestro 顶栏敲一条 `/…` 或 `C:\…` 路径:在 → OnlyPreview 独立窗口,不在 → Chromium 自己的
   「文件不存在」页。判据与 micromeet-cowork 共用 vendored 的那一份,落点刻意不同。
 
-- [INDEX incremental Token CA import](features/trench-index.md) - menu-bar batch input, incumbent
-  retention and per-chain top 300; [delivery](plan/tasks/trench-index-incremental-030.md).
+- [INDEX contract](features/trench-index.md) - CA-list metadata import and selected-chain Generate;
+  [historical incremental delivery](plan/tasks/trench-index-incremental-030.md) superseded by 031.
 
 - [Trench Tab and Window Hosting](features/trench-host-toggle.md) - implemented; owner testing pending; one ordinary
   surface shared across window/tab, with independent multi-renderer Omni panels retained.
 
 - [Project bookmark list and state SQLite](features/onlypreview-project-bookmarks.md) — implemented; owner testing pending;
   fixed Project-only list, direct removal, preload commit-driven UI and per-Project state DB.
+
+- [Codex login writes a store the turn never reads](issues/codex-login-writes-a-store-the-turn-never-reads.md) — fixed, packaging verification pending (2026-09-10):
+  one userData root holds TWO pi auth stores — the AI Login button, its logout and the "connected" indicator all use
+  `<userData>/cowork/pi/auth.json`, while every chat turn reads `<userData>/.pi/auth.json`. The only bridge is a
+  copy-if-absent migration, and pi's own `AuthStorage` creates the target as literal `"{}"` on first construction, which
+  makes that miss permanent: the UI reports a successful login, the turn reports "not signed in", and re-logging in
+  rewrites the file nobody reads. Also records that logout cannot log the turn out and that "connected" is true for an
+  EXPIRED token (pi's `checkProviderAuth` never looks at `expires`). Fix = one store + cowork's forward-merge (without
+  cowork's cross-channel inheritance, deliberately) + a diagnostic that names the account and the expiry.
 
 - [Maestro model-io chain is dead](issues/maestro-model-io-chain-is-dead.md) — open, needs an owner decision (2026-09-09):
   `setModelIoRoot()` has no caller anywhere in `src/`, so `dirForSession()` always returns null and
@@ -380,6 +398,8 @@ design document.
 - [EyesOnAgents Search after long uptime](issues/eyes-on-agents-search-after-long-uptime.md) -
   fixed; owner verification pending: the reproduced interrupted-composition state no longer survives
   modal close; each lifecycle gets a fresh Input, while matching remains renderer-local.
+- [EyesOnAgents IME-safe search rerender](plan/tasks/eyes-on-agents-search-ime-render-101.md) - implemented; owner verification pending:
+  native composition-aware input retains the computed adapter and preserves Pinyin during refresh.
 - [EyesOnAgents raw search input](plan/tasks/eyes-on-agents-search-raw-input-100.md) - implemented; owner verification pending:
   bind raw text with `v-model`, derive normalized tokens through read-only computed state, and
   preserve input through background rerenders; the installed Preview still lacks task 099's key.

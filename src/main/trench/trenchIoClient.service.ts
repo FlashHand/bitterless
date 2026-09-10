@@ -38,9 +38,9 @@ export class TrenchIoClientService {
     });
   }
 
-  async addTargetsAndBeginRun(request: TrenchIndexStorageAddTargetsAndBeginRunInput) {
+  async saveTargets(request: TrenchIndexStorageAddTargetsAndBeginRunInput) {
     const runtime = this.requireRuntime();
-    return await runtime.client.addTargetsAndBeginRun({
+    return await runtime.client.saveTargets({
       capability: runtime.capability,
       instanceId: runtime.instanceId,
       request,

@@ -5,6 +5,7 @@ import type {
   OnlyPreviewPreviewPresentation
 } from '@shared/onlypreview/onlyPreview.types';
 import { getOnlyPreviewErrorMessage, onlyPreviewI18n } from '../../common/onlyPreviewI18n';
+import { interpolateOnlyPreview } from '../../common/onlyPreviewFormat';
 
 export interface OnlyPreviewMetadataViewModel {
   variant: 'unsupported' | 'error';
@@ -57,7 +58,9 @@ export const buildOnlyPreviewMetadataViewModel = (
     } else if (descriptor.unsupportedCategory === 'video-container') {
       reason = onlyPreviewI18n.preview.unsupportedVideoBody;
     } else {
-      reason = onlyPreviewI18n.preview.unsupportedBody;
+      reason = interpolateOnlyPreview(onlyPreviewI18n.preview.unsupportedBody, {
+        app: onlyPreviewI18n.appName
+      });
     }
   }
   return {

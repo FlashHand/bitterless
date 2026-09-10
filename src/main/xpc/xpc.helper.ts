@@ -34,8 +34,6 @@ import './notification.handler';
 import './onlyPreview.handler';
 import './onlyPreviewAlert.handler';
 import { initMaestroXpc } from '@maestro-main/xpc/xpc.helper';
-// import { ptyManager } from '../ptyHelper/ptyManager';
-// import { PtyService } from '../ptyHelper/ptyXpc';
 
 export const initXpc = (): void => {
   xpcCenter.init();
@@ -43,10 +41,4 @@ export const initXpc = (): void => {
   initTestHandler();
   initTestSubscriber();
   initUpdateHandler();
-
-  // ptyManager.init().catch((err) => {
-  //   console.error('[xpc] ptyManager init failed:', err);
-  // });
-  //
-  // new PtyService();
 };

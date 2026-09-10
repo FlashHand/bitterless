@@ -391,8 +391,24 @@ export interface OnlyPreviewSettings {
   openFilesWithSingleClick: boolean;
 }
 
+/**
+ * 这个 MCP 实例是哪一种。
+ *
+ * **联合就地声明**,不从 `@shared/mcp/*` 借 —— 这一面与 micromeet-cowork 逐字节共用,而那个模块是
+ * bitterless 独有的(cowork 侧是 `host/onlyPreviewMcpBridge` 适配)。
+ */
+export type OnlyPreviewMcpServerKind = 'production' | 'preview' | 'development';
+
 export interface OnlyPreviewAgentSkillGuideInfo {
   serverName: string;
+  /**
+   * 由 **main 侧**分类。
+   *
+   * 加它的理由:渲染层原来是拿 `serverName` 去和 `'bitterless'` / `'bitterless-preview'` 两个
+   * **产品名字面量**比较,自己把这个分类重新推导了一遍。那既是重复,也是一处品牌泄漏 ——
+   * 同一份渲染层搬到 micromeet-cowork 之后,那两个比较永远不成立,而分类本来就是宿主知道的事。
+   */
+  kind: OnlyPreviewMcpServerKind;
   skillVersionCode: string;
   instruction: string;
 }

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'fs'
+import { describeAuthFile } from './authDiagnostic'
 import type {
   AgentRuntimeAdapter,
   AgentRuntimeContextEntry,
@@ -478,22 +479,6 @@ const providerDisplayName = (providerId: string): string => {
   if (providerId.startsWith('openai')) return 'OpenAI Codex (ChatGPT subscription)'
   if (providerId === 'anthropic') return 'Claude'
   return providerId
-}
-
-const describeAuthFile = (authPath: string, providerId: string): string => {
-  if (!existsSync(authPath)) return `Auth diagnostic: auth file does not exist (${authPath}).`
-  try {
-    const parsed = JSON.parse(readFileSync(authPath, 'utf8')) as unknown
-    const record = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
-    const providers = Object.keys(record).filter(Boolean)
-    if (!providers.length) return `Auth diagnostic: auth file exists but has no provider credentials (${authPath}).`
-    if (!record[providerId]) {
-      return `Auth diagnostic: auth file exists but is missing provider "${providerId}". Found providers: ${providers.join(', ')}.`
-    }
-    return `Auth diagnostic: provider "${providerId}" exists in auth file, but the SDK did not consider it configured. It may be expired or incomplete.`
-  } catch (err) {
-    return `Auth diagnostic: auth file exists but could not be parsed (${(err as Error).message}).`
-  }
 }
 
 const buildSchema = (Type: TypeBoxFactory, params: AgentToolParamSpec[]): unknown => {

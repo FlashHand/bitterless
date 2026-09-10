@@ -66,10 +66,11 @@ const dispatch = (dispatcher: DispatcherType, origin: string): void => {
 };
 
 test('accepts only the exact versioned loopback proxy schema', () => {
-  assert.equal(
-    codexSettingsPath('/profile'),
-    join('/profile', 'cowork', 'pi', 'settings.json')
-  );
+  // 2026-09-10:这个期望从 `cowork/pi` 改成 `.pi`。它原本钉住的正是那个 bug —— 代理调度器读的
+  // settings 与 pi 读的 settings 是两个文件,而登录/回合的 auth.json 也同样分家
+  // (`docs/issues/codex-login-writes-a-store-the-turn-never-reads.md`)。现在四个消费者都从
+  // `PI_DIR_NAME` 派生,所以这里跟着走同一个目录。
+  assert.equal(codexSettingsPath('/profile'), join('/profile', '.pi', 'settings.json'));
   assert.deepEqual(
     parseCodexProxySettings({
       schemaVersion: 1,
@@ -142,7 +143,7 @@ test('unreadable and malformed present settings fail closed with fixed diagnosti
       }
     });
     await assert.rejects(
-      service.ensure('/profile/cowork/pi/settings.json'),
+      service.ensure('/profile/.pi/settings.json'),
       (error: unknown) =>
         error instanceof CodexProxyConfigurationError && error.code === testCase.expectedCode
     );
@@ -179,7 +180,7 @@ test('missing settings preserve fallback routing without changing proxy environm
     }
   });
 
-  await service.ensure('/profile/cowork/pi/settings.json');
+  await service.ensure('/profile/.pi/settings.json');
 
   assert.equal(dispatcherCreations, 0);
   assert.equal(configurations, 0);
@@ -214,8 +215,8 @@ test('present invalid settings fail closed and cache the rejection without leaki
     }
   });
 
-  const first = service.ensure('/profile/cowork/pi/settings.json');
-  const second = service.ensure('/profile/cowork/pi/settings.json');
+  const first = service.ensure('/profile/.pi/settings.json');
+  const second = service.ensure('/profile/.pi/settings.json');
   assert.strictEqual(first, second);
   await assert.rejects(first, CodexProxyConfigurationError);
   await assert.rejects(second, CodexProxyConfigurationError);
@@ -245,7 +246,7 @@ test('valid settings install one callback-safe dispatcher and log only safe fiel
     }
   });
 
-  await service.ensure('/profile/cowork/pi/settings.json');
+  await service.ensure('/profile/.pi/settings.json');
   await service.ensure('/ignored-after-first-load.json');
 
   assert.deepEqual(created, [

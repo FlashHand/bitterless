@@ -212,9 +212,26 @@ test('live context uses runtime entry history, existing memory hydration and the
   assert.match(h.clipboardWrites[0], /native system/);
   assert.match(h.clipboardWrites[0], /full result/);
   assert.doesNotMatch(h.clipboardWrites[0], /must not replay/);
-  // ⑧ send 与 export 必须共用 buildAgentTurnPrompt —— 两处调用,不允许第三处另拼一份。
+  // ⑧ send / export / context-graph 必须**共用** buildAgentTurnPrompt,不允许有人另拼一份。
+  //
+  // 早先这里断言"恰好两处"。那是把意图写成了一个代理值,而代理已经腐烂过一次:context-graph
+  // (`maestroAgent.service.ts` 约 982 行)加了**第三处合法的共用调用**,断言就红了 —— 它把
+  // "多一个正确的调用方"报成了违规。所以改成两条:
+  //
+  //   ① **下界**:至少两处 —— send 与 export 仍然共用同一个 builder。有人把其中一处内联掉,
+  //      计数会掉下来。上界故意不设:再多一个共用调用方是好事,不该让守卫红。
+  //   ② **结构**:builder 的原料(`selectAgentSkillBriefs`)必须留在 `agentPrompt.ts` 内部。
+  //      这才是"第四处另拼一份"拿不到机器的真正原因 —— 它不是私有约定,是模块边界。
+  //      哪天有人把它导出去,那一刻就是该看一眼的时候。
   const serviceSource = read('src/main/agent/maestroAgent.service.ts');
-  assert.equal((serviceSource.match(/buildAgentTurnPrompt\(\{/g) || []).length, 2);
+  const sharedCalls = (serviceSource.match(/buildAgentTurnPrompt\(\{/g) || []).length;
+  assert.ok(sharedCalls >= 2, `send 与 export 必须共用 buildAgentTurnPrompt,实际只有 ${sharedCalls} 处`);
+  const promptSource = read('src/main/agent/runtime/agentPrompt.ts');
+  assert.doesNotMatch(
+    promptSource,
+    /^export const selectAgentSkillBriefs/m,
+    'builder 的原料一旦导出,别处就能绕过 buildAgentTurnPrompt 自己拼一份提示词'
+  );
 });
 
 // ⑤ 失败可见且不写剪贴板

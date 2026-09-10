@@ -13,7 +13,7 @@
     @open="handleModalOpen"
   >
     <section
-      id="eyes-on-agents-thread-search-dialog"
+      id="eyes-on-agents-thread- search-dialog"
       name="eyesOnAgents__threadSearch"
       class="thread-search"
       role="search"
@@ -22,23 +22,38 @@
         name="eyesOnAgents__threadSearch__inputRegion"
         class="thread-search__input-region"
       >
-        <a-input
-          :key="eyesOnAgentsStore.threadSearchRevision"
-          ref="inputRef"
-          name="eyesOnAgents__threadSearch__input"
-          class="thread-search__input"
-          size="mini"
-          allow-clear
-          v-model="titleDraft"
-          :placeholder="i18nHelper.eyesOnAgents.search.placeholder"
-          :input-attrs="inputAttributes"
-          @clear="handleQueryClear"
-          @keydown="handleKeydown"
+        <div
+          name="eyesOnAgents__threadSearch__field"
+          class="thread-search__field"
         >
-          <template #prefix>
-            <IconSearch :size="13" aria-hidden="true" />
-          </template>
-        </a-input>
+          <IconSearch class="thread-search__search-icon" :size="13" aria-hidden="true" />
+          <input
+            :key="`${eyesOnAgentsStore.threadSearchRevision}:${inputResetRevision}`"
+            ref="inputRef"
+            v-model="titleDraft"
+            v-bind="inputAttributes"
+            name="eyesOnAgents__threadSearch__input"
+            class="thread-search__input"
+            type="text"
+            autocomplete="off"
+            :placeholder="i18nHelper.eyesOnAgents.search.placeholder"
+            @input.capture="ignoreStaleInput"
+            @compositionstart="handleCompositionStart"
+            @compositionend="handleCompositionEnd"
+            @keydown="handleKeydown"
+          />
+          <IconBtn
+            v-if="titleDraft || isComposing"
+            name="eyesOnAgents__threadSearch__clear"
+            class="thread-search__clear"
+            :aria-label="i18nHelper.submodules.actions.clearSearch"
+            :title="i18nHelper.submodules.actions.clearSearch"
+            @mousedown.prevent
+            @click="handleQueryClear"
+          >
+            <IconX :size="12" aria-hidden="true" />
+          </IconBtn>
+        </div>
       </div>
 
       <div
@@ -83,15 +98,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
-import { IconSearch } from '@tabler/icons-vue';
+import { computed, nextTick, ref, watch, type InputHTMLAttributes } from 'vue';
+import { IconSearch, IconX } from '@tabler/icons-vue';
+import IconBtn from '@renderer/common/components/IconBtn/IconBtn.vue';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
 import ThreadCard from '../ThreadCard/ThreadCard.vue';
 import { eyesOnAgentsStore } from '../../store/eyesOnAgents.store';
 
 const RESULT_LIST_ID = 'eyes-on-agents-thread-search-results';
-const inputRef = ref<{ focus?: () => void } | null>(null);
+const inputRef = ref<HTMLInputElement | null>(null);
 const resultsRef = ref<HTMLElement | null>(null);
+const inputResetRevision = ref(0);
+const isComposing = ref(false);
+let invalidatedInput: HTMLInputElement | null = null;
 
 const titleDraft = computed({
   get: () => eyesOnAgentsStore.titleDraft,
@@ -108,7 +127,7 @@ const selectedOptionId = computed(() => {
   return sessionKey ? threadSearchOptionId(sessionKey) : undefined;
 });
 
-const inputAttributes = computed(() => ({
+const inputAttributes = computed<InputHTMLAttributes>(() => ({
   autofocus: true,
   role: 'combobox',
   'aria-label': i18nHelper.eyesOnAgents.search.placeholder,
@@ -151,7 +170,32 @@ const handleModalOpen = (): void => {
   void scrollSelectedResultIntoView();
 };
 
+const isCurrentInput = (event: Event): boolean =>
+  eyesOnAgentsStore.threadSearchVisible
+  && event.currentTarget === inputRef.value
+  && event.currentTarget !== invalidatedInput;
+
+const ignoreStaleInput = (event: Event): void => {
+  // A detached native input can still receive its IME's final input event.
+  if (!isCurrentInput(event)) event.stopImmediatePropagation();
+};
+
+const handleCompositionStart = (event: CompositionEvent): void => {
+  if (isCurrentInput(event)) isComposing.value = true;
+};
+
+const handleCompositionEnd = (event: CompositionEvent): void => {
+  if (isCurrentInput(event)) isComposing.value = false;
+};
+
+const invalidateInput = (): void => {
+  invalidatedInput = inputRef.value;
+  isComposing.value = false;
+};
+
 const handleQueryClear = (): void => {
+  invalidateInput();
+  inputResetRevision.value += 1;
   eyesOnAgentsStore.clearTitleQuery();
   void focusInput();
 };
@@ -161,7 +205,13 @@ const openSelectedResult = async (): Promise<void> => {
 };
 
 const handleKeydown = (event: KeyboardEvent): void => {
-  if (event.isComposing) return;
+  if (!isCurrentInput(event)) return;
+  if (event.isComposing || isComposing.value) {
+    if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
+      event.stopPropagation();
+    }
+    return;
+  }
   if (event.key === 'ArrowDown') {
     event.preventDefault();
     event.stopPropagation();
@@ -188,16 +238,23 @@ const handleKeydown = (event: KeyboardEvent): void => {
 };
 
 watch(
-  () => eyesOnAgentsStore.threadSearchSelectedSessionKey,
-  () => {
-    void scrollSelectedResultIntoView();
-  },
+  () => eyesOnAgentsStore.threadSearchRevision,
+  invalidateInput,
+  { flush: 'sync' },
 );
 
 watch(
-  () => eyesOnAgentsStore.threadSearchVisible,
-  (visible) => {
-    if (visible) void focusInput(eyesOnAgentsStore.threadSearchRevision);
+  () => eyesOnAgentsStore.threadSearchRevision,
+  (revision) => {
+    void focusInput(revision);
+  },
+  { flush: 'post' },
+);
+
+watch(
+  () => eyesOnAgentsStore.threadSearchSelectedSessionKey,
+  () => {
+    void scrollSelectedResultIntoView();
   },
 );
 </script>

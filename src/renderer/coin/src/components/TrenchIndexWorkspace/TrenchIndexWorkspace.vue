@@ -1,18 +1,6 @@
 <template>
   <main name="trench__index" class="trench-index">
     <section name="trench__index__actions" class="trench-index__actions">
-      <div class="trench-index__action-buttons">
-        <a-button
-          name="trench__index__reanalyze"
-          size="small"
-          :loading="reanalyzePending"
-          :disabled="running || unavailable || allTargetCount === 0"
-          @click="reanalyze"
-        >
-          <template #icon><IconRefresh aria-hidden="true" /></template>
-          {{ t('trench.indexWorkspace.reanalyzeAll') }}
-        </a-button>
-      </div>
       <div class="trench-index__run-status" aria-live="polite">
         {{ runStatus }}
       </div>
@@ -46,7 +34,19 @@
       :class="`trench-index__columns--${selectedChain}`"
     >
       <section name="trench__index__targets" class="trench-index__column trench-index__targets">
-        <header class="trench-index__column-header">{{ t('trench.indexWorkspace.targetCasForChain', { chain: chainLabel(selectedChain) }) }}</header>
+        <header class="trench-index__column-header">
+          <span>{{ t('trench.indexWorkspace.targetCasForChain', { chain: chainLabel(selectedChain) }) }}</span>
+          <a-tooltip :content="t('trench.indexWorkspace.addCa')" mini>
+            <IconBtn
+              name="trench__index__add-ca"
+              class="trench-index__add"
+              size="mini"
+              :disabled="running || unavailable || !snapshot || addState.pending || generatePending"
+              :aria-label="t('trench.indexWorkspace.addCa')"
+              @click="openAdd"
+            ><IconPlus aria-hidden="true" /></IconBtn>
+          </a-tooltip>
+        </header>
         <div v-if="!activeProjection?.targets.length" class="trench-index__empty">
           <strong>{{ t('trench.indexWorkspace.emptyTargetTitle') }}</strong>
           <span>{{ t('trench.indexWorkspace.emptyTargetDescription') }}</span>
@@ -59,8 +59,8 @@
             class="trench-index__target-row"
           >
             <div class="trench-index__identity-line">
-              <strong>{{ target.name || t('trench.indexWorkspace.unknownToken') }}</strong>
-              <span v-if="target.symbol" class="trench-index__symbol">{{ target.symbol }}</span>
+              <strong :title="target.symbol || target.name || undefined">{{ target.symbol || target.name || t('trench.indexWorkspace.unknownToken') }}</strong>
+              <span v-if="target.symbol && target.name" class="trench-index__token-name" :title="target.name">{{ target.name }}</span>
             </div>
             <button
               class="trench-index__address"
@@ -75,6 +75,7 @@
             </dl>
             <div class="trench-index__row-status" :class="`trench-index__row-status--${target.state}`">
               <span v-if="target.state === 'analyzing'">{{ t('trench.indexWorkspace.analyzing') }}</span>
+              <span v-else-if="target.state === 'pending'">{{ t('trench.indexWorkspace.waitingFirstAnalysis') }}</span>
               <span v-else-if="target.errorCode" :title="target.errorMessage || undefined">{{ localizedError({ code: target.errorCode, message: target.errorMessage || '' }) }}</span>
               <span v-else-if="target.lastSuccessAt">{{ t('trench.indexWorkspace.updatedAt', { time: dateTime(target.lastSuccessAt) }) }}</span>
               <span v-else>{{ t('trench.indexWorkspace.waitingFirstAnalysis') }}</span>
@@ -84,7 +85,21 @@
       </section>
 
       <section name="trench__index__wallets" class="trench-index__column trench-index__wallets">
-        <header class="trench-index__column-header">{{ t('trench.indexWorkspace.indexWalletsForChain', { chain: chainLabel(selectedChain) }) }}</header>
+        <header class="trench-index__column-header">
+          <span>{{ t('trench.indexWorkspace.indexWalletsForChain', { chain: chainLabel(selectedChain) }) }}</span>
+          <a-button
+            name="trench__index__generate"
+            class="trench-index__generate"
+            size="mini"
+            type="primary"
+            :loading="generatePending || running"
+            :disabled="running || unavailable || !activeProjection?.targets.length || addState.pending || generatePending"
+            @click="generate"
+          >
+            <template #icon><IconRefresh aria-hidden="true" /></template>
+            {{ t('trench.indexWorkspace.generate') }}
+          </a-button>
+        </header>
         <div v-if="running && !snapshot?.currentRun" class="trench-index__empty" aria-live="polite">
           <strong>{{ t('trench.indexWorkspace.firstRunTitle') }}</strong>
           <span>{{ t('trench.indexWorkspace.firstRunDescription') }}</span>
@@ -146,11 +161,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { IconRefresh } from '@tabler/icons-vue';
+import { IconPlus, IconRefresh } from '@tabler/icons-vue';
+import IconBtn from '@renderer/common/components/IconBtn/IconBtn.vue';
 import type { TrenchChain } from '@shared/trench/trench.type';
 import type { TrenchHighestMarketCapKind, TrenchIndexError } from '@shared/trench/trenchIndex.type';
 import { trenchGmgnSettingsStore } from '../TrenchGmgnSettings/trenchGmgnSettings.runtime';
 import { trenchIndexStore as store } from '../../views/index/trenchIndex.runtime';
+import { trenchIndexAddStore as addState } from '../../views/index/trenchIndexAdd.store';
 import {
   hasTrenchWalletAvatarImage,
   markTrenchWalletAvatarFailed,
@@ -162,14 +179,12 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = useI18n();
-const reanalyzePending = ref(false);
+const generatePending = ref(false);
 const selectedChain = computed(() => props.selectedChain);
 const failedAvatarUrls = ref<ReadonlySet<string>>(new Set());
 const snapshot = computed(() => store.snapshot);
 const activeProjection = computed(() => snapshot.value?.chainProjections
   .find(({ chain }) => chain === selectedChain.value));
-const allTargetCount = computed(() => snapshot.value?.chainProjections
-  .reduce((count, projection) => count + projection.targets.length, 0) ?? 0);
 const running = computed(() => snapshot.value?.jobState === 'running');
 const unavailable = computed(() => store.phase === 'unavailable');
 const runStatus = computed(() => {
@@ -221,10 +236,22 @@ const copy = async (value: string): Promise<void> => {
 const onAvatarError = (avatarUrl: string): void => {
   failedAvatarUrls.value = markTrenchWalletAvatarFailed(failedAvatarUrls.value, avatarUrl);
 };
-const reanalyze = async (): Promise<void> => {
-  reanalyzePending.value = true;
-  await store.reanalyze();
-  reanalyzePending.value = false;
+const openAdd = (): void => {
+  addState.chain = selectedChain.value;
+  addState.error = null;
+  store.clearCommandError();
+  addState.visible = true;
+};
+const generate = async (): Promise<void> => {
+  if (generatePending.value || running.value || addState.pending || !activeProjection.value?.targets.length) return;
+  generatePending.value = true;
+  try {
+    await store.reanalyze(selectedChain.value);
+  } catch {
+    store.commandError = { code: 'INTERNAL', message: 'Could not generate INDEX.' };
+  } finally {
+    generatePending.value = false;
+  }
 };
 </script>
 

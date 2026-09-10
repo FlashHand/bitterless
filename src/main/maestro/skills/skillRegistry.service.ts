@@ -130,7 +130,6 @@ export class SkillRegistryService {
         aliases: recipe.aliases,
         shortcuts: recipe.shortcuts,
         keywords: recipe.keywords,
-        triggers: recipe.triggers,
         inputs: recipe.inputs,
         body
       }),
@@ -255,7 +254,6 @@ export class SkillRegistryService {
             aliases: safeRecipe.aliases,
             shortcuts: safeRecipe.shortcuts,
             keywords: safeRecipe.keywords,
-            triggers: safeRecipe.triggers,
             inputs: safeRecipe.inputs,
             body
           })
@@ -372,7 +370,6 @@ export class SkillRegistryService {
           aliases: recipe.aliases,
           shortcuts: recipe.shortcuts,
           keywords: recipe.keywords,
-          triggers: recipe.triggers,
           inputs: recipe.inputs,
           body: sourceBody
         }),
@@ -415,7 +412,6 @@ export class SkillRegistryService {
         aliases: recipe.aliases,
         shortcuts: recipe.shortcuts,
         keywords: recipe.keywords,
-        triggers: recipe.triggers,
         inputs: recipe.inputs,
         body
       }),
@@ -526,7 +522,6 @@ export class SkillRegistryService {
         updatedAt: recipe?.updatedAt || stats.mtimeMs,
         inputs: recipe?.inputs || parseSkillInputs(frontmatter),
         triggers: uniqueStrings([
-          ...asStringList(frontmatter.coach_triggers),
           ...(recipe?.triggers || []),
           ...asStringList(frontmatter.aliases),
           ...asStringList(frontmatter.shortcuts),
@@ -548,7 +543,6 @@ export class SkillRegistryService {
     const description = String(frontmatter.description || `External markdown skill: ${name}`)
     const inputs = parseSkillInputs(frontmatter)
     const triggers = uniqueStrings([
-      ...asStringList(frontmatter.coach_triggers),
       ...asStringList(frontmatter.aliases),
       ...asStringList(frontmatter.shortcuts),
       ...asStringList(frontmatter.keywords)
@@ -566,7 +560,6 @@ export class SkillRegistryService {
         id,
         name,
         description,
-        triggers,
         inputs,
         body: sourceBody
       }),
@@ -619,7 +612,6 @@ function buildSkillMarkdown(params: {
   aliases?: string[]
   shortcuts?: string[]
   keywords?: string[]
-  triggers: string[]
   inputs: SkillInput[]
   body: string
 }): string {
@@ -634,11 +626,9 @@ function buildSkillMarkdown(params: {
       coach_display_name: params.name,
       coach_id: params.id,
       coach_source: params.source,
-      coach_triggers: params.triggers,
       'x-coach': {
         id: params.id,
         source: params.source,
-        triggers: params.triggers,
         inputs: params.inputs.map((input) => ({
           path: input.name,
           label: input.label,
@@ -664,7 +654,6 @@ function buildExternalSkillMarkdown(params: {
   id: string
   name: string
   description: string
-  triggers: string[]
   inputs: SkillInput[]
   body: string
 }): string {
@@ -679,7 +668,6 @@ function buildExternalSkillMarkdown(params: {
       coach_id: params.id,
       coach_source: 'external',
       coach_domain: 'external',
-      coach_triggers: params.triggers,
       'x-coach': {
         ...coach,
         id: params.id,

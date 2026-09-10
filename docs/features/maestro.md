@@ -2,6 +2,14 @@
 
 Status: Current delivery contract
 
+### Control warm surface — 2026-09-10
+
+BL/Cowork Control chat uses subtly warm white `#FFFCF7` against the unchanged cool gray
+`#F8FAFC` outer rail. Card, header, messages and composer backing form one continuous surface;
+transparent inner layers prevent white patches. Focused text input uses the same warm white.
+Keep existing typography, geometry, cool message/control fills and blue focus shadow; no new
+borders or global theme changes. Guard: `tests/maestro/controlWarmSurface.test.mjs`.
+
 Upstream baseline: `projects/micromeet-cowork` commit
 `689832d39e4b78f2717d5beedbe1c1c3f8db7f71` (2026-07-14).
 Current MenuBar/fixed-local-tab parity reference: Cowork `dev/next` commit `19b0621`.

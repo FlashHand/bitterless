@@ -13,6 +13,7 @@ import {
   TRENCH_IO_CHAIN_SCHEMA,
   TRENCH_IO_PERSON_SCHEMA_VERSION_CODE,
   TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
+  TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE,
   TRENCH_IO_SCHEMA_VERSION_CODE,
 } from '../../../src/renderer/trench-io/trenchIo.migration';
 import { TRENCH_IO_TEST_PASSWORD } from '../../../src/renderer/trench-io/trenchIoPassword.service';
@@ -108,6 +109,119 @@ const workspaceTargets = (repo: TrenchIoRepository) => repo.getWorkspace().chain
   .flatMap(({ targets }) => targets);
 const workspaceWallets = (repo: TrenchIoRepository) => repo.getWorkspace().chainProjections
   .flatMap(({ wallets }) => wallets);
+
+test('metadata-only Add persists names without an analysis and replays durably without mutation', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bitterless-trench-save-'));
+  const path = join(root, 'trench.db');
+  let db = new TrenchIoDatabase(path, TRENCH_IO_TEST_PASSWORD, VERSION);
+  let repo = new TrenchIoRepository(db, () => 100);
+  const request = {
+    requestId: '11111111-1111-4111-8111-111111111111', requestFingerprint: 'a'.repeat(64),
+    targets: [{ chain: 'bsc' as const, contractAddress: ca, canonicalAddress: ca, metadata: metadata() }],
+  };
+  try {
+    repo.initialize();
+    const receipt = repo.saveTargets(request);
+    assert.equal(receipt.targetPersistedCount, 1);
+    assert.equal(receipt.replayed, false);
+    const saved = repo.getWorkspace();
+    assert.equal(saved.jobState, 'idle');
+    assert.equal(saved.activeRun, null);
+    assert.equal(saved.currentRun, null);
+    assert.equal(workspaceTargets(repo)[0]?.name, 'Token');
+    assert.equal(workspaceTargets(repo)[0]?.symbol, 'TOK');
+    assert.equal(workspaceTargets(repo)[0]?.state, 'pending');
+    for (const table of ['trench_index_runs', 'trench_index_wallet_candidates', 'trench_index_wallets']) {
+      assert.equal(db.raw.prepare(`SELECT count(*) FROM ${table}`).pluck().get(), 0);
+    }
+    assert.deepEqual(repo.saveTargets(request), { ...receipt, replayed: true });
+    assert.deepEqual(repo.getWorkspace(), saved);
+    assert.throws(() => repo.saveTargets({ ...request, requestFingerprint: 'b'.repeat(64) }), /already used/);
+    assert.throws(() => repo.beginRun({ ...request, trigger: 'reanalyze', chain: 'bsc' }), /already used/);
+    assert.deepEqual(repo.getWorkspace(), saved);
+    db.close();
+    db = new TrenchIoDatabase(path, TRENCH_IO_TEST_PASSWORD, VERSION);
+    repo = new TrenchIoRepository(db, () => 200);
+    repo.initialize();
+    assert.deepEqual(repo.saveTargets(request), { ...receipt, replayed: true });
+    assert.deepEqual(repo.getWorkspace(), saved);
+    repo.saveTargets({ ...request, requestId: '22222222-2222-4222-8222-222222222222',
+      targets: [{ ...request.targets[0]!, metadata: { ...metadata(), name: 'New name', symbol: 'NEW' } }] });
+    assert.equal(workspaceTargets(repo).length, 1);
+    assert.equal(workspaceTargets(repo)[0]?.symbol, 'NEW');
+    const beforeInvalid = repo.getWorkspace();
+    assert.throws(() => repo.saveTargets({ ...request, requestId: '33333333-3333-4333-8333-333333333333',
+      targets: [...request.targets, { ...request.targets[0]!, canonicalAddress: secondCa, contractAddress: secondCa,
+        metadata: { ...metadata(), priceUsd: NaN } }] }), /invalid/);
+    assert.deepEqual(repo.getWorkspace(), beforeInvalid);
+    assert.equal(db.raw.prepare('SELECT count(*) FROM trench_index_target_imports').pluck().get(), 2);
+    assert.deepEqual(db.raw.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Generate rebuilds every saved CA on its chain while preserving other chains and prior results on failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bitterless-trench-generate-'));
+  const db = new TrenchIoDatabase(join(root, 'trench.db'), TRENCH_IO_TEST_PASSWORD, VERSION);
+  const repo = new TrenchIoRepository(db, () => 100);
+  const requestId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const generate = (n: number, chain?: 'bsc' | 'robinhood' | 'solana') => repo.beginRun({
+    requestId: requestId(n), requestFingerprint: n.toString(16).padStart(64, '0'), trigger: 'reanalyze', chain,
+  });
+  const complete = (run: ReturnType<typeof generate>, amount: number | null) => {
+    const targets = run.targets.map((target) => ({ ...target, metadata: metadata(),
+      candidates: amount === null ? [] : [candidate({
+        wallet: { ...candidate().wallet, chain: target.chain }, profitUsd: amount,
+        realizedProfitUsd: amount, unrealizedProfitUsd: 0,
+      })] }));
+    repo.completeRun({ runId: run.runId, observedAt: 200, targets, wallets: rankTrenchIndexWallets(targets) });
+  };
+  try {
+    repo.initialize();
+    repo.saveTargets({ requestId: requestId(1), requestFingerprint: 'a'.repeat(64),
+      targets: (['bsc', 'robinhood'] as const).map((chain) => ({ chain, contractAddress: ca,
+        canonicalAddress: ca, metadata: metadata() })) });
+    assert.throws(() => generate(2, 'solana'), /before reanalyzing/);
+    const initial = generate(3);
+    complete(initial, 50);
+    const before = repo.getWorkspace();
+    const otherChain = before.chainProjections.find(({ chain }) => chain === 'robinhood');
+    repo.saveTargets({ requestId: requestId(4), requestFingerprint: 'b'.repeat(64),
+      targets: [{ chain: 'bsc', contractAddress: secondCa, canonicalAddress: secondCa, metadata: metadata() }] });
+    assert.deepEqual(workspaceWallets(repo), before.chainProjections.flatMap(({ wallets }) => wallets));
+    const run = generate(5, 'bsc');
+    assert.equal(run.targets.length, 2);
+    assert.equal(run.targets.every(({ chain }) => chain === 'bsc'), true);
+    assert.deepEqual(repo.getWorkspace().chainProjections.find(({ chain }) => chain === 'robinhood'), otherChain);
+    assert.deepEqual(generate(5, 'bsc'), { ...run, replayed: true });
+    assert.throws(() => generate(5, 'robinhood'), /different Trench INDEX command/);
+    assert.throws(() => repo.saveTargets({ requestId: requestId(6), requestFingerprint: 'c'.repeat(64),
+      targets: [{ chain: 'bsc', contractAddress: ca, canonicalAddress: ca, metadata: metadata() }] }), /already running/);
+    complete(run, 10);
+    const rebuilt = repo.getWorkspace();
+    assert.equal(rebuilt.chainProjections.find(({ chain }) => chain === 'bsc')?.wallets[0]?.totalProfitUsd, 20);
+    assert.deepEqual(rebuilt.chainProjections.find(({ chain }) => chain === 'robinhood'), otherChain);
+    assert.deepEqual(db.raw.prepare('SELECT scope_chain FROM trench_index_runs WHERE run_id=?').get(run.runId),
+      { scope_chain: 'bsc' });
+    assert.deepEqual(db.raw.prepare("SELECT evidence_run_id FROM trench_index_wallets WHERE run_id=? AND chain='robinhood'")
+      .get(run.runId), { evidence_run_id: initial.runId });
+    const failed = generate(7, 'bsc');
+    repo.failRun({ runId: failed.runId, targetId: failed.targets[0]!.targetId, failedAt: 300,
+      error: { code: 'PROVIDER_UNAVAILABLE', message: 'Provider unavailable' } });
+    assert.equal(repo.getWorkspace().currentRun?.runId, run.runId);
+    assert.deepEqual(workspaceWallets(repo), rebuilt.chainProjections.flatMap(({ wallets }) => wallets));
+    const empty = generate(8, 'bsc');
+    complete(empty, null);
+    assert.equal(repo.getWorkspace().chainProjections.find(({ chain }) => chain === 'bsc')?.wallets.length, 0);
+    assert.deepEqual(repo.getWorkspace().chainProjections.find(({ chain }) => chain === 'robinhood'), otherChain);
+    assert.deepEqual(db.raw.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('incremental imports retain top 300, replace only for higher profit, and preserve source runs across chains', () => {
   const root = mkdtempSync(join(tmpdir(), 'bitterless-trench-incremental-'));
@@ -663,6 +777,7 @@ test('018 databases upgrade without row loss and deterministically rerank each c
       { version_code: TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE },
       { version_code: TRENCH_IO_PERSON_SCHEMA_VERSION_CODE },
       { version_code: TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE },
+      { version_code: TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE },
       { version_code: TRENCH_IO_SCHEMA_VERSION_CODE },
     ]);
     assert.equal(upgraded.raw.prepare('SELECT revision FROM trench_repository_state WHERE id=1')
@@ -830,6 +945,7 @@ test('019 upgrade converges one cross-chain EVM wallet without losing accounts, 
       { version_code: TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE },
       { version_code: TRENCH_IO_PERSON_SCHEMA_VERSION_CODE },
       { version_code: TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE },
+      { version_code: TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE },
       { version_code: TRENCH_IO_SCHEMA_VERSION_CODE },
     ]);
   } finally {

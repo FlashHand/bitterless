@@ -114,17 +114,18 @@ or a background tile.
 
 | Platform | Runtime asset | Color contract | Container contract |
 |---|---|---|---|
-| macOS | `doc/bitterless-tray-mac-24.png` and `doc/bitterless-tray-mac-24@2x.png` | Black opaque core on transparency; Electron marks it as a Template Image so macOS supplies the visible menu-bar color | 24x24 logical size, with 24x24 (1x) and 48x48 (2x) RGBA representations |
+| macOS | `doc/bitterless-tray-mac-22.png` and `doc/bitterless-tray-mac-22@2x.png` | Black opaque core on transparency; Electron marks it as a Template Image so macOS supplies the visible menu-bar color | 22x22 logical size, with 22x22 (1x) and 44x44 (2x) RGBA representations |
 | Windows | `build/tray-win.ico` | `#4E5882` Royal Blue core on transparency | ICO representations for 16, 20, 24, 32, 40, 48, 64, and 256 pixels |
 
-The unchanged macOS artwork master is `doc/bitterless-tray-mac.png` (208x208). Generate both runtime
-representations with `node scripts/package/trayIcon.generate.mjs`; development loads the 24px base
+The selected source is `doc/bitterless-tray-source.png`; its white background and facial cutouts
+become transparent in the generated `doc/bitterless-tray-mac.png` master (208x208). Generate both
+platforms with `node scripts/package/trayIcon.generate.mjs`; development loads the macOS 22px base
 from `doc/`, and release packaging copies both representations to `app.asar.unpacked/icons/`. Electron
 selects the appropriate representation without resizing the logical image. The Windows
-documentation master remains `doc/bitterless-tray-win.png`, while its runtime ICO is generated under
-`build/`.
+documentation master is `doc/bitterless-tray-win.png`, sharing the macOS master's alpha geometry
+with the existing `#4E5882` tint; its runtime ICO is generated under `build/`.
 
-The macOS tray artwork must remain legible at 24x24 (Windows also supports 16x16): use bold filled geometry and negative-space facial
+The macOS tray artwork must remain legible at 22x22 (Windows also supports 16x16): use bold filled geometry and negative-space facial
 features, not thin line art or hand-drawn surface texture that disappears under downsampling.
 
 ### PNG generation rules

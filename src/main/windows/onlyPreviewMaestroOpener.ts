@@ -1,6 +1,11 @@
+import { realpath } from 'node:fs/promises';
+
 import { registerMaestroPreviewOpener } from '@maestro-main/windows/main/previewOpener.registry';
-import { maestroWindowHelper } from '@maestro-main/windows/maestroWindow.helper';
+import { onlyPreviewWorkspaceRegistry } from '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry';
+import { registerOnlyPreviewDisplayUrlSink } from '@main/miniapps/onlypreview/onlyPreviewDisplayUrl.registry';
+import { maestroWindowHelper } from '@maestro-main/windows/main/maestroWindow.controller';
 import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper';
+import { resolveLocalPathTarget } from '@main/windows/onlyPreviewLocalPathTarget';
 import {
   peekOnlyPreviewHostMount,
   readOnlyPreviewHostMount
@@ -19,7 +24,32 @@ import { openRegisteredOnlyPreviewExplicitTarget } from '@main/miniapps/onlyprev
  * target, authorizes it, and opens the Project rooted at the directory — selecting the file when the
  * target was one.
  */
+/**
+ * 当前承载是不是 Cowork 的那个 composite tab。
+ *
+ * `getMountKind` 在挂载已经不活着时**抛** —— 那种竞态下(tab 刚关掉)当成「不是 tab」处理:
+ * 落到窗口那一支去,`ensureStandalone()` 会造一个新的,这比让芯片报错好。
+ */
+const isMountedOnCoworkTab = (hostToken: string): boolean => {
+  try {
+    return onlyPreviewWindowHelper.getMountKind(hostToken) === 'cowork';
+  } catch {
+    return false;
+  }
+};
+
 export const registerOnlyPreviewMaestroOpener = (): void => {
+  // 地址栏跟着预览走(Ral 2026-09-10:「只要看起来像真实浏览器就好」)。
+  //
+  // 填在这里,因为这是宿主把「OnlyPreview」和「maestro 的 tab」接起来的那一处 —— 算 URL 要问
+  // 注册表,而把它显示到哪里只有宿主知道。独立窗口那一支最终落到一个**空操作**(窗口没有地址栏),
+  // 所以这里不必分情况。
+  registerOnlyPreviewDisplayUrlSink((hostToken) => {
+    onlyPreviewWindowHelper.reportDisplayUrl(
+      hostToken,
+      onlyPreviewWorkspaceRegistry.describeDisplayUrl(hostToken)
+    );
+  });
   registerMaestroPreviewOpener({
     displayName: 'OnlyPreview',
     open: async (absolutePath: string) => {
@@ -34,7 +64,25 @@ export const registerOnlyPreviewMaestroOpener = (): void => {
       // `onlyPreviewCoworkTab.ts` 顶部说明了为什么胶水住在这里),所以 `openCompositeTabTarget`
       // 里问不了 `getStandaloneHost()`。
       // 详见 `docs/issues/onlypreview-detached-window-gets-a-second-tab.md`。
-      if (onlyPreviewWindowHelper.getStandaloneHost()) {
+      const mountedHost = onlyPreviewWindowHelper.getStandaloneHost();
+      if (mountedHost) {
+        // 承载已经存在 —— 但**它是 tab 还是窗口,决定了怎么把它摆到前台**。
+        //
+        // tab 那一支必须走 maestro 自己的 `activateTab`(`openCompositeTabTarget` 里那一步)。
+        // 原来这里两种情况都交给 `openRegisteredOnlyPreviewExplicitTarget`,靠它下游的
+        // `ensureStandalone()` → `show()` 去激活;而 `show()` 是
+        // `this.standaloneMount?.showSurface()` —— **末端一个 `?.`**,挂载对象不在时它静默什么都不做,
+        // 和成功完全一样。目录那一支在「打开的就是当前项目根」时(点芯片最常见的那次)`show()` 是
+        // 唯一发生的事,所以那一次的整个可见效果都押在这一条委派链上。
+        // Ral 2026-09-10 报的就是它:「tab 中打开时点 workspace 按钮应该激活这个 tab,现在不行」。
+        //
+        // 换成显式的:tab 就让**知道 tab id 的那一侧**去激活。少四层委派,也不再有能被 `?.` 吞掉的
+        // 无操作。窗口那一支保持原样 —— 它本来就是对的。
+        if (isMountedOnCoworkTab(mountedHost.hostToken)) {
+          const result = await maestroWindowHelper.openWorkspaceInPreview({ path: absolutePath });
+          if (!result.ok) throw new Error(result.error || 'OnlyPreview could not open that path.');
+          return;
+        }
         await openRegisteredOnlyPreviewExplicitTarget(absolutePath);
         return;
       }
@@ -55,6 +103,31 @@ export const registerOnlyPreviewMaestroOpener = (): void => {
       // `maestroBrowserView.openCompositeTabTarget` 上,所以这里调它而不是自己拼一遍。
       const result = await maestroWindowHelper.openWorkspaceInPreview({ path: absolutePath });
       if (!result.ok) throw new Error(result.error || 'OnlyPreview could not open that path.');
-    }
+    },
+    /**
+     * 会话不再用这个工作区了 → 如果 OnlyPreview 现在开着的**正是它**,把 OnlyPreview 收掉。
+     *
+     * 比对是在**真实路径**上做的,两边都经过 `realpath`:芯片给的是人选的那一串,而绑定时存的是
+     * `inspectTarget` 产出的 `rootRealPath` —— 不统一的话,一个软链拼法或 macOS 的
+     * `/tmp` vs `/private/tmp` 就会比不上,表现是「关了工作区但预览还开着」。
+     *
+     * `destroyStandalone()` 按承载各走各的:独立窗口关窗口,Cowork tab 关那一个 tab
+     * (它自己那行注释就是这么写的),所以这里不需要分情况。
+     */
+    closeForPath: async (absolutePath: string) => {
+      const host = onlyPreviewWindowHelper.getStandaloneHost();
+      if (!host) return;
+      const rootRealPath = await realpath(absolutePath).catch(() => absolutePath);
+      if (!onlyPreviewWorkspaceRegistry.isActiveProjectRoot(host.hostToken, rootRealPath)) return;
+      onlyPreviewWindowHelper.destroyStandalone();
+    },
+    /**
+     * 地址栏那一串是不是一条本机文件路径,以及该怎么落。
+     *
+     * **判据留在宿主侧**:什么算绝对路径、哪些格式普通 tab 自己渲染得了,都是 OnlyPreview 的知识,
+     * 而 `check:maestro` 的别名边界禁止 maestro 去拿它。曾经有一版是 maestro 直接 import 那两个
+     * 模块 —— 断言拦下了它,而且那些 import 还把宿主整棵 onlypreview 子树拖进了 maestro 的测试打包。
+     */
+    resolveLocalTarget: (input: string) => resolveLocalPathTarget(input)
   });
 };

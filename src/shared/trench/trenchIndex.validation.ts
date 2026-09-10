@@ -92,8 +92,11 @@ export const parseTrenchIndexReanalyzeInput = (
   value: unknown,
 ): TrenchIndexReanalyzeInput => {
   const input = record(value, 'input');
-  exactKeys(input, ['requestId'], 'input');
-  return { requestId: requestId(input.requestId) };
+  exactKeys(input, ['requestId', 'chain'], 'input');
+  return {
+    requestId: requestId(input.requestId),
+    ...(input.chain === undefined ? {} : { chain: assertTrenchChain(input.chain) }),
+  };
 };
 
 export const canonicalizeIndexAddress = (

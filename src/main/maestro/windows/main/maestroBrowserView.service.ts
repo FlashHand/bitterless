@@ -11,9 +11,7 @@ import { DebuggerCapture } from '@maestro-main/capture/debuggerCapture'
 import { chromeIdentity } from '@maestro-main/capture/chromeIdentity'
 import { ReplayEngine } from '@maestro-main/drive/replayEngine'
 import { normalizeUrl } from '@maestro-main/settings/coachSettings.service'
-import { openOnlyPreviewAbsoluteTarget } from '@main/miniapps/onlypreview/onlyPreviewExplicitOpen.service'
-import { isAbsoluteFilePath } from '@shared/onlypreview/onlyPreviewTargetInput'
-import { resolveLocalPathTarget } from './localPathTarget'
+import { getMaestroPreviewOpener } from './previewOpener.registry'
 import { focusAddressBarForBlankTab } from './newTabFocus'
 import { MAESTRO_PARTITION } from '@maestro-main/data/maestroDataRoot'
 import type { NetworkInterceptionRule } from '@maestro-main/capture/networkInterception'
@@ -138,6 +136,14 @@ export interface OperationTab {
    * workspace and its host capability alive and unreachable.
    */
   surface?: View | null
+  /**
+   * A composite mini-app's LIVE address-bar string, pushed up by the mini app itself.
+   *
+   * Empty/absent = fall back to the spec's static `displayUrl`. OnlyPreview uses this to show the
+   * `file://` URL of whatever it is currently previewing, so the address bar reads like a real
+   * browser's (Ral 2026-09-10) instead of a fixed `bitterless://only-preview`.
+   */
+  compositeDisplayUrl?: string
   capture: DebuggerCapture | null
   replay: ReplayEngine | null
   attachReady?: Promise<void>
@@ -255,31 +261,22 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     if (!this._state.operationView) return
     const active = this.tabs.find((tab) => tab.id === this.activeTabId)
     if (active?.kind !== 'browser') return
-    // 本机绝对路径(Ral 2026-09-09,`docs/features/address-bar-local-path.md`)。
-    //
-    // **在** → 交给 OnlyPreview。这里落的是**独立窗口**,而 micromeet-cowork 那边落 mini-app tab ——
-    // 那是刻意的分歧:bitterless 的 OnlyPreview 本来就是一个一等窗口,在 tab 里再造一个预览面等于
-    // 同一件事有两个入口。判据本身两仓共用(`@shared/onlypreview/onlyPreviewTargetInput`,那一面
-    // 逐字节等同),分歧只在落点。
-    //
-    // **不在** → 落一发 `file://`,让 Chromium 出它自己的「文件不存在」页 —— 也就是网页那条路上
-    // 一次失败加载的落地页,Ral 要的「和网页共用不存在的组件」。
     const raw = (params.url || '').trim()
-    const isLocalPath = isAbsoluteFilePath(raw)
-    let localFileUrl = ''
-    if (isLocalPath) {
-      const local = resolveLocalPathTarget(raw)
-      if (local.kind === 'preview') {
-        await openOnlyPreviewAbsoluteTarget(local.path)
-        return
-      }
-      // `chrome` 与 `missing` 都落到下面那一发 `file://`:一个是 Chromium 自己渲染这个文件,
-      // 一个是 Chromium 自己的「文件不存在」页 —— 同一条加载路径,两种落地页都不是我们画的。
-      localFileUrl = local.fileUrl
+    // 本机绝对路径 —— **判据与落法都问宿主的预览端口**,maestro 不认识 OnlyPreview
+    // (`check:maestro` 的别名边界;`MaestroPreviewOpener.resolveLocalTarget` 上写了完整理由)。
+    //
+    // `null` = 不是本机路径,按地址原路走。`preview` 交给预览应用;`chrome` 与 `missing` 都落下面
+    // 那一发加载 —— 一个是 Chromium 自己渲染这个文件,一个是 Chromium 自己的「文件不存在」页,
+    // 两张落地页都不是我们画的,这也是它们能共用一条代码路径的原因。
+    const previewOpener = getMaestroPreviewOpener()
+    const localTarget = previewOpener?.resolveLocalTarget(raw) ?? null
+    if (localTarget?.kind === 'preview') {
+      await previewOpener!.open(localTarget.path)
+      return
     }
     // 路径那一支**不能**过 `normalizeUrl` —— 它会把 `/Users/…` 补成 `https:///Users/…`,
     // 落地是一张无解的错误页,而不是「这个文件不存在」。
-    const target = isLocalPath ? localFileUrl : normalizeUrl(params.url)
+    const target = localTarget ? localTarget.fileUrl : normalizeUrl(params.url)
     if (!target) return
     await this._state.operationView.webContents.loadURL(target).catch((err) => {
       this._state.emitTrace({ kind: 'error', msg: 'navigate: ' + (err as Error).message, ts: Date.now() })
@@ -518,6 +515,15 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
         close: () => void this.closeTab({ id: tab.id }),
         setTitle: (title) => {
           tab.title = title || spec.title
+          this.broadcastTabs()
+        },
+        setDisplayUrl: (url) => {
+          const next = String(url || '')
+          if (tab.compositeDisplayUrl === next) return
+          tab.compositeDisplayUrl = next
+          // 地址栏是 `sendNav` 推的,tab 条是 `broadcastTabs` 推的 —— 两处都显示这个串,所以都要推。
+          // 只在这个 tab **是当前活动 tab** 时推地址栏:后台 tab 改了地址会把前台那一行覆盖掉。
+          if (this.activeTabId === tab.id) this.sendTabNav(tab)
           this.broadcastTabs()
         },
         isOpen: () => this.tabs.includes(tab)
@@ -856,7 +862,11 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
 
   private displayUrl(tab: OperationTab): string {
     if (tab.kind === 'home') return MAESTRO_LOCAL_HOME_DISPLAY_URL
-    if (tab.kind === 'onlypreview') return this.compositeTabs.get(tab.id)?.displayUrl ?? ''
+    if (tab.kind === 'onlypreview') {
+      // live 值优先,注册时那个静态串是**兜底** —— 没有项目、没有选中文件时仍然显示
+      // `bitterless://only-preview`。次序反过来会让 live 值永远到不了地址栏(Ral 2026-09-10)。
+      return tab.compositeDisplayUrl || (this.compositeTabs.get(tab.id)?.displayUrl ?? '')
+    }
     return tab.url
   }
 

@@ -1,3 +1,4 @@
+import { interpolateOnlyPreview } from './onlyPreviewFormat';
 import { reactive } from 'vue';
 import { applyRendererLanguage } from '@renderer/common/i18n/i18n.helper';
 import {
@@ -18,6 +19,13 @@ const en = {
     hintClose: 'Close',
     unavailable: 'This bookmarked folder is unavailable. You can remove its bookmark.'
   },
+  /**
+   * **这个应用**的名字(不是 OnlyPreview 这个界面的名字)。
+   *
+   * 所有会提到产品的文案里只写 `{app}`,由这里注入 —— 这份渲染层是与另一个仓逐字节共用的,
+   * 文案里写死一个品牌名,re-vendor 时就会把它带到另一个产品里去(Ral 2026-09-10 报的正是这个)。
+   */
+  appName: 'Bitterless',
   productName: 'OnlyPreview',
   bootstrapFailed: 'OnlyPreview could not start. Close and reopen it to retry.',
   topbar: {
@@ -98,7 +106,7 @@ const en = {
     reveal: 'Reveal in folder',
     unsupportedTitle: 'Preview not available',
     unsupportedBody:
-      'This file type is not rendered in Bitterless. You can open it with its default app.',
+      'This file type is not rendered in {app}. You can open it with its default app.',
     failedTitle: 'Preview could not be loaded',
     pdfFailed: 'The PDF could not be rendered.',
     pdfPage: 'Page {page}',
@@ -175,9 +183,9 @@ const en = {
     pending: 'Loading setup instructions…',
     copied: 'Setup instructions copied.',
     copyFailed: 'Could not copy the setup instructions. Try again.',
-    restartRequiredTitle: 'Restart Bitterless',
+    restartRequiredTitle: 'Restart {app}',
     restartRequired:
-      'The setup contract is unavailable or out of date. Restart Bitterless and reopen this Guide.',
+      'The setup contract is unavailable or out of date. Restart {app} and reopen this Guide.',
     testInstanceTitle: 'Test instance: {serverName}',
     previewChannelMountGuide:
       'Preview channel: mount this MCP as bitterless-preview and install the complete bundled bitterless-preview skill directory; after installing Production, copy its new Guide to replace the skill and use production bitterless.',
@@ -191,7 +199,7 @@ const en = {
     WORKSPACE_NOT_FOUND: 'This project is no longer available. Open it again.',
     WORKSPACE_ACCESS_DENIED: 'This project belongs to another preview session.',
     PATH_NOT_FOUND: 'The file is no longer at this location.',
-    PATH_PERMISSION_DENIED: 'Bitterless does not have permission to read this file or folder.',
+    PATH_PERMISSION_DENIED: '{app} does not have permission to read this file or folder.',
     PATH_OUTSIDE_WORKSPACE: 'The file resolves outside the open project and cannot be previewed.',
     PATH_NOT_REGULAR_FILE: 'Only regular files can be previewed.',
     NAME_INVALID: 'This name cannot be used on Windows or macOS.',
@@ -254,6 +262,7 @@ const zh: Localized<typeof en> = {
     hintClose: '关闭',
     unavailable: '此书签目录已不可用，可移除书签。'
   },
+  appName: 'Bitterless',
   productName: 'OnlyPreview',
   bootstrapFailed: 'OnlyPreview 无法启动。请关闭后重新打开。',
   topbar: {
@@ -333,7 +342,7 @@ const zh: Localized<typeof en> = {
     openExternallyFailed: '无法使用默认应用打开此文件。',
     reveal: '在文件夹中显示',
     unsupportedTitle: '暂不支持预览',
-    unsupportedBody: '此文件类型无法在 Bitterless 中渲染。可以使用默认应用打开。',
+    unsupportedBody: '此文件类型无法在 {app} 中渲染。可以使用默认应用打开。',
     failedTitle: '预览加载失败',
     pdfFailed: 'PDF 无法渲染。',
     pdfPage: '第 {page} 页',
@@ -407,8 +416,8 @@ const zh: Localized<typeof en> = {
     pending: '正在加载设置说明…',
     copied: '设置说明已复制。',
     copyFailed: '无法复制设置说明，请重试。',
-    restartRequiredTitle: '重启 Bitterless',
-    restartRequired: '设置契约不可用或已过期。请重启 Bitterless 后重新打开此窗口。',
+    restartRequiredTitle: '重启 {app}',
+    restartRequired: '设置契约不可用或已过期。请重启 {app} 后重新打开此窗口。',
     testInstanceTitle: '测试实例：{serverName}',
     previewChannelMountGuide:
       'Preview 渠道：将当前 MCP 以 bitterless-preview 挂载并安装内置的完整 bitterless-preview 技能目录；后续安装正式版时，复制正式版的新 Guide 即可覆盖技能并改用生产 bitterless。',
@@ -421,7 +430,7 @@ const zh: Localized<typeof en> = {
     WORKSPACE_NOT_FOUND: '当前项目已不可用。请重新打开。',
     WORKSPACE_ACCESS_DENIED: '此项目属于另一个预览会话。',
     PATH_NOT_FOUND: '文件已不在原位置。',
-    PATH_PERMISSION_DENIED: 'Bitterless 没有读取此文件或文件夹的权限。',
+    PATH_PERMISSION_DENIED: '{app} 没有读取此文件或文件夹的权限。',
     PATH_OUTSIDE_WORKSPACE: '此文件指向当前项目之外，无法预览。',
     PATH_NOT_REGULAR_FILE: '只能预览普通文件。',
     NAME_INVALID: '该名称在 Windows 或 macOS 上不可用。',
@@ -489,4 +498,7 @@ export const initializeOnlyPreviewI18n = async (): Promise<void> => {
 };
 
 export const getOnlyPreviewErrorMessage = (code: OnlyPreviewErrorCode): string =>
-  onlyPreviewI18n.errors[code] || onlyPreviewI18n.errors.OPERATION_FAILED;
+  // `{app}` 在这里注入 —— 错误文案是从一张表里按码取的,调用方拿不到插值的机会。
+  interpolateOnlyPreview(onlyPreviewI18n.errors[code] || onlyPreviewI18n.errors.OPERATION_FAILED, {
+    app: onlyPreviewI18n.appName
+  });

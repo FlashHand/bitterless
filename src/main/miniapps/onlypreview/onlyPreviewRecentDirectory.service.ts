@@ -200,18 +200,38 @@ export class OnlyPreviewRecentDirectoryService {
     });
   }
 
-  async restoreWorkspace(hostToken: unknown): Promise<OnlyPreviewWorkspace | null> {
+  /**
+   * 恢复上次打开的项目。
+   *
+   * `presentRestoredSelection`(缺省 `true`)决定**要不要顺手把那个项目记住的文件呈现出来**。
+   * 启动恢复要(那正是"下次打开还在上次那个文件"),而「刚刚显式打开了一个项目外的文件、只是想让
+   * 项目回到树里」的那条路**不要** —— 它会把刚呈现的外部文件换掉,而那次替换是静默的:
+   * 表现是"第一次打开没反应,第二次才行"
+   * (`docs/issues/onlypreview-first-external-open-is-replaced-by-the-restored-project.md`)。
+   */
+  async restoreWorkspace(
+    hostToken: unknown,
+    options: { presentRestoredSelection?: boolean } = {}
+  ): Promise<OnlyPreviewWorkspace | null> {
     const host = this.hosts.require(hostToken, ['content']);
     const current = this.workspaces.restore(host.hostToken);
     if (current) return current;
     if (this.activeExplicitGeneration !== null) return null;
 
+    // 飞行缓存按 host 共用,所以两个调用方的 `presentRestoredSelection` 可能不一致 —— 先到的那个
+    // 决定这一次。**这不是漏洞**:唯一会撞上的组合是「显式打开一个外部文件」与「shell 挂载时的恢复」
+    // 同时发生,而那时候不呈现那个记住的文件正是对的 —— 人刚刚点名要看另一个文件。
     const existingFlight = this.restoreFlights.get(host.hostToken);
     if (existingFlight) return await existingFlight;
 
     const generation = this.mutationGeneration;
     const hostGeneration = this.hostGeneration.get(host.hostToken) ?? 0;
-    const flight = this.restoreFromStorage(host.hostToken, generation, hostGeneration);
+    const flight = this.restoreFromStorage(
+      host.hostToken,
+      generation,
+      hostGeneration,
+      options.presentRestoredSelection !== false
+    );
     this.restoreFlights.set(host.hostToken, flight);
     try {
       return await flight;
@@ -271,7 +291,8 @@ export class OnlyPreviewRecentDirectoryService {
   private async restoreFromStorage(
     hostToken: string,
     generation: number,
-    hostGeneration: number
+    hostGeneration: number,
+    presentRestoredSelection: boolean
   ): Promise<OnlyPreviewWorkspace | null> {
     if (!(await this.storageLatch)) return null;
     if (!this.canRestore(hostToken, generation, hostGeneration)) return null;
@@ -324,6 +345,10 @@ export class OnlyPreviewRecentDirectoryService {
       }
       if (!selectedRelativePath) return workspace;
       const restored = { ...workspace, selectedRelativePath };
+      // **只在被要求时呈现。** 不呈现时仍然把 `selectedRelativePath` 带回去 —— 树里照样高亮那一项,
+      // 只是预览区不动。那正是"外部预览与项目选中并存"的既有语义(见
+      // `onlypreview-external-preview-clears-project-selection.md` 最后那次裁定)。
+      if (!presentRestoredSelection) return restored;
       // Best effort: a file that has been deleted or replaced by a directory since the last session
       // leaves the Project open with nothing previewed, which is the right outcome.
       await this.presentSelection?.(hostToken, restored).catch(() => undefined);

@@ -4,6 +4,14 @@
   gap: 12px;
   min-width: 0;
 
+  .arco-textarea-wrapper {
+    border: 0;
+  }
+
+  .arco-radio-button::after {
+    display: none;
+  }
+
   label {
     font-size: 13px;
   }
@@ -24,5 +32,16 @@
     flex-wrap: wrap;
     gap: 8px;
     color: rgb(var(--danger-6));
+  }
+}
+
+.trench-index-add-modal {
+  max-width: calc(100vw - 24px);
+  border-radius: 8px;
+
+  .arco-modal-header,
+  .arco-modal-footer,
+  .arco-btn {
+    border: 0;
   }
 }

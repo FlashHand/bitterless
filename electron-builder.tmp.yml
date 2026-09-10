@@ -44,7 +44,6 @@ files:
   - '!{package.rig.json5,env.rig.json5}'
   - '!bitterless-bot.memory-card.json'
   - '!**/*.md'
-  - '!**/node-pty/prebuilds/win32*/**'
 extraResources:
   - from: asar_unpacked
     to: app.asar.unpacked
@@ -56,10 +55,10 @@ extraResources:
     to: agent-skills/bitterless-trench
   - from: build/maestro-tools
     to: maestro-tools
-  - from: doc/bitterless-tray-mac-24.png
-    to: app.asar.unpacked/icons/bitterless-tray-mac-24.png
-  - from: doc/bitterless-tray-mac-24@2x.png
-    to: app.asar.unpacked/icons/bitterless-tray-mac-24@2x.png
+  - from: doc/bitterless-tray-mac-22.png
+    to: app.asar.unpacked/icons/bitterless-tray-mac-22.png
+  - from: doc/bitterless-tray-mac-22@2x.png
+    to: app.asar.unpacked/icons/bitterless-tray-mac-22@2x.png
   - from: build/tray-win.ico
     to: app.asar.unpacked/icons/tray-win.ico
   - from: build/sounds

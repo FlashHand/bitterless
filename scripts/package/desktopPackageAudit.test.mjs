@@ -661,7 +661,6 @@ test('dependency classification keeps external runtime roots and bundles selecte
     'markstream-vue',
     'monaco-editor',
     'nanoid',
-    'node-pty',
     'pdf-parse',
     'quill',
     'shiki',
@@ -673,7 +672,6 @@ test('dependency classification keeps external runtime roots and bundles selecte
     'vue-i18n',
     'vue-router',
     'vuedraggable',
-    'xterm',
   ];
 
   assert.deepEqual(Object.keys(packageJson.dependencies), externalRuntimeDependencies);

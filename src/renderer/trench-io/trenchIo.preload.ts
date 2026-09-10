@@ -133,6 +133,11 @@ export class TrenchIoRuntime extends XpcPreloadHandler implements TrenchIoRuntim
     return await result((repo) => repo.getWorkspace());
   }
 
+  async saveTargets(input: TrenchIoRuntimeRequest<TrenchIndexStorageAddTargetsAndBeginRunInput>) {
+    const request = requireRequest<TrenchIndexStorageAddTargetsAndBeginRunInput>(input);
+    return await result((repo) => repo.saveTargets(request));
+  }
+
   async addTargetsAndBeginRun(
     input: TrenchIoRuntimeRequest<TrenchIndexStorageAddTargetsAndBeginRunInput>,
   ) {

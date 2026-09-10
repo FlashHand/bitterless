@@ -19,7 +19,7 @@ const compiled = await build({
   stdin: {
     contents: [
       "export { isAbsoluteFilePath } from './src/shared/onlypreview/onlyPreviewTargetInput.ts';",
-      "export { resolveLocalPathTarget } from './src/main/maestro/windows/main/localPathTarget.ts';"
+      "export { resolveLocalPathTarget } from './src/main/windows/onlyPreviewLocalPathTarget.ts';"
     ].join('\n'),
     resolveDir: root
   },
@@ -124,16 +124,15 @@ describe('resolveLocalPathTarget', () => {
     assert.equal(resolveLocalPathTarget('C:\\Users\\ral\\x.html', withExisting()).kind, 'missing');
   });
 
-  test('不是绝对路径 → missing 且 fileUrl 为空串(调用方的 `if (!target) return` 吞掉)', () => {
+  test('不是绝对路径 → `null`（「不是我的」）', () => {
     // **这一条守着一个静默缺陷**:`resolve('')` 是当前工作目录,而它一定存在 —— 少了前置判断,
     // 空输入会变成"预览 cwd"。所以这里的 exists 故意说"什么都在"。
+    //
+    // 返回值从早先的 `{ kind: 'missing', fileUrl: '' }` 换成 `null`:端口需要一个明确的
+    // 「不是本机路径」答案,空串哨兵跨边界读不出这个意思(`MaestroPreviewOpener.resolveLocalTarget`)。
     const everythingExists = () => true;
     for (const value of ['', '   ', 'example.com', 'Users/ral/x.html']) {
-      assert.deepEqual(
-        resolveLocalPathTarget(value, everythingExists),
-        { kind: 'missing', fileUrl: '' },
-        JSON.stringify(value)
-      );
+      assert.equal(resolveLocalPathTarget(value, everythingExists), null, JSON.stringify(value));
     }
   });
 
@@ -143,26 +142,48 @@ describe('resolveLocalPathTarget', () => {
   });
 });
 
-/** maestro 那一侧的接线。 */
-describe('maestro navigate 的 path 分支', () => {
+/**
+ * maestro 那一侧的接线 —— 现在走**宿主的预览端口**。
+ *
+ * 早先这里是 maestro 直接 import `@shared/onlypreview/*` 与 `@main/miniapps/onlypreview/*`。
+ * `check:maestro` 的别名边界拦下了它,而且那些 import 还把宿主整棵 onlypreview 子树(连 fileSearch /
+ * menu)拖进了 maestro 的测试打包,`maestroCompositeTabNavigation` 直接在 esbuild 阶段挂掉。
+ * 所以守卫反过来写:**maestro 里不许出现任何 onlypreview 别名**。
+ */
+describe('maestro navigate 走预览端口', () => {
   const source = read('src/main/maestro/windows/main/maestroBrowserView.service.ts');
   const navigate = source.slice(
     source.indexOf('async navigate('),
     source.indexOf('async reload(')
   );
 
-  test('存在的路径交给 OnlyPreview 并就地 return(不再落一发网页加载)', () => {
-    assert.match(navigate, /local\.kind === 'preview'/);
-    assert.match(navigate, /openOnlyPreviewAbsoluteTarget\(local\.path\)[\s\S]{0,40}return/);
+  test('本机路径的判据与落法都问端口,不自己判', () => {
+    assert.match(navigate, /getMaestroPreviewOpener\(\)/);
+    assert.match(navigate, /resolveLocalTarget\(raw\)/);
+    assert.match(navigate, /localTarget\?\.kind === 'preview'[\s\S]{0,80}\.open\(localTarget\.path\)/);
   });
 
   test('路径那一支不过 normalizeUrl —— 否则被补成 https:///Users/…', () => {
-    assert.match(navigate, /isLocalPath \? localFileUrl : normalizeUrl\(params\.url\)/);
+    assert.match(navigate, /localTarget \? localTarget\.fileUrl : normalizeUrl\(params\.url\)/);
   });
 
-  test('判据用共用的那一份,不在本文件里重写正则', () => {
-    assert.match(source, /import \{ isAbsoluteFilePath \} from '@shared\/onlypreview\/onlyPreviewTargetInput'/);
+  test('maestro 里不出现任何 onlypreview 别名 —— 这是别名边界,不只是风格', () => {
+    assert.doesNotMatch(source, /@shared\/onlypreview\//);
+    assert.doesNotMatch(source, /@main\/miniapps\/onlypreview\//);
     assert.doesNotMatch(navigate, /\[A-Za-z\]:/, 'navigate 里出现盘符正则 = 判据被复制了一份');
+  });
+});
+
+describe('宿主那一侧实现端口', () => {
+  const opener = read('src/main/windows/onlyPreviewMaestroOpener.ts');
+
+  test('端口的 resolveLocalTarget 由宿主的解析器实现', () => {
+    assert.match(opener, /resolveLocalTarget: \(input: string\) => resolveLocalPathTarget\(input\)/);
+    assert.match(opener, /from '@main\/windows\/onlyPreviewLocalPathTarget'/);
+  });
+
+  test('解析器住在宿主侧 —— maestro 那棵树里不该再有它', () => {
+    assert.doesNotMatch(opener, /maestro\/windows\/main\/localPathTarget/);
   });
 });
 

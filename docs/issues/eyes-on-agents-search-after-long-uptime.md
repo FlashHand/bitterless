@@ -1,6 +1,6 @@
 # EyesOnAgents Search Stops Accepting Input or Updating Results
 
-Status: reproduced failure path fixed; owner verification pending (2026-09-07).
+Status: lifecycle and same-lifetime IME rerender repairs implemented; owner verification pending (2026-09-10).
 
 ## Owner report
 
@@ -78,6 +78,32 @@ source checks 3/3, scoped UI typecheck and current-profile main/preload/renderer
 Scoped lint retains existing regex/test-style violations; whitespace checks passed. No Electron,
 E2E, independent review or installed-app replacement was performed. Use a build containing tasks
 099/100 for the owner check below.
+
+### Same-lifetime IME overwrite (2026-09-10)
+
+The owner narrowed the symptom to Pinyin input after opening Search with Cmd+F and explicitly
+requires keeping `computed`. Read-only tests with the current ThreadSearch, real Arco Modal/Input,
+and actual store reproduce the overwrite without closing/remounting the input: while composition is
+pending, `loadSnapshot(true)`, selected-result updates or a pending search commit repatch the old
+bound value into the DOM. `setTitleDraft` is not called. An old draft of `cla` restores `cla` over
+`cla zhong`, demonstrating a DOM rollback rather than a store clear.
+
+Arco suppresses model emits while composing but renders `value: computedValue`; Vue's ordinary DOM
+value patch overwrites the pending text. Switching between computed v-model and explicit
+model-value/update syntax does not change the result. A native `input v-model` keeps composition
+under the same updates because Vue's input directive guards composing elements. Repeated focus on
+an already focused field alone does not reproduce the overwrite. These are component-level proofs,
+not a simulation of macOS's native input engine.
+
+[Task 101](../plan/tasks/eyes-on-agents-search-ime-render-101.md) replaces the Arco text field with
+a composition-aware native input, retaining the computed adapter, raw draft and search scheduler.
+This extends rather than reattributes the distinct lifecycle fix from tasks 099/100.
+
+Task 101 verification: native-input/real-Modal interactions 12/12, UI typecheck and compiled
+renderer style check passed. The full UI aggregate passed 121/123; the two remaining source
+assertions concern the existing Windows App ID expression and the owner's pre-existing section-ID
+space, as recorded in Task 101. No Electron was launched. Live verification must use the new code
+containing Task 101; the earlier installed-version observation above is historical.
 
 ### Human verification
 

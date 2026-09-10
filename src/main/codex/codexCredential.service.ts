@@ -142,6 +142,14 @@ export interface PiAuthModule {
 export interface CodexCredentialServiceDependencies {
   authPath(): string;
   modelsPath(): string;
+  /**
+   * 退出登录时**连退役位置一起清**(可选;不注入就只清 `authPath()`)。
+   *
+   * 为什么需要它:`maestroAuthPath()` 每次调用都会把退役库里缺的 provider 前向合并进来,所以只清
+   * 当前那一份的话,下一次就绪探测就把凭据**复活**了 —— Logout 看起来像没反应。
+   * 契约:`docs/issues/codex-login-writes-a-store-the-turn-never-reads.md`。
+   */
+  clearLegacyCredential?: (provider: string) => void;
   loadPiAuthModule(): Promise<PiAuthModule>;
   openExternal(url: string): Promise<void>;
   createBrowserCallbackCapture(): Promise<CodexBrowserCallbackCapture>;
@@ -422,6 +430,9 @@ export class CodexCredentialService {
         if (auth.logout) auth.logout(CODEX_PROVIDER);
         else await auth.delete(CODEX_PROVIDER);
       }
+      // 退役库也要清 —— 否则前向合并会在下一次探测时把它复活(见 `clearLegacyCredential` 的注释)。
+      // 放在 pi 的 logout **之后**:先让权威的那一份被清掉,这一步只负责不让旧副本回来。
+      this.dependencies.clearLegacyCredential?.(CODEX_PROVIDER);
       const status = await this.getStatus();
       if (!status.connected && !status.errorCode) this.notifyTransition('logout-succeeded');
       return status;

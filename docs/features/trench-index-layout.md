@@ -6,50 +6,52 @@ Status: Implemented
 
 INDEX keeps the existing Todo-parity 32px Royal Blue Trench menu bar and removes the former
 record-vault hierarchy. It is a compact research index, not a trading dashboard: flat white/utility
-surfaces, restrained borders, monospace addresses, no gradient, chart, KPI-card strip, or new color
-system. Chain identity is the single visual signature: SOL uses a restrained `#14b887` rail and BSC
-uses `#c89500`; the colors appear only on the INDEX column-header rail and compact chain badges,
+surfaces, spacing instead of borders, monospace addresses, no gradient, chart, KPI-card strip, or new color
+system. Chain identity is the single visual signature: SOL uses restrained `#128567` text and BSC
+uses `#926d00`; the colors appear only on the INDEX column-header text,
 never as large fills or decorative gradients. Module and chain ownership now follows
 [`trench-navigation-layout.md`](trench-navigation-layout.md).
 
 ## Desktop and wide Omni
 
 ```text
-┌──────── Trench ── status · ＋ Token CA · Agent · Refresh · ⚙ · Host ┐
-├───────────────┬─────────────────────────────────────────────────────┤
-│ ▾ INDEX       │ [↻ Reanalyze all] Last successful …                │
-│   SOL         ├───────────────────────────┬─────────────────────────┤
-│   BSC         │ SOL TARGET CAs            │ SOL INDEX WALLETS       │
-│   Robinhood   │ Token name · SYMBOL       │ #001 wallet address     │
-│ ▾ Trenchers   │ CA                        │ total profit            │
-│   All traders │ Current MC · Highest      │ 3 CAs · best #2         │
-│               │ Last success / error      │ name / note             │
-│               │ …                         │ … up to 300             │
-│               └───────────────────────────┴─────────────────────────┤
-└─────────────────────────────────────────────────────────────────────┘
+Trench                 status        Agent  Refresh  Settings  Host
+
+INDEX            Last successful ...
+  SOL
+  BSC            SOL CA LIST       [+]    SOL INDEX WALLETS [Generate]
+  Robinhood      SYMBOL  Token name       #001 wallet address
+Trenchers        CA                       total profit
+  All traders    Current MC / Highest     3 CAs / best #2
+                 Not generated / Updated  name / note
+                 ...                      ... up to 300
 ```
 
 - The menu bar remains exactly the accepted Todo-parity contract in [`coin-layout.md`](coin-layout.md):
   32px, `#4e5882`, `#3d4666`, one `Trench` title, standalone traffic-light clearance, Omni no-drag,
-  and always-reachable Add Token CA/Agent/Refresh/GMGN settings actions. The settings action is the same 28px
+  and always-reachable Agent/Refresh/GMGN settings actions. Add belongs to the CA list, not the menu.
+  The settings action is the same 28px
   text-button/icon treatment as Todo and the other Trench actions; it adds no new header height,
   background, label row, or accent color.
 - The Arco left rail contains INDEX children SOL, BSC, and Robinhood in that order. It is the only
   selected-chain owner; the old module/chain tab row does not render.
 - Every menu child is keyboard reachable through Arco semantics. Selecting an INDEX child changes
   both columns atomically and never starts provider analysis or storage writes.
-- A 40px action/status row contains `Reanalyze all`, the last completed time, and a concise
+- A 40px status row contains the last completed time and a concise
   global running/failure status. Header `Refresh` remains local reread; its tooltip must not imply
   analysis.
 - Content is a two-column CSS grid. Target CAs default to 42% with a 320px useful minimum; INDEX
-  wallets take the remaining width. Each column owns its header and vertical scroll.
+  wallets take the remaining width. Each column owns its 44px header and vertical scroll.
+  Add is a labelled borderless plus IconBtn in the left header; Generate is a borderless
+  icon-and-text command in the right header. Background gaps and alternating row fills replace lines.
 - There is no record detail pane in v1.
 
 ## Target CA rows
 
 Rows use a stable business name and contain:
 
-1. token name and symbol; the selected INDEX menu child and column header already identify chain;
+1. symbol followed by token name, both automatically resolved on Add and visually ellipsized;
+   the selected INDEX menu child and column header already identify chain;
 2. the full CA as copyable monospace text with visual ellipsis only;
 3. current market cap and, when available, `Highest MC`, `Estimated highest`, or
    `Highest observed`;
@@ -83,10 +85,9 @@ module-local duplicate name/avatar/note field shape.
 
 ## Add CA dialog
 
-- The menu-bar plus icon is labelled `Add Token CA`, available in every module and host. No Add
-  button remains inside INDEX. The dialog is global, not unmounted when changing modules.
-- An explicit SOL/BSC/RHC selector defaults to the active INDEX chain, or retains the last dialog
-  chain outside INDEX. Changing chain preserves pasted input. Submission/transport failures retain
+- The CA-list plus icon is labelled `Add Token CA`. The dialog remains mounted at app level so
+  changing modules cannot drop an in-flight import.
+- An explicit SOL/BSC/RHC selector defaults to the active INDEX chain. Changing chain preserves pasted input. Submission/transport failures retain
   input, release loading, and keep the dialog open. Unchanged retries reuse the request identity.
 
 - The dialog is scoped to its explicit chain and names it in the input guidance. One labelled
@@ -102,11 +103,12 @@ module-local duplicate name/avatar/note field shape.
 - Retained EVM input is submitted with the explicit selected BSC/Robinhood chain; retained Base58
   input is submitted as explicit Solana. The dialog never silently routes an ignored CA into a
   different chain INDEX.
-- Primary action is `Update INDEX`; secondary action cancels without mutation.
+- Primary action is `Add`; secondary action cancels without mutation.
 - Validation, not-found, ambiguous-chain, busy, and provider failures render inline with focus
   returned to the relevant control.
-- Submission is request-idempotent. The dialog closes only after the target is persisted; analysis
-  continues visibly in the workspace.
+- Submission is request-idempotent. The dialog closes only after all retained targets are persisted
+  with provider metadata. Rows display symbol, name and Not generated; published wallets stay unchanged.
+  Generate is a separate explicit command over the selected chain's saved list, including incumbents.
 
 ## GMGN settings dialog
 
@@ -139,7 +141,7 @@ Add CA dialog (preserved underneath, when opened from its error)
   configured key without requiring replacement. `Get API key` uses the existing allowlisted
   official-link action. No control accepts a CLI path or private key.
 - When opened over Add CA, closing settings returns to the still-open Add dialog with its CA batch
-  unchanged. Verification never submits the batch; Ral explicitly chooses `Update INDEX` again.
+  unchanged. Verification never submits the batch; Ral explicitly chooses `Add` again.
 - Initial focus enters the dialog heading/first available control; `Tab` stays within the modal and
   `Esc` closes only while no save/probe is pending. Pending actions disable duplicate submission and
   expose a visible loading state.
@@ -148,11 +150,12 @@ Add CA dialog (preserved underneath, when opened from its error)
 
 | State | Target column | INDEX column | Actions |
 | --- | --- | --- | --- |
-| no targets on selected chain | compact chain-specific Add CA invitation | explain that this chain's INDEX appears after adding a CA | Add enabled; Reanalyze all follows global target availability |
-| analyzing | current rows with per-target progress | previous current INDEX remains visible | Add/Reanalyze disabled |
+| no targets on selected chain | compact empty CA list | no generated wallets | Add enabled; Generate disabled |
+| saved, not generated | symbol, name, CA and pending status | previous INDEX stays unchanged | Generate enabled |
+| analyzing | current rows with per-target progress | previous current INDEX remains visible | Add/Generate disabled |
 | first run no result | target rows and truthful status | bounded progress skeleton, not sample wallets | local Refresh enabled |
-| failed with prior result | failed targets retain old Meta | prior INDEX plus non-blocking failed-run notice | Reanalyze enabled |
-| failed without result | target rows show reason | explicit unavailable state | Reanalyze enabled |
+| failed with prior result | failed targets retain old Meta | prior INDEX plus non-blocking failed-run notice | Generate enabled |
+| failed without result | target rows show reason | explicit unavailable state | Generate enabled |
 | storage unavailable | no fabricated data | one repository error surface | local Retry only |
 | GMGN unavailable | prior target/INDEX data remains visible | typed provider guidance | Configure GMGN; no automatic analysis retry |
 
@@ -167,7 +170,8 @@ labels.
 - The left rail stays 148px on wide layouts and 112px below 560px; complete child labels remain
   visible and independently scrollable rather than collapsing to unlabeled icons.
 - The action bar wraps without hiding its controls. The menu status text yields before the
-  header icon actions, preserving Add Token CA, Agent, Refresh, and GMGN settings. At narrow width the status
+  header icon actions, preserving Agent, Refresh, and GMGN settings. Column actions remain fixed-size.
+  At narrow width the status
   label hides before any icon action.
 - At 398x568 and 800x282 Omni cells, every action remains reachable, each list owns scrolling, and
   the renderer root has no horizontal overflow or artificial 800x600 minimum.
@@ -180,7 +184,7 @@ labels.
 - Current/highest market-cap evidence has accurate labels and no false zero.
 - SOL/BSC switching changes targets, wallets, empty states, headers, and ranks together without a
   provider call or mutation; mixed-chain results never render in the same column projection.
-- Add CA and Reanalyze all are distinct, keyboard-reachable, and disabled only when their operation
+- Add CA and Generate are distinct, keyboard-reachable, and disabled only when their operation
   cannot safely start.
 - GMGN settings is reachable from the menu bar in standalone and every accepted Omni geometry;
   provider failure offers the same recovery without clearing a pasted CA batch.

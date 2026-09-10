@@ -1,4 +1,5 @@
 import type { Rectangle, WebContentsView } from 'electron';
+import { notifyOnlyPreviewDisplayUrl } from '@main/miniapps/onlypreview/onlyPreviewDisplayUrl.registry';
 import { xpcMain } from 'electron-xpc/main';
 import { randomUUID } from 'node:crypto';
 import { fileSearchWindowService } from '@main/fileSearch/fileSearchWindow.service';
@@ -766,6 +767,9 @@ export class OnlyPreviewPreviewRegionService {
     xpcMain.broadcast(ONLY_PREVIEW_PREVIEW_PRESENTATION_EVENT, {
       hostId: this.runtime.host.hostId
     });
+    // 地址栏跟着预览走(Ral 2026-09-10)。这里是每一种"预览变了"的汇合点 —— 逐个调用方各推一次
+    // 必然漏掉某一条,而漏掉的后果是地址栏静默停在上一个文件。一格槽的理由见那个模块的注释。
+    notifyOnlyPreviewDisplayUrl(this.runtime.host.hostToken);
   }
 
   private snapshotInternal(includeVueAsset = false): OnlyPreviewPreviewPresentation {

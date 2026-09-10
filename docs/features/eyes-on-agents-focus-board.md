@@ -140,7 +140,11 @@ closed. This resets private input-method composition state when a composition is
 closing/hiding Search; clearing the bound draft alone is insufficient. Normal completed composition
 and composing navigation keys retain their input-method behavior.
 
-The field binds its unmodified draft with `v-model`. Read-only computed search state owns Unicode,
+The native text field binds its unmodified draft through the existing writable computed adapter
+with Vue's `v-model` directive. Uncommitted IME text stays in the composing element and cannot be
+overwritten by snapshot, selection, focus or throttled-result rerenders; composition end publishes
+the finished raw text. The Arco Modal remains, with a compact borderless search field and an
+accessible shared IconBtn clear action. Read-only computed search state owns Unicode,
 case and separator normalization; none of those transformations writes back to the input. Search
 throttling publishes matching state only, and background snapshots cannot clear or replace the
 draft. Explicit clear/close remains the reset boundary.
@@ -165,7 +169,8 @@ succeeds; an unavailable, already-opening, or failed Open preserves the current 
 
 ### Typing is decoupled from filtering
 
-Two values back the modal. `titleDraft` is what the input shows and updates on every keystroke;
+Two values back the modal. `titleDraft` is the raw committed input, updated by ordinary typing or
+composition end (pending IME text remains native until then);
 `titleQuery` is what the result list matches. A keystroke only writes the draft and asks a shared
 `useThrottleFn(run, 120, true, true)` scheduler — leading plus trailing — to publish it.
 

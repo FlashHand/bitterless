@@ -110,11 +110,45 @@ class MemorySettingStorage {
   }
 }
 
+/**
+ * 按 `sub_key` 分开的存储。
+ *
+ * 上面那个 `MemorySettingStorage` 所有子键共用一个值 —— 对只读「上次目录」的用例够用,但读不到
+ * 「上次那个文件」(它在另一个子键上,而 `parseOnlyPreviewRecentFile` 要求三个键,拿到目录记录会
+ * 直接判无效)。呈现那一支必须有真的文件记录才走得到,所以单开一个。
+ */
+class SubKeyedSettingStorage {
+  constructor(values) {
+    this.values = new Map(Object.entries(values).map(([key, value]) => [key, JSON.stringify(value)]));
+  }
+
+  async getStored(params) {
+    const serializedValue = this.values.get(params.sub_key);
+    if (serializedValue === undefined) {
+      return { exists: false, valid: false, value: null, serializedValue: null };
+    }
+    return { exists: true, valid: true, value: JSON.parse(serializedValue), serializedValue };
+  }
+
+  async insertIfAbsent(params) {
+    if (this.values.has(params.sub_key)) return false;
+    this.values.set(params.sub_key, JSON.stringify(params.value));
+    return true;
+  }
+
+  async compareAndSet(params) {
+    if (this.values.get(params.sub_key) !== params.expectedSerializedValue) return false;
+    this.values.set(params.sub_key, JSON.stringify(params.value));
+    return true;
+  }
+}
+
 const createService = (storage) => {
   const hosts = new runtime.OnlyPreviewHostRegistry();
   const workspaces = new runtime.OnlyPreviewWorkspaceRegistry(hosts);
   const authority = new runtime.FileSearchProjectAuthority();
   const runtimeInstanceId = '123e4567-e89b-42d3-a456-426614174000';
+  const presented = [];
   const service = new runtime.OnlyPreviewRecentDirectoryService(
     hosts,
     workspaces,
@@ -133,7 +167,12 @@ const createService = (storage) => {
       );
     }
   );
-  return { hosts, workspaces, service };
+  // `presentSelection` 只能经 `configureTargetRuntime` 注入,而构造器已经吃掉了 inspect/bind ——
+  // 那个方法对重复配置会抛,所以这里直接写私有字段。测试要观察的正是"它有没有被调"。
+  service.presentSelection = async (hostToken, workspace) => {
+    presented.push({ hostToken, relativePath: workspace.selectedRelativePath });
+  };
+  return { hosts, workspaces, service, presented };
 };
 
 const settle = async () => {
@@ -705,10 +744,78 @@ test('the explicit FILE branch releases the claim and re-asks for the project', 
     '文件那支没有放开闸门 —— 新窗口里会是 No project open'
   );
   // 不 await:项目索引可能是几万个文件,预览不该等在它后面
-  assert.match(fileBranch, /void onlyPreviewRecentDirectoryService[\s\S]{0,80}\.restoreWorkspace\(/);
+  // 窗口放宽到 400:这一段中间有说明注释,而断言要钉的是「不 await」这个性质,不是行间距。
+  assert.match(fileBranch, /void onlyPreviewRecentDirectoryService[\s\S]{0,400}\.restoreWorkspace\(/);
   // 只有真恢复出项目时才广播 —— 否则 shell 会为一件没发生的事再走一遍置空
   assert.match(
     fileBranch,
     /if \(!workspace[\s\S]{0,90}\) return;[\s\S]{0,140}broadcast\(ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT/
+  );
+});
+
+/**
+ * 恢复项目时**要不要顺手呈现那个项目记住的文件**。
+ *
+ * 启动恢复要(那正是「下次打开还在上次那个文件」);而「刚显式打开了一个项目外的文件、只是想让项目
+ * 回到树里」那条路**不要** —— 呈现会把刚呈现的外部文件静默换掉,表现是「第一次打开没反应,第二次
+ * 才行」(`docs/issues/onlypreview-first-external-open-is-replaced-by-the-restored-project.md`)。
+ *
+ * 这一条只能在服务层测:界面上的表现是"看起来没打开",而那正是它一直没被任何断言抓到的原因。
+ */
+test('restoring a project presents its remembered file by default, and not when asked not to', async () => {
+  await withTempDirectory('onlypreview-restore-present-', async (root) => {
+    const canonicalRoot = realpathSync(root);
+    write(join(canonicalRoot, 'notes.md'), 'hello');
+
+    // ① 缺省:呈现
+    {
+      const storage = new SubKeyedSettingStorage({
+        last_directory: { version: 1, directoryPath: canonicalRoot },
+        last_file: { version: 1, directoryPath: canonicalRoot, relativePath: 'notes.md' }
+      });
+      const { hosts, service, presented } = createService(storage);
+      service.markStorageReady();
+      const host = hosts.issue('standalone', 'content');
+      const workspace = await service.restoreWorkspace(host.hostToken);
+      assert.equal(workspace?.selectedRelativePath, 'notes.md');
+      assert.deepEqual(
+        presented.map((entry) => entry.relativePath),
+        ['notes.md'],
+        '启动恢复必须呈现那个记住的文件 —— 少了它「下次打开还在上次那个文件」就没了'
+      );
+    }
+
+    // ② 明确不呈现:仍然把 selectedRelativePath 带回去(树里照样高亮),但预览区不动
+    {
+      const storage = new SubKeyedSettingStorage({
+        last_directory: { version: 1, directoryPath: canonicalRoot },
+        last_file: { version: 1, directoryPath: canonicalRoot, relativePath: 'notes.md' }
+      });
+      const { hosts, service, presented } = createService(storage);
+      service.markStorageReady();
+      const host = hosts.issue('standalone', 'content');
+      const workspace = await service.restoreWorkspace(host.hostToken, {
+        presentRestoredSelection: false
+      });
+      assert.equal(
+        workspace?.selectedRelativePath,
+        'notes.md',
+        '不呈现 ≠ 不告诉调用方 —— 树里那一项照样要高亮'
+      );
+      assert.deepEqual(presented, [], '这一支呈现了任何东西 = 刚打开的外部文件被换掉');
+    }
+  });
+});
+
+/** 显式文件那一支必须用「不呈现」那个入口 —— 用错就是这条 issue 的成因。 */
+test('the explicit FILE branch restores the project without presenting its remembered file', () => {
+  const source = readFileSync(
+    resolve(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts'),
+    'utf8'
+  );
+  assert.match(
+    source,
+    /restoreWorkspace\(host\.hostToken, \{ presentRestoredSelection: false \}\)/,
+    '缺了这个参数,恢复会把刚呈现的外部文件换掉'
   );
 });

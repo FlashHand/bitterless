@@ -160,6 +160,14 @@ export interface TrenchIndexAddTargetInput {
 
 export interface TrenchIndexReanalyzeInput {
   requestId: string;
+  chain?: TrenchChain;
+}
+
+export interface TrenchIndexTargetReceipt {
+  requestId: string;
+  revision: number;
+  targetPersistedCount: number;
+  replayed: boolean;
 }
 
 export interface TrenchIndexCommandReceipt {
@@ -181,7 +189,7 @@ export interface TrenchIndexApi {
   getIndexWorkspace(): Promise<TrenchIndexResult<TrenchIndexWorkspaceSnapshot>>;
   addIndexTargets(
     input: TrenchIndexAddTargetInput,
-  ): Promise<TrenchIndexResult<TrenchIndexCommandReceipt>>;
+  ): Promise<TrenchIndexResult<TrenchIndexTargetReceipt>>;
   reanalyzeIndex(
     input: TrenchIndexReanalyzeInput,
   ): Promise<TrenchIndexResult<TrenchIndexCommandReceipt>>;
@@ -276,6 +284,7 @@ export interface TrenchIndexStorageBeginRunInput {
   requestId: string;
   requestFingerprint: string;
   trigger: TrenchIndexTrigger;
+  chain?: TrenchChain;
 }
 
 export interface TrenchIndexStorageFailRunInput {
@@ -301,6 +310,9 @@ export interface TrenchIoRuntimeApi {
   getWorkspace(
     input: TrenchIoRuntimeRequest<Record<string, never>>,
   ): Promise<TrenchIndexResult<TrenchIndexWorkspaceSnapshot>>;
+  saveTargets(
+    input: TrenchIoRuntimeRequest<TrenchIndexStorageAddTargetsAndBeginRunInput>,
+  ): Promise<TrenchIndexResult<TrenchIndexTargetReceipt>>;
   addTargetsAndBeginRun(
     input: TrenchIoRuntimeRequest<TrenchIndexStorageAddTargetsAndBeginRunInput>,
   ): Promise<TrenchIndexResult<TrenchIndexStorageBeginRunResult>>;

@@ -9,7 +9,7 @@ depends-on: [app-icon-refresh]
 
 > The macOS runtime-source portion of this historical task was superseded on 2026-09-09 by
 > [tray-mac-document-master-runtime-171](tray-mac-document-master-runtime-171.md). The runtime now
-> uses 24px / Retina 48px derivatives of `doc/bitterless-tray-mac.png` and no longer uses
+> uses 22px / Retina 44px derivatives of `doc/bitterless-tray-mac.png` and no longer uses
 > `build/tray-mac@2x.png`.
 
 ## Objective

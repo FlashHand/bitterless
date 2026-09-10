@@ -1,6 +1,13 @@
 /**
  * 地址栏里的一条**本机绝对路径**该落到哪(Ral 2026-09-09,`docs/features/address-bar-local-path.md`)。
  *
+ * **住在宿主侧,不在 maestro 里。** 它要问两件只有宿主知道的事:什么算绝对路径、哪些格式普通 tab
+ * 自己渲染得了。曾经有一版住在 `main/maestro/windows/main/` 并直接 import
+ * `@shared/onlypreview/*` 与 `@main/miniapps/onlypreview/*` —— `check:maestro` 的别名边界拦下了它,
+ * 而且那不只是一条断言:那些 import 把宿主整棵 onlypreview 子树(连 fileSearch / menu)拖进了
+ * maestro 的测试打包里,`maestroCompositeTabNavigation` 直接在 esbuild 阶段挂掉。
+ * 现在 maestro 通过 `MaestroPreviewOpener.resolveLocalTarget` 端口问同一个问题。
+ *
  * 判据本身在 `@shared/onlypreview/onlyPreviewTargetInput` —— 那一面两仓逐字节等同,所以两个 app
  * 的地址栏问的是**同一个**问题。这一份只回答第二个问题:**这个文件在不在**,以及不在时给哪个
  * `file://`。两件事分开,是因为判据必须是纯函数(渲染层也 import 那一面),而"在不在"必须碰文件系统。
@@ -10,7 +17,7 @@
 import { existsSync } from 'fs'
 import { resolve } from 'path'
 import { pathToFileURL } from 'url'
-import { isAbsoluteFilePath } from '@shared/onlypreview/onlyPreviewTargetInput'
+import { resolveAddressBarLocalPath } from '@shared/onlypreview/onlyPreviewTargetInput'
 import { rendersInPlainWebContents } from '@main/miniapps/onlypreview/onlyPreviewClassifier.service'
 
 export type LocalPathTarget =
@@ -32,20 +39,25 @@ export type LocalPathTarget =
    *
    * 这就是 Ral 说的「和网页共用不存在的组件」:不新建一个自己的空状态组件,新建一个就等于同一件
    * 事有两种长相,而且它还得把 Chromium 已经做好的本地化与「重新加载」再做一遍。
-   *
-   * `fileUrl` 为空串 = 这一串根本不是绝对路径(调用方没先判)。调用方既有的 `if (!target) return`
-   * 会把它吞掉 —— 不猜、不拿当前工作目录兜底。
    */
   | { kind: 'missing'; fileUrl: string }
 
 export const resolveLocalPathTarget = (
   input: string,
   exists: (path: string) => boolean = existsSync
-): LocalPathTarget => {
-  const raw = (input || '').trim()
-  // 不是绝对路径就地返回。**不能落到下面的 `resolve`** —— `resolve('')` 是当前工作目录,
-  // 而当前工作目录一定存在,于是「空输入」会变成「预览 cwd」:一个静默且莫名的结果。
-  if (!isAbsoluteFilePath(raw)) return { kind: 'missing', fileUrl: '' }
+): LocalPathTarget | null => {
+  // 不是本机路径 → `null`(「不是我的」)。**不能落到下面的 `resolve`** —— `resolve('')` 是当前
+  // 工作目录,而当前工作目录一定存在,于是「空输入」会变成「预览 cwd」:一个静默且莫名的结果。
+  //
+  // 早先这里返回的是 `{ kind: 'missing', fileUrl: '' }`,靠调用方的 `if (!target) return` 兜住。
+  // 换成 `null` 是因为端口需要一个明确的「不是本机路径」答案 —— 空串哨兵在跨边界时读不出这个意思。
+  //
+  // 判据用 `resolveAddressBarLocalPath` 而不是 `isAbsoluteFilePath`:地址栏现在**显示**
+  // `file://…`(Ral 2026-09-10),而地址栏是可编辑的 —— 对着显示出来的那一行按回车必须回到同一个
+  // 文件。只认裸路径的话那次回车会落到调用方的 `normalizeUrl`,Chromium 在普通 tab 里直接加载它,
+  // 一个 `.csv` 变成原始文本。见 `docs/features/onlypreview-address-bar-shows-file-url.md`。
+  const raw = resolveAddressBarLocalPath(input)
+  if (raw === null) return null
   // `resolve` 在这里只做归一(去掉 `..`、`.`、重复斜杠),POSIX 绝对路径进出不变。
   //
   // 一条 Windows 路径贴到 mac 上会被 `resolve` 当相对路径接到 cwd 后面 —— 那串东西一定不存在,

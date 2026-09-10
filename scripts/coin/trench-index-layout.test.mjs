@@ -126,17 +126,19 @@ test('all visible INDEX prose comes from the shared English and Chinese locale t
   }
 });
 
-test('Header Refresh stays a local reread while Reanalyze exclusively starts analysis', () => {
+test('Header Refresh stays a local reread while Generate exclusively starts analysis', () => {
   const header = read('src/renderer/coin/src/components/TrenchHeader/TrenchHeader.vue');
   const workspace = read(
     'src/renderer/coin/src/components/TrenchIndexWorkspace/TrenchIndexWorkspace.vue',
   );
   assert.match(header, /@click="refreshActiveModule"/);
   assert.match(header, /trenchNavigationStore\.module === 'index'[\s\S]*?trenchIndexStore\.refresh\(\)[\s\S]*?trenchPersonStore\.refresh\(\)/);
-  assert.match(header, /const refreshPending = computed\(\(\) => \(/);
+  assert.match(header, /const refreshPending = computed\(/);
   assert.doesNotMatch(header.match(/const refreshPending[\s\S]*?\);/)?.[0] ?? '', /analyzing/);
-  assert.match(workspace, /name="trench__index__reanalyze"/);
-  assert.match(workspace, /@click="reanalyze"/);
+  assert.match(workspace, /name="trench__index__generate"/);
+  assert.match(workspace, /@click="generate"/);
+  assert.match(workspace, /store\.reanalyze\(selectedChain\.value\)/);
+  assert.match(workspace, /!activeProjection\?\.targets\.length/);
   assert.match(workspace, /store\.commandError && !unavailable/);
   assert.match(workspace, /role="alert"/);
 });
@@ -179,7 +181,7 @@ test('Todo-parity Trench menu exposes one shared GMGN settings recovery surface'
   assert.doesNotMatch(addDialog, /state\.error === '(?:SOURCE_INVALID|TOKEN_NOT_FOUND|INTERNAL)'/);
 });
 
-test('Arco navigation is the single local INDEX chain owner with locked ordering and rail colors', () => {
+test('Arco navigation owns INDEX chain order with borderless column colors', () => {
   const navigation = read(
     'src/renderer/coin/src/components/TrenchModuleNavigation/TrenchModuleNavigation.vue',
   );
@@ -195,7 +197,7 @@ test('Arco navigation is the single local INDEX chain owner with locked ordering
   const repository = read('src/renderer/trench-io/trenchIo.repository.ts');
   assert.match(navigation, /mode="vertical"/);
   assert.match(navigation, /:selected-keys="\[navigation\.selectedKey\]"/);
-  assert.match(navigation, /:default-open-keys="\['index', 'trenchers', 'sniping'\]"/);
+  assert.match(navigation, /:default-open-keys="\['index', 'trenchers', 'sniping'(?:, '[^']+')*\]"/);
   assert.match(navigation, /@menu-item-click="selectMenuItem"/);
   assert.match(navigation, /createTrenchNavigationMenuItemHandler\(navigation\)/);
   assert.ok(navigation.indexOf('key="index:solana"') < navigation.indexOf('key="index:bsc"'));
@@ -207,8 +209,9 @@ test('Arco navigation is the single local INDEX chain owner with locked ordering
   assert.match(workspace, /activeProjection/);
   assert.match(repository, /\(\['solana', 'bsc', 'robinhood'\] as const\)/);
   assert.match(repository, /chain !== 'robinhood'/);
-  assert.match(styles, /border-left: 2px solid #14b887/);
-  assert.match(styles, /border-left: 2px solid #c89500/);
+  assert.match(styles, /color: #128567/);
+  assert.match(styles, /color: #926d00/);
+  assert.doesNotMatch(styles, /border(?:-left|-right|-top|-bottom)?:\s*\d+px\s+solid/);
   assert.doesNotMatch(styles, /linear-gradient|radial-gradient/);
 });
 
@@ -333,16 +336,21 @@ test('all Trenchers prose is shared between English and Chinese locale trees', (
   }
 });
 
-test('Add CA is a global menu action with one persistent batch dialog and a data-only reactive class', () => {
+test('Add CA belongs to the CA list with a persistent batch dialog and a data-only reactive class', () => {
   const header = read('src/renderer/coin/src/components/TrenchHeader/TrenchHeader.vue');
   const app = read('src/renderer/coin/src/App.vue');
   const workspace = read('src/renderer/coin/src/components/TrenchIndexWorkspace/TrenchIndexWorkspace.vue');
   const dialog = read('src/renderer/coin/src/components/TrenchIndexAddDialog/TrenchIndexAddDialog.vue');
   const store = read('src/renderer/coin/src/views/index/trenchIndexAdd.store.ts');
-  assert.match(header, /name="trench__header__add-ca"/);
-  assert.match(header, /@click="openIndexAdd"/);
+  assert.doesNotMatch(header, /trench__header__add-ca|openIndexAdd/);
+  assert.match(workspace, /name="trench__index__targets"[\s\S]*?<header[\s\S]*?<IconBtn[\s\S]*?name="trench__index__add-ca"/);
+  assert.match(workspace, /@click="openAdd"/);
+  assert.match(workspace, /addState\.chain = selectedChain\.value/);
   assert.match(app, /<TrenchIndexAddDialog\s*\/>/);
-  assert.doesNotMatch(workspace, /trench__index__add-ca|<a-modal|<a-textarea/);
+  assert.doesNotMatch(workspace, /<a-modal|<a-textarea/);
+  assert.match(workspace, /target\.symbol \|\| target\.name/);
+  assert.match(workspace, /class="trench-index__token-name"/);
+  assert.match(dialog, /:ok-text="t\('trench\.indexWorkspace\.saveCas'\)"/);
   assert.match(dialog, /<a-textarea/);
   assert.match(dialog, /v-model="state\.chain"/);
   assert.match(dialog, /finally\s*\{\s*state\.pending = false/);
@@ -422,7 +430,10 @@ test('Main owns orchestration without SQLite and module tables reference chain a
   assert.match(migration, /ON trench_wallet_chain_accounts\(wallet_id, chain\)/);
   assert.match(migration, /TRENCH_IO_PERSON_SCHEMA_VERSION_CODE = '260813155644'/);
   assert.match(migration, /TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE = '260813155645'/);
-  assert.match(migration, /TRENCH_IO_SCHEMA_VERSION_CODE = '260908130001'/);
+  assert.match(migration, /TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE = '260908130001'/);
+  assert.match(migration, /TRENCH_IO_SCHEMA_VERSION_CODE = '260910000001'/);
+  assert.match(migration, /CREATE TABLE trench_index_target_imports/);
+  assert.match(migration, /ADD COLUMN scope_chain/);
   const personTypes = read('src/shared/trench/trenchPerson.type.ts');
   assert.match(personTypes, /TRENCH_PERSON_CHANGED_EVENT = 'trench\/person-changed'/);
   assert.doesNotMatch(personTypes.match(/interface TrenchPersonChangedEvent[\s\S]*?\n\}/)?.[0] ?? '',

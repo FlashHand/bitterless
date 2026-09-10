@@ -12,6 +12,21 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 //
 // 上色不受影响:2026-09-08 起由 shiki 的 TextMate 语法做,经 `@shikijs/monaco` 装进 Monaco。
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+// API-only 入口**不带** folding contribution(只有 `editor.all` barrel 带)—— 光传 `folding: true`
+// 什么都不会发生。这里按副作用导入它:模块顶层 `registerEditorContribution(FoldingController, Eager)`,
+// 必须在 `monaco.editor.create` 之前执行,编辑器才会实例化它。它自带的 `folding.d.ts` 就是
+// `export {}`,所以这一行在 strict 下也是类型干净的,不需要本地 .d.ts。
+// (docs/plan/tasks/onlypreview-structured-text-folding-172.md)
+import 'monaco-editor/esm/vs/editor/contrib/folding/browser/folding';
+// 折叠槽的展开/收起图标是 **codicon 字形**(`foldingDecorations.js`:chevron-down / chevron-right)。
+// 主题服务只注入 `.codicon-folding-expanded:before { content: '\eab4' }`,字体本身
+// (`@font-face codicon` ＋ `.codicon` 基础规则)在 `codiconStyles.js` 里,而它只被 `editor.all`
+// barrel 与 suggest / codeAction / gotoSymbol quick-access 三个 widget 导入 —— API-only 入口和
+// folding.js 都不带(含传递依赖)。
+// 不导入的话,那个私有区码位落到回退字体上,渲染成一个空心方框(Ral 2026-09-10 截图)。
+// 与 `editor.all.js` 的做法一致:「The codicons are defined here and must be loaded」。
+// (docs/issues/onlypreview-folding-icons-render-as-boxes.md)
+import 'monaco-editor/esm/vs/base/browser/ui/codicons/codiconStyles';
 import type {
   OnlyPreviewSettings,
   OnlyPreviewTextContent
@@ -21,6 +36,7 @@ import { countOnlyPreviewSelectionTexts } from '../../onlyPreviewCharacterCount.
 import { onlyPreviewPreviewStore } from '../../onlyPreviewPreview.store';
 import { onlyPreviewFindAdapterBridge } from '../../onlyPreviewFindAdapter.service';
 import { createOnlyPreviewMonacoFindAdapter } from '../../onlyPreviewMonacoFind.service';
+import { resolveOnlyPreviewMonacoFolding } from '../../onlyPreviewMonacoFolding.service';
 import {
   MONACO_PLAIN_FALLBACK_THEME,
   prepareMonacoHighlighting
@@ -59,6 +75,21 @@ const disposeEditor = (): void => {
   model = null;
 };
 
+// 「默认最多预览 5 层」= 跑 Monaco 自己的 `editor.foldLevel6`(第 6 层折起,更深的随之隐藏)。
+// 走公开的 `getAction().run()` 而不是导入没有类型的 `foldingModel.js`;那个 action 自己会等
+// 折叠模型算完。**不 await**:折叠模型有约 200ms 的 debounce,不该拖住 `ready` 与 find adapter。
+// 等待期间切了文件的话,Monaco 会用取消错误拒绝这个 promise —— 编辑器已经销毁,没有别的可做。
+const collapseDeepLevels = async (
+  target: monaco.editor.IStandaloneCodeEditor,
+  actionId: string
+): Promise<void> => {
+  try {
+    await target.getAction(actionId)?.run();
+  } catch {
+    // 编辑器在等折叠模型时被 dispose(切文件)。
+  }
+};
+
 const createEditor = async (): Promise<void> => {
   if (!editorHostRef.value) return;
   const generation = ++createGeneration;
@@ -78,6 +109,8 @@ const createEditor = async (): Promise<void> => {
     highlighting?.language ?? props.language ?? 'plaintext',
     modelUri
   );
+  // 按分类器的语言 id 决定,不按 shiki 归一化后的高亮语言。
+  const foldingPlan = resolveOnlyPreviewMonacoFolding(props.language);
   editor = monaco.editor.create(host, {
     model,
     readOnly: true,
@@ -88,6 +121,12 @@ const createEditor = async (): Promise<void> => {
     largeFileOptimizations: true,
     maxTokenizationLineLength: 20_000,
     stopRenderingLineAfter: 20_000,
+    // 显式传 `folding`:contribution 装上以后 Monaco 的默认值是 true,不写的话所有文本预览都会
+    // 多出折叠槽;需求只要 JSON/XML/YAML。这几种语言没注册 folding range provider,'auto' 本来
+    // 也会退到缩进,写死 'indentation' 只是把它钉住。
+    folding: foldingPlan.folding,
+    foldingStrategy: 'indentation',
+    showFoldingControls: 'always',
     fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
     fontLigatures: false,
     fontSize: props.settings.editorFontSize,
@@ -111,6 +150,7 @@ const createEditor = async (): Promise<void> => {
     padding: { top: 10, bottom: 10 },
     theme: highlighting?.theme ?? MONACO_PLAIN_FALLBACK_THEME
   });
+  if (foldingPlan.collapseActionId) void collapseDeepLevels(editor, foldingPlan.collapseActionId);
   selectionDisposable = editor.onDidChangeCursorSelection(() => {
     const currentEditor = editor;
     const currentModel = model;

@@ -192,7 +192,10 @@ const performOpenOnlyPreviewAbsoluteTarget = async (
     // 「置空 ＋ 重置索引状态」,那是在说一件没发生的事。
     if (!onlyPreviewWorkspaceRegistry.restore(host.hostToken)) {
       void onlyPreviewRecentDirectoryService
-        .restoreWorkspace(host.hostToken)
+        // **不要呈现那个项目记住的文件** —— 这一步只是"让项目回到树里"。呈现会把上面刚呈现的
+        // 那个外部文件换掉,而那次替换是静默的:表现就是"第一次打开没反应,第二次才行"
+        // (`docs/issues/onlypreview-first-external-open-is-replaced-by-the-restored-project.md`)。
+        .restoreWorkspace(host.hostToken, { presentRestoredSelection: false })
         .then((workspace) => {
           if (!workspace || !onlyPreviewHostRegistry.isLive(host.hostToken)) return;
           xpcMain.broadcast(ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT, { hostId: host.hostId });

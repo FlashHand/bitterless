@@ -117,6 +117,8 @@ export const createOnlyPreviewAgentSkillGuideInfo = (
   options: OnlyPreviewAgentSetupInstructionOptions
 ): OnlyPreviewAgentSkillGuideInfo => ({
   serverName: options.serverName,
+  // 分类在这里做一次,渲染层直接用 —— 它不再按产品名字面量去猜(见类型上的注释)。
+  kind: classifyMcpServerName(options.serverName),
   skillVersionCode: options.skillVersionCode,
   instruction: createOnlyPreviewAgentSetupInstruction(options)
 });

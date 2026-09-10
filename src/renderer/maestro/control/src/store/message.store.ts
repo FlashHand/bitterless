@@ -673,16 +673,37 @@ export class MessageStoreState {
     session.detail = { ...session.detail, workspace: result.workspace }
     session.updatedAt = Date.now()
     await this.persistSession(session)
+    // 选中一个工作区 → **直接在预览里打开它**(Ral 2026-09-10:「选择 workspace 后自动就打开
+    // onlypreview」)。替换也走这里,同一个调用:显式打开会把项目根换成新的那个目录,所以
+    // 「替换后要加载替换后的目录」不需要另一条路径。
+    //
+    // 挂在**这里**而不是 main 侧的 `setWorkspaceDirectory`:那个还被 `refreshWorkspace()` 用来做
+    // 状态同步(每次载入会话、切会话都会调),接在那儿会变成「一开 app 就自己弹出预览」。
+    // 这一条要的是**人的动作**,而人的动作在这个方法里。
+    //
+    // 不 await 也不因为它失败而回滚:工作区已经绑好了,预览开不开是另一件事。
+    await this.openWorkspaceInPreview(session.detail.workspace?.path)
   }
 
-  async clearWorkspace(sessionId: string): Promise<void> {
+  /** 工作区绑定完之后把它开到预览里。没有路径就什么都不做。 */
+  private async openWorkspaceInPreview(path: string | undefined): Promise<void> {
+    if (!path) return
+    await coach.openWorkspaceInPreview({ path }).catch(() => null)
+  }
+
+  async stopUsingWorkspace(sessionId: string): Promise<void> {
     const session = this.getSession(sessionId)
     if (!session) return
+    // 解绑**之前**先把路径拿在手上 —— 下面要用它去比对预览里开着的是不是同一个目录。
+    const previousPath = session.detail.workspace?.path
     await coach.setWorkspaceDirectory({ sessionId: session.id, path: '' }).catch(() => null)
     this.defaultWorkspace = undefined
     session.detail = { ...session.detail, workspace: undefined }
     session.updatedAt = Date.now()
     await this.persistSession(session)
+    // 不再用这个工作区 → 预览里开着的正是它时一起收掉(Ral 2026-09-10)。
+    // 比对在 main 侧做:预览里可能是人自己另开的别的项目,无条件关会毁掉无关的东西。
+    if (previousPath) await coach.closeWorkspacePreview({ path: previousPath }).catch(() => null)
   }
 
   async refreshDefaultWorkspace(): Promise<void> {

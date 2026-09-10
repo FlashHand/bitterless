@@ -405,6 +405,25 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     }
   }
 
+  /**
+   * 会话解除了和这个工作区的绑定 → 预览应用开着的正是它时,一起收掉(Ral 2026-09-10)。
+   *
+   * 没有注册预览应用的构建里这是一个**无操作**,不是错误:那种构建里工作区从来没有被打开过,
+   * 所以也没有什么要关。
+   */
+  async closeWorkspacePreview(params: { path: string }): Promise<{ ok: boolean; error?: string }> {
+    const target = String(params?.path || '').trim()
+    if (!target) return { ok: false, error: 'A path is required.' }
+    const opener = getMaestroPreviewOpener()
+    if (!opener) return { ok: true }
+    try {
+      await opener.closeForPath(target)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    }
+  }
+
   async activateTab(params: { id: string }): Promise<void> {
     await maestroWindowHelper.activateTab(params)
   }

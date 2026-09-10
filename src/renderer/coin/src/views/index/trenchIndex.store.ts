@@ -3,6 +3,7 @@ import type {
   TrenchIndexError,
   TrenchIndexWorkspaceSnapshot,
 } from '@shared/trench/trenchIndex.type';
+import type { TrenchChain } from '@shared/trench/trench.type';
 
 interface TrenchIndexClient {
   getWorkspace: typeof import('./trenchIndex.client').trenchIndexClient.getWorkspace;
@@ -56,9 +57,9 @@ export class TrenchIndexStore {
     return true;
   }
 
-  async reanalyze(): Promise<boolean> {
+  async reanalyze(chain?: TrenchChain): Promise<boolean> {
     this.commandError = null;
-    const result = await this.client.reanalyze({ requestId: window.crypto.randomUUID() });
+    const result = await this.client.reanalyze({ requestId: window.crypto.randomUUID(), ...(chain ? { chain } : {}) });
     if (!result.ok) {
       this.commandError = result.error;
       return false;

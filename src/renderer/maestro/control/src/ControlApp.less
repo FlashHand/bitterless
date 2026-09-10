@@ -1,4 +1,5 @@
 .control-app {
+  --control-chat-surface: #fffcf7;
   position: relative;
   display: flex;
   width: 100%;
@@ -94,7 +95,7 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 16px;
-  background: #ffffff;
+  background: var(--control-chat-surface);
   padding: 8px;
   transition: box-shadow 0.15s ease-out;
 }
@@ -124,7 +125,7 @@
   flex-shrink: 0;
   justify-content: space-between;
   gap: 8px;
-  background: #ffffff;
+  background: transparent;
   padding-bottom: 8px;
 }
 
@@ -213,7 +214,7 @@
   min-height: 0;
   flex: 1;
   justify-content: center;
-  background: #ffffff;
+  background: transparent;
 }
 
 .control-app__error {

@@ -42,6 +42,7 @@ import {
   TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE,
   TRENCH_IO_PERSON_SCHEMA_VERSION_CODE,
   TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
+  TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE,
   TRENCH_IO_SCHEMA_VERSION_CODE,
   TRENCH_IO_MIGRATION_MANIFEST,
   TRENCH_IO_TABLE_COLUMNS,
@@ -1549,6 +1550,7 @@ const auditTrenchIo = (): void => {
       TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE,
       TRENCH_IO_PERSON_SCHEMA_VERSION_CODE,
       TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE,
+      TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE,
       TRENCH_IO_SCHEMA_VERSION_CODE,
     ])
     applyTrenchIoMigrations(asTrenchMigrationDatabase(fresh), currentVersionCode, 2)
@@ -1729,8 +1731,12 @@ const auditTrenchIo = (): void => {
         name: 'person-import-ledger',
       },
       {
-        version_code: TRENCH_IO_SCHEMA_VERSION_CODE,
+        version_code: TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE,
         name: 'incremental-index-evidence',
+      },
+      {
+        version_code: TRENCH_IO_SCHEMA_VERSION_CODE,
+        name: 'target-import-and-scoped-generate',
       },
     ])
     assert.equal(getScalar(missingPredecessors,

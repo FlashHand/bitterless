@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { toLocalFileUrl } from '@shared/onlypreview/onlyPreviewTargetInput';
 import {
   OnlyPreviewContractError,
   normalizeOnlyPreviewRelativePath,
@@ -53,6 +54,21 @@ export interface OnlyPreviewPreviewAuthorityRef {
 
 type WorkspaceRevocationListener = (workspace: OnlyPreviewWorkspaceRecord) => void;
 
+/**
+ * `displayPath` ＋ 相对路径 → 一条完整的显示用路径。
+ *
+ * **不用 `node:path` 的 `join`**:`displayPath` 可能是一条 Windows 路径(`C:\Users\ral`),而这个
+ * 进程可能跑在 mac 上 —— `join` 会用本机分隔符,把两种形状拼成第三种。这里只做最小的事:去掉接缝
+ * 处重复的分隔符,分隔符本身沿用左边那条路径的形状。`toLocalFileUrl` 两种斜杠都认。
+ */
+const joinDisplayPath = (displayPath: string, relativePath?: string): string => {
+  const base = (displayPath || '').trim();
+  const rest = (relativePath || '').replace(/^[\\/]+/, '');
+  if (!base || !rest) return base;
+  const separator = base.includes('\\') && !base.includes('/') ? '\\' : '/';
+  return /[\\/]$/.test(base) ? `${base}${rest}` : `${base}${separator}${rest}`;
+};
+
 const toSnapshot = (workspace: OnlyPreviewWorkspaceRecord): OnlyPreviewWorkspace => ({
   workspaceId: workspace.workspaceId,
   rootName: workspace.rootName,
@@ -90,9 +106,9 @@ export class OnlyPreviewWorkspaceRegistry {
   ): OnlyPreviewWorkspace {
     const host = this.hosts.require(hostToken, ['content']);
     const selectedRelativePath = this.validateTarget(target);
-    const replacingOwnWorkspace = [...this.workspaces.values()].some(
-      (workspace) => workspace.hostToken === host.hostToken
-    );
+    // 「换掉自己那一条」只算**项目**那一条 —— 下面撤销的就是它。原来这里算的是「这个 host 有任何
+    // 记录」,配上窄撤销会在 MAX_WORKSPACES 边界上放行一次并不腾出槽位的注册。
+    const replacingOwnWorkspace = this.projectWorkspaceByHost.has(host.hostToken);
     if (this.workspaces.size >= MAX_WORKSPACES && !replacingOwnWorkspace) {
       throw new OnlyPreviewContractError(
         'OPERATION_FAILED',
@@ -110,7 +126,8 @@ export class OnlyPreviewWorkspaceRegistry {
       projectAuthorityPending: true,
       createdAt: Date.now()
     };
-    this.revokeHost(host.hostToken);
+    // 窄撤销:只作废旧**项目**。见 `revokeProject` —— 用 `revokeHost` 会顺手清空正在显示的外部预览。
+    this.revokeProject(host.hostToken);
     this.workspaces.set(record.workspaceId, record);
     this.projectWorkspaceByHost.set(host.hostToken, record.workspaceId);
     return toSnapshot(record);
@@ -324,6 +341,32 @@ export class OnlyPreviewWorkspaceRegistry {
     return workspace.rootRealPath === rootRealPath;
   }
 
+  /**
+   * 地址栏该显示的那一行 —— 当前预览目标的 `file://`。没有可显示的目标时空串。
+   *
+   * **算在这里,只交出 URL。** 拼它要 `displayPath`,而 `toSnapshot` 是故意把 `rootRealPath` 挡在
+   * 快照外的(见 `isActiveProjectRoot` 那段);`displayPath` 本来就已经显示在 OnlyPreview 顶栏上,
+   * 所以用它不放宽任何面,而"再加一个把记录交出去的 getter"会。
+   *
+   * 次序:**外部预览优先**。它活着就意味着预览区正在显示一个项目外的文件 —— 那才是人此刻在看的
+   * 东西,而项目那一条的 `selectedRelativePath` 可能还留着上一次树里选中的文件。
+   *
+   * 没有选中文件但有项目 → 显示**目录本身**的 `file://`,真实浏览器对目录也是这么显示的。
+   * (Ral 2026-09-10,`docs/features/onlypreview-address-bar-shows-file-url.md`)
+   */
+  describeDisplayUrl(hostToken: unknown): string {
+    const host = this.hosts.require(hostToken, ['content']);
+    const externalId = this.externalPreviewWorkspaceByHost.get(host.hostToken);
+    const external = externalId ? this.workspaces.get(externalId) : undefined;
+    if (external?.kind === 'external-preview') {
+      return toLocalFileUrl(joinDisplayPath(external.displayPath, external.selectedRelativePath));
+    }
+    const projectId = this.projectWorkspaceByHost.get(host.hostToken);
+    const project = projectId ? this.workspaces.get(projectId) : undefined;
+    if (project?.kind !== 'project') return '';
+    return toLocalFileUrl(joinDisplayPath(project.displayPath, project.selectedRelativePath));
+  }
+
   requireWorkspace(hostToken: unknown, workspaceId: unknown): OnlyPreviewWorkspaceRecord {
     const host = this.hosts.require(hostToken, ['content']);
     if (typeof workspaceId !== 'string' || workspaceId.length < 16 || workspaceId.length > 256) {
@@ -424,6 +467,24 @@ export class OnlyPreviewWorkspaceRegistry {
     return workspaceId ? this.revokeWorkspace(workspaceId) : false;
   }
 
+  /**
+   * 只撤销这个 host 的**项目**记录 —— 外部预览那一条留着。
+   *
+   * 和 `revokeExternalPreview` 对称。绑定一个新项目要作废的是**旧项目**的能力,而外部预览按定义
+   * 不属于任何项目:它自己的生命周期由 `registerExternalPreview` 的窄撤销 + token TTL 管。
+   * 用 `revokeHost` 会连带撤掉正在显示的那一条,撤销监听把预览区清空 —— 那就是
+   * `docs/issues/onlypreview-first-external-open-is-replaced-by-the-restored-project.md` 的第二条路径。
+   */
+  revokeProject(hostToken: unknown): boolean {
+    const host = this.hosts.require(hostToken, ['content']);
+    const workspaceId = this.projectWorkspaceByHost.get(host.hostToken);
+    return workspaceId ? this.revokeWorkspace(workspaceId) : false;
+  }
+
+  /**
+   * host 整个没了 —— 项目和外部预览都得死。这里的跨 kind 是**对的**,别照着
+   * `registerValidatedTarget` 把它改窄。
+   */
   revokeHost(hostToken: string): void {
     for (const workspace of [...this.workspaces.values()]) {
       if (workspace.hostToken === hostToken) this.revokeWorkspace(workspace.workspaceId);

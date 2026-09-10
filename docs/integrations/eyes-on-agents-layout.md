@@ -134,7 +134,10 @@ the board. Search never narrows the Focus list behind the modal.
 | double-click or card-menu Open | open that result and close Search after success |
 | Escape, Close, or mask | close and clear query plus selection |
 
-The input uses `v-model` for raw text. Spaces, case and Unicode remain untouched while read-only
+The native input uses `v-model` through the writable computed draft adapter. Vue's composition
+guard preserves pending Pinyin through snapshot, selection and result rerenders. The compact field
+uses background/radius and borderless focus treatment, with a localized IconBtn clear control.
+Spaces, case and Unicode remain untouched while read-only
 computed values derive normalized matching tokens. Neither input-event transformations, result
 updates nor background snapshots may write processed text back into the field. Fresh Input
 instances per modal lifetime retain the interrupted-composition recovery from task 099.

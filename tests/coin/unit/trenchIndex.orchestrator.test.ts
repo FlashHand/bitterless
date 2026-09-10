@@ -6,6 +6,7 @@ import type {
   TrenchIndexStorageAddTargetsAndBeginRunInput,
   TrenchIndexWorkspaceSnapshot,
   TrenchIndexCompletedBatch,
+  TrenchIndexStorageBeginRunInput,
 } from '../../../src/shared/trench/trenchIndex.type';
 
 const first = '0x1111111111111111111111111111111111111111';
@@ -32,16 +33,15 @@ const makeHarness = (
   const reads: GmgnReadInput[] = [];
   const storage = {
     getWorkspace: async () => ({ ok: true as const, value: currentWorkspace }),
-    addTargetsAndBeginRun: async (input: TrenchIndexStorageAddTargetsAndBeginRunInput) => {
+    saveTargets: async (input: TrenchIndexStorageAddTargetsAndBeginRunInput) => {
       writes.push(input);
       return {
         ok: true as const,
         value: {
-          runId: '99999999-9999-4999-8999-999999999999',
+          requestId: input.requestId,
           revision: 1,
-          targets: [],
-          replayed: true,
-          status: 'completed' as const,
+          targetPersistedCount: input.targets.length,
+          replayed: false,
         },
       };
     },
@@ -134,7 +134,7 @@ test('rejects an Add batch before GMGN resolution while a run is active', async 
   assert.equal(harness.writes.length, 0);
 });
 
-test('Add analyzes only returned batch tokens and skips indexed wallets while Reanalyze includes them', async () => {
+test('Add saves metadata only; selected-chain Generate explicitly analyzes incumbents and newcomers', async () => {
   const incumbent = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const newcomer = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   const snapshot: TrenchIndexWorkspaceSnapshot = {
@@ -154,11 +154,14 @@ test('Add analyzes only returned batch tokens and skips indexed wallets while Re
       contractAddress: first, canonicalAddress: first }], replayed: false, status: 'running' as const };
   const batches: TrenchIndexCompletedBatch[] = [];
   const reads: GmgnReadInput[] = [];
+  const runs: TrenchIndexStorageBeginRunInput[] = [];
   const orchestrator = new TrenchIndexOrchestrator({
     storage: {
       getWorkspace: async () => ({ ok: true, value: snapshot }),
-      addTargetsAndBeginRun: async () => ({ ok: true, value: run }),
-      beginRun: async () => ({ ok: true, value: run }),
+      saveTargets: async (input) => ({ ok: true, value: {
+        requestId: input.requestId, revision: 1, targetPersistedCount: input.targets.length, replayed: false,
+      } }),
+      beginRun: async (input) => { runs.push(input); return { ok: true, value: run }; },
       completeRun: async (batch) => { batches.push(batch); return { ok: true, value: { revision: 2 } }; },
       failRun: async () => { throw new Error('unexpected failure'); },
     },
@@ -174,12 +177,15 @@ test('Add analyzes only returned batch tokens and skips indexed wallets while Re
     targets: [{ chain: 'bsc', contractAddress: first }] });
   assert.equal(added.ok, true);
   await orchestrator.waitForIdle();
-  assert.equal(batches.length, 1);
-  assert.deepEqual(batches[0]!.wallets.map((row) => row.canonicalAddress), [newcomer]);
-  assert.equal(reads.filter((read) => read.operation === 'token-traders').length, 1);
+  assert.equal(batches.length, 0);
+  assert.equal(runs.length, 0);
+  assert.equal(reads.filter((read) => read.operation === 'token-traders').length, 0);
+  assert.equal(reads.length, 1);
   assert.equal(reads.every((read) => 'address' in read && read.address === first), true);
-  await orchestrator.reanalyze({ requestId: '22222222-2222-4222-8222-222222222222' });
+  await orchestrator.reanalyze({ requestId: '22222222-2222-4222-8222-222222222222', chain: 'bsc' });
   await orchestrator.waitForIdle();
-  assert.equal(batches.length, 2);
-  assert.deepEqual(batches[1]!.wallets.map((row) => row.canonicalAddress), [newcomer, incumbent]);
+  assert.equal(runs[0]?.chain, 'bsc');
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0]!.wallets.map((row) => row.canonicalAddress), [newcomer, incumbent]);
+  assert.equal(reads.filter((read) => read.operation === 'token-traders').length, 1);
 });

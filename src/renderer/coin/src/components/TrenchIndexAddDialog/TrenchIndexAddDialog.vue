@@ -1,8 +1,9 @@
 <template>
   <a-modal
     v-model:visible="state.visible"
+    modal-class="trench-index-add-modal"
     :title="t('trench.indexWorkspace.dialogTitle')"
-    :ok-text="t('trench.indexWorkspace.addAndAnalyze')"
+    :ok-text="t('trench.indexWorkspace.saveCas')"
     :ok-loading="state.pending"
     :ok-button-props="{ disabled: running }"
     :cancel-button-props="{ disabled: state.pending }"

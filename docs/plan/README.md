@@ -14,11 +14,15 @@ no-copy progress rail—remains part of the current feature contract.
 
 ## Active delivery
 
-- [macOS tray documentation master 171](tasks/tray-mac-document-master-runtime-171.md) — implemented; owner testing pending;
-  use the 208px documentation artwork directly in development and packaged runtimes, retiring the
-  former 80px runtime derivative.
+- [INDEX CA list and Generate 031](tasks/trench-index-generate-031.md) - implemented; owner testing pending.
 
-- [INDEX incremental import 030](tasks/trench-index-incremental-030.md) - implemented; owner testing pending.
+- [OnlyPreview structured-text folding 172](tasks/onlypreview-structured-text-folding-172.md) — implemented; owner testing pending;
+  JSON/JSON5/XML/YAML fold gutter, level 6 collapsed on open, model-based copy keeps folded lines; Cowork mini-034 port.
+
+- [macOS and Windows tray artwork 171](tasks/tray-mac-document-master-runtime-171.md) — implemented; owner testing pending;
+  approved larger/raised-eye cat, macOS 22px / Retina 44px resources and Windows `#4E5882` multi-size ICO.
+
+- [INDEX incremental import 030](tasks/trench-index-incremental-030.md) - historical; UI/command flow superseded by 031.
 
 - [Trench host toggle 029](tasks/trench-host-toggle-029.md) - implemented; owner testing pending; ordinary singleton
   window/tab hosting, with Omni multi-panel embedding unchanged.
@@ -107,6 +111,9 @@ no-copy progress rail—remains part of the current feature contract.
   visibility and tab bounds consistent through startup, deferred views, and resize.
 
 Current EyesOnAgents fixes:
+
+- [Search IME rerender 101](tasks/eyes-on-agents-search-ime-render-101.md) — implemented; owner verification pending;
+  preserve composing text across background updates while keeping the computed v-model adapter.
 
 - [Search raw input 100](tasks/eyes-on-agents-search-raw-input-100.md) — implemented; owner verification pending;
   preserve raw `v-model` text and isolate computed matching state from input and background updates.

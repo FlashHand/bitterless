@@ -7,6 +7,7 @@ import {
   type TrenchIndexAddTargetInput,
   type TrenchIndexChangedEvent,
   type TrenchIndexCommandReceipt,
+  type TrenchIndexTargetReceipt,
   type TrenchIndexError,
   type TrenchIndexReanalyzeInput,
   type TrenchIndexResult,
@@ -31,9 +32,9 @@ import {
 
 interface TrenchIndexStoragePort {
   getWorkspace(): Promise<TrenchIndexResult<TrenchIndexWorkspaceSnapshot>>;
-  addTargetsAndBeginRun(
-    input: Parameters<import('@shared/trench/trenchIndex.type').TrenchIoRuntimeApi['addTargetsAndBeginRun']>[0]['request'],
-  ): Promise<TrenchIndexResult<TrenchIndexStorageBeginRunResult>>;
+  saveTargets(
+    input: Parameters<import('@shared/trench/trenchIndex.type').TrenchIoRuntimeApi['saveTargets']>[0]['request'],
+  ): Promise<TrenchIndexResult<TrenchIndexTargetReceipt>>;
   beginRun(
     input: Parameters<import('@shared/trench/trenchIndex.type').TrenchIoRuntimeApi['beginRun']>[0]['request'],
   ): Promise<TrenchIndexResult<TrenchIndexStorageBeginRunResult>>;
@@ -98,7 +99,7 @@ export class TrenchIndexOrchestrator {
 
   async addTargets(
     input: TrenchIndexAddTargetInput,
-  ): Promise<TrenchIndexResult<TrenchIndexCommandReceipt>> {
+  ): Promise<TrenchIndexResult<TrenchIndexTargetReceipt>> {
     try {
       const workspace = await this.requireWorkspace();
       if (workspace.jobState === 'running') {
@@ -144,26 +145,14 @@ export class TrenchIndexOrchestrator {
         'add-target',
         targets.flatMap(({ chain, canonicalAddress }) => [chain, canonicalAddress]),
       );
-      const begun = await this.dependencies.storage.addTargetsAndBeginRun({
+      const saved = await this.dependencies.storage.saveTargets({
         requestId: input.requestId,
         requestFingerprint: fingerprint,
         targets,
       });
-      if (!begun.ok) return begun;
-      this.changed(begun.value.revision, begun.value.status === 'running' ? 'running' : 'idle');
-      const analysisStarted = !begun.value.replayed && begun.value.status === 'running';
-      if (analysisStarted) this.startAnalysis(begun.value, 'add-target');
-      return {
-        ok: true,
-        value: {
-          requestId: input.requestId,
-          runId: begun.value.runId,
-          revision: begun.value.revision,
-          targetPersistedCount: targets.length,
-          analysisStarted,
-          replayed: begun.value.replayed,
-        },
-      };
+      if (!saved.ok) return saved;
+      this.changed(saved.value.revision, 'idle');
+      return saved;
     } catch (error) {
       return failure(publicError(error));
     }
@@ -173,16 +162,17 @@ export class TrenchIndexOrchestrator {
     input: TrenchIndexReanalyzeInput,
   ): Promise<TrenchIndexResult<TrenchIndexCommandReceipt>> {
     try {
-      const fingerprint = trenchIndexRequestFingerprint('reanalyze', []);
+      const fingerprint = trenchIndexRequestFingerprint('reanalyze', input.chain ? [input.chain] : []);
       const begun = await this.dependencies.storage.beginRun({
         requestId: input.requestId,
         requestFingerprint: fingerprint,
         trigger: 'reanalyze',
+        ...(input.chain ? { chain: input.chain } : {}),
       });
       if (!begun.ok) return begun;
       this.changed(begun.value.revision, begun.value.status === 'running' ? 'running' : 'idle');
       const analysisStarted = !begun.value.replayed && begun.value.status === 'running';
-      if (analysisStarted) this.startAnalysis(begun.value, 'reanalyze');
+      if (analysisStarted) this.startAnalysis(begun.value);
       return {
         ok: true,
         value: {
@@ -240,22 +230,18 @@ export class TrenchIndexOrchestrator {
     return probes[0]!;
   }
 
-  private startAnalysis(run: TrenchIndexStorageBeginRunResult, trigger: 'add-target' | 'reanalyze'): void {
-    const analysis = this.performAnalysis(run, trigger).finally(() => {
+  private startAnalysis(run: TrenchIndexStorageBeginRunResult): void {
+    const analysis = this.performAnalysis(run).finally(() => {
       this.analyses.delete(run.runId);
     });
     this.analyses.set(run.runId, analysis);
     void analysis;
   }
 
-  private async performAnalysis(run: TrenchIndexStorageBeginRunResult, trigger: 'add-target' | 'reanalyze'): Promise<void> {
+  private async performAnalysis(run: TrenchIndexStorageBeginRunResult): Promise<void> {
     let failedTargetId: string | null = null;
     try {
       const workspace = await this.requireWorkspace();
-      const indexedWallets = new Set(trigger === 'add-target'
-        ? workspace.chainProjections.flatMap(({ wallets }) => wallets
-          .map(({ chain, canonicalAddress }) => `${chain}:${canonicalAddress}`))
-        : []);
       const targets = [];
       for (const target of run.targets) {
         failedTargetId = target.targetId;
@@ -283,7 +269,7 @@ export class TrenchIndexOrchestrator {
           chain: target.chain,
           contractAddress: target.contractAddress,
           metadata: normalizeTrenchTokenInfo(info, previousHighest),
-          candidates: normalizeTrenchTraderCandidates(traders, target.chain, indexedWallets),
+          candidates: normalizeTrenchTraderCandidates(traders, target.chain),
         });
       }
       failedTargetId = null;

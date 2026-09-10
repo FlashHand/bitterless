@@ -123,6 +123,10 @@ export class OnlyPreviewCoworkMount implements OnlyPreviewMount {
     this.deps.setTitle(title);
   }
 
+  reportDisplayUrl(url: string): void {
+    this.deps.setDisplayUrl(url);
+  }
+
   dispose(): void {
     this.resizeListeners.clear();
     this.activationListeners.clear();

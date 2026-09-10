@@ -583,6 +583,8 @@ export const enTrench = {
     }
   },
   indexWorkspace: {
+    generate: 'Generate',
+    saveCas: 'Add',
     modules: 'Trench modules',
     chains: 'INDEX chains',
     indexForChain: '{chain} INDEX',
@@ -607,11 +609,11 @@ export const enTrench = {
     highestObserved: 'Highest observed',
     analyzing: 'Analyzing…',
     updatedAt: 'Updated {time}',
-    waitingFirstAnalysis: 'Waiting for first analysis',
+    waitingFirstAnalysis: 'Not generated',
     firstRunTitle: 'Building the first INDEX',
-    firstRunDescription: 'Reading profit-ranked traders for the submitted Token CAs.',
+    firstRunDescription: 'Generation in progress.',
     emptyIndexTitle: 'No INDEX result yet',
-    emptyIndexDescription: 'Add a CA or reanalyze to publish eligible user-wallet evidence.',
+    emptyIndexDescription: 'No generated wallets on this chain.',
     totalProfit: '{value} token-sample profit',
     walletSources: '{count} source CA | {count} source CAs · best #{rank}',
     dialogTitle: 'Add Token CA',

@@ -1461,10 +1461,15 @@ test('Cmd/Ctrl+F toggles one card-result search modal contained by EyesOnAgents'
   );
   assert.match(
     search,
-    /watch\([\s\S]*?eyesOnAgentsStore\.threadSearchVisible[\s\S]*?if \(visible\) void focusInput\(eyesOnAgentsStore\.threadSearchRevision\)/,
+    /watch\(\s*\(\) => eyesOnAgentsStore\.threadSearchRevision,\s*\(revision\) => \{\s*void focusInput\(revision\);\s*\},\s*\{ flush: 'post' \}/,
     'shortcut and button opens share the reactive focus path'
   );
-  assert.match(search, /@clear="handleQueryClear"/);
+  assert.match(search, /@click="handleQueryClear"/);
+  assert.match(search, /<input\s[\s\S]*?v-model="titleDraft"/);
+  assert.doesNotMatch(search, /<a-input\b/);
+  assert.match(search, /v-bind="inputAttributes"/);
+  assert.match(search, /import IconBtn from '@renderer\/common\/components\/IconBtn\/IconBtn\.vue'/);
+  assert.match(search, /:aria-label="i18nHelper\.submodules\.actions\.clearSearch"/);
   assert.match(search, /v-model="titleDraft"/);
   assert.doesNotMatch(search, /@update:model-value|:model-value=|handleTitleInput/);
   assert.match(
@@ -1515,6 +1520,44 @@ test('Cmd/Ctrl+F toggles one card-result search modal contained by EyesOnAgents'
   assert.match(chinese, /results: '任务搜索结果'/);
   assert.match(chinese, /startTyping: '输入任务标题开始搜索'/);
 });
+test('Search native field and shared clear IconBtn compile borderless in the actual renderer Less stack', async () => {
+  const { default: less } = await import('less');
+  const main = read('src/renderer/eyesOnAgents/src/main.ts');
+  const rendererImports = [...main.matchAll(/import '([^']+\.less)'/g)].map((match) => {
+    const path = match[1].startsWith('@renderer/')
+      ? `src/renderer/${match[1].slice('@renderer/'.length)}`
+      : `node_modules/${match[1]}`;
+    return `@import "${join(root, path)}";`;
+  });
+  assert.equal(rendererImports.length, 3, 'compile the actual Arco, global and theme entry imports');
+  const inputStyles = read('src/renderer/eyesOnAgents/src/components/ThreadSearch/ThreadSearch.less');
+  const source = [
+    ...rendererImports,
+    `@import "${join(root, 'src/renderer/common/components/IconBtn/IconBtn.less')}";`,
+    inputStyles,
+  ].join('\n');
+  const { css } = await less.render(source, { javascriptEnabled: true });
+  assert.ok(css.includes('.arco-btn-text'), 'the renderer compilation includes real Arco Button defaults');
+  assert.doesNotMatch(main, /tailwind/i);
+
+  for (const selector of [
+    '.thread-search__field',
+    '.thread-search__field .thread-search__input',
+    '.thread-search__field .thread-search__clear.icon-btn.arco-btn',
+  ]) {
+    const rule = cssRule(css, selector);
+    assert.match(rule, /border: 0;/, `${selector} removes native and Arco borders`);
+    assert.match(rule, /outline: 0;/, `${selector} does not use an outline for focus`);
+    assert.match(rule, /box-shadow: none;/, `${selector} does not inherit an outline-like shadow`);
+  }
+  assert.doesNotMatch(cssRule(css, '.thread-search__input-region'), /border(?:-bottom)?:/);
+  assert.match(cssRule(css, '.thread-search__field:focus-within'), /background: var\(--eyes-item-focus\)/);
+  assert.match(
+    cssRule(css, '.thread-search__field .thread-search__clear.icon-btn.arco-btn:focus-visible'),
+    /background: var\(--eyes-hover-surface\)/,
+  );
+});
+
 test('modal search is query-gated, token-based, reconciled, and stale-draft safe', () => {
   const store = read('src/renderer/eyesOnAgents/src/store/eyesOnAgents.store.ts');
   const english = read('src/renderer/common/i18n/en.ts');

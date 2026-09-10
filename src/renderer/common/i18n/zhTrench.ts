@@ -574,6 +574,8 @@ export const zhTrench: typeof enTrench = {
     }
   },
   indexWorkspace: {
+    generate: '生成',
+    saveCas: '添加',
     modules: 'Trench 模块',
     chains: 'INDEX 链',
     indexForChain: '{chain} INDEX',
@@ -598,11 +600,11 @@ export const zhTrench: typeof enTrench = {
     highestObserved: '观测最高市值',
     analyzing: '正在分析…',
     updatedAt: '更新于 {time}',
-    waitingFirstAnalysis: '等待首次分析',
+    waitingFirstAnalysis: '尚未生成',
     firstRunTitle: '正在生成首个 INDEX',
-    firstRunDescription: '正在读取本批 Token CA 中按利润排序的交易者。',
+    firstRunDescription: '正在生成 INDEX。',
     emptyIndexTitle: '暂无 INDEX 结果',
-    emptyIndexDescription: '添加 CA 或重新分析，以发布符合条件的用户钱包证据。',
+    emptyIndexDescription: '该链暂无已生成的钱包。',
     totalProfit: 'Token 样本利润 {value}',
     walletSources: '{count} 个来源 CA · 最佳 #{rank}',
     dialogTitle: '添加 Token CA',

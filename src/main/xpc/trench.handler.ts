@@ -30,6 +30,7 @@ import type {
   TrenchIndexAddTargetInput,
   TrenchIndexApi,
   TrenchIndexCommandReceipt,
+  TrenchIndexTargetReceipt,
   TrenchIndexReanalyzeInput,
   TrenchIndexResult,
   TrenchIndexWorkspaceSnapshot,
@@ -179,7 +180,7 @@ export class TrenchHandler extends XpcMainHandler implements TrenchReadApi, Tren
 
   async addIndexTargets(
     params: TrenchIndexAddTargetInput,
-  ): Promise<TrenchIndexResult<TrenchIndexCommandReceipt>> {
+  ): Promise<TrenchIndexResult<TrenchIndexTargetReceipt>> {
     try {
       return await trenchIndexOrchestrator.addTargets(parseTrenchIndexAddTargetInput(params));
     } catch (error) {

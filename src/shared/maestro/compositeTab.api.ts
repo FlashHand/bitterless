@@ -23,6 +23,16 @@ export interface MaestroCompositeTabHostApi {
   /** Close this tab — not the window it lives in. */
   close(): void
   setTitle(title: string): void
+  /**
+   * 这个 tab 的地址栏该显示什么 —— 空串 = 退回注册时那个静态 `displayUrl`。
+   *
+   * 为什么需要它:composite tab 没有网页,地址栏原来永远显示注册时那一行
+   * (`bitterless://only-preview`)。Ral 2026-09-10 要的是**看起来像真实浏览器** —— 里面在看哪个
+   * 文件,地址栏就显示那个文件的 `file://`。而"在看哪个文件"只有 mini app 知道,所以和 `setTitle`
+   * 同一类:mini app 把自己的状态推给承载它的 tab。
+   * 见 `docs/features/onlypreview-address-bar-shows-file-url.md`。
+   */
+  setDisplayUrl(url: string): void
   /** Whether this tab is still in the strip. */
   isOpen(): boolean
 }

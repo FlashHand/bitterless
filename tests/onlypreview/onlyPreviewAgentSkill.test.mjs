@@ -208,19 +208,24 @@ test('skill path resolution and complete-file validation fail closed', async () 
   });
 });
 
-test('Guide info exposes three fields and one complete English production or DEBUG instruction', () => {
+test('Guide info exposes four fields and one complete English production or DEBUG instruction', () => {
   const production = service.createOnlyPreviewAgentSkillGuideInfo({
     configJson: '{"mcpServers":{"bitterless":{"command":"/tmp/helper"}}}',
     serverName: 'bitterless',
     skillPath: '/tmp/bitterless-preview',
     skillVersionCode: version.ONLY_PREVIEW_AGENT_SKILL_VERSION_CODE
   });
+  // `kind` 是 2026-09-10 加的第四个字段:分类在 main 侧做一次,渲染层不再拿 `serverName` 去和
+  // `'bitterless'` / `'bitterless-preview'` 两个产品名字面量比较(那既是重复分类,也是一处品牌泄漏 ——
+  // 同一份渲染层搬进 micromeet-cowork 之后那些比较永远不成立)。
   assert.deepEqual(Object.keys(production).sort(), [
     'instruction',
+    'kind',
     'serverName',
     'skillVersionCode'
   ]);
   assert.equal(production.serverName, 'bitterless');
+  assert.equal(production.kind, 'production', '渲染层的分支完全依赖这个字段');
   assert.match(production.instruction, /MCP configuration/);
   assert.match(production.instruction, /entire `bitterless-preview` skill directory/);
   assert.match(production.instruction, /~\/\.codex\/skills\/bitterless-preview/);

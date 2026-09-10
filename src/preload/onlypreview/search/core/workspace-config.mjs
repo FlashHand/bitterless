@@ -7,11 +7,55 @@ import { parse } from 'yaml';
 
 import { compileOrderedGlobRules } from './glob-config.mjs';
 
-export const WORKSPACE_CONFIG_RELATIVE_PATH = '.bitterless/preview-config.yml';
+/**
+ * 放预览配置的目录名。**这两个值是本仓与 micromeet-cowork 之间唯一的差异**(其余代码逐字节相同)。
+ *
+ * 第一个是**主名字**;其余是**只读回落** —— 存在就照读,但新名字优先。回落的意义是
+ * 「不丢已有的 per-project 配置」:这些文件是人手建在自己项目目录里的**数据**,改个名字不该让它们
+ * 突然失效(Ral 2026-09-10:「cowork 的 OnlyPreview 应该叫做 .micromeet」)。
+ *
+ * 本模块**只读不写**,所以没有"写哪一个"的问题;人愿意的话可以自己把目录改名过去。
+ */
+export const WORKSPACE_CONFIG_DIRECTORIES = ['.bitterless'];
+const WORKSPACE_CONFIG_FILE_NAME = 'preview-config.yml';
+/** 主名字下的相对路径 —— 对外仍然只暴露一个,给不关心回落的调用方。 */
+export const WORKSPACE_CONFIG_RELATIVE_PATH = `${WORKSPACE_CONFIG_DIRECTORIES[0]}/${WORKSPACE_CONFIG_FILE_NAME}`;
 const MAX_CONFIG_BYTES = 256 * 1024;
 
+/**
+ * 监听要认**全部**候选目录,不只是主名字。
+ *
+ * 少了回落那几个,人在旧目录里改一行配置不会触发重载 —— 表现是"改了没生效",而那是最难查的一种。
+ */
 export const isWorkspaceConfigWatchPath = (relativePath) =>
-  relativePath === WORKSPACE_CONFIG_RELATIVE_PATH || relativePath === '.bitterless';
+  WORKSPACE_CONFIG_DIRECTORIES.some(
+    (directory) =>
+      relativePath === directory || relativePath === `${directory}/${WORKSPACE_CONFIG_FILE_NAME}`
+  );
+
+/**
+ * 第一个**真实存在且是目录**的候选。都不存在时返回 `null`。
+ *
+ * 判据是"是不是目录",不是"存不存在" —— 一个同名的普通文件或符号链接不该被当成配置目录,
+ * 那两种情况下面的加载路径会各自抛出更准确的错误。
+ */
+const resolveWorkspaceConfigDirectory = async (rootPath, stat = lstat) => {
+  for (const directory of WORKSPACE_CONFIG_DIRECTORIES) {
+    const directoryPath = join(rootPath, directory);
+    try {
+      const stats = await stat(directoryPath);
+      if (stats.isDirectory() && !stats.isSymbolicLink()) {
+        return { directory, directoryPath, stats };
+      }
+      // 同名但不是目录 —— 交给调用方去报那个更准确的错,不要跳过它去读回落:
+      // 那会把「你那个 .micromeet 是个文件」悄悄变成「读了旧目录」。
+      return { directory, directoryPath, stats };
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  return null;
+};
 
 export const pathIsWithin = (
   rootPath,
@@ -68,14 +112,17 @@ export const defaultOnlyPreviewWorkspaceConfig = () =>
   parseOnlyPreviewWorkspaceConfig('version: 1\nexclude: []\n');
 
 export const readOnlyPreviewWorkspaceConfigSignature = async (rootPath) => {
-  const directoryPath = join(rootPath, '.bitterless');
   try {
-    const directory = await lstat(directoryPath);
-    if (!directory.isDirectory() || directory.isSymbolicLink()) {
-      return `directory:${directory.mode}:${directory.dev}:${directory.ino}`;
+    const resolved = await resolveWorkspaceConfigDirectory(rootPath);
+    if (!resolved) return 'unavailable:ENOENT';
+    // **目录名并进签名**:候选之间切换(人新建了主目录,而旧目录还在)必须算一次变化,
+    // 否则配置换了源却不重载。
+    const { directory, directoryPath, stats } = resolved;
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+      return `directory:${directory}:${stats.mode}:${stats.dev}:${stats.ino}`;
     }
-    const file = await lstat(join(directoryPath, 'preview-config.yml'));
-    return `${file.mode}:${file.dev}:${file.ino}:${file.size}:${file.mtimeMs}:${file.ctimeMs}`;
+    const file = await lstat(join(directoryPath, WORKSPACE_CONFIG_FILE_NAME));
+    return `${directory}:${file.mode}:${file.dev}:${file.ino}:${file.size}:${file.mtimeMs}:${file.ctimeMs}`;
   } catch (error) {
     return `unavailable:${error?.code ?? 'UNKNOWN'}`;
   }
@@ -83,15 +130,12 @@ export const readOnlyPreviewWorkspaceConfigSignature = async (rootPath) => {
 
 export const loadOnlyPreviewWorkspaceConfig = async (rootPath) => {
   const rootRealPath = await realpath(rootPath);
-  const configDirectoryPath = join(rootRealPath, '.bitterless');
-  const filePath = join(configDirectoryPath, 'preview-config.yml');
-  let directoryStat;
-  try {
-    directoryStat = await lstat(configDirectoryPath);
-  } catch (error) {
-    if (error?.code === 'ENOENT') return defaultOnlyPreviewWorkspaceConfig();
-    throw error;
-  }
+  const resolved = await resolveWorkspaceConfigDirectory(rootRealPath);
+  // 一个候选都没有 ⇒ 这个项目没配过,用默认配置。这与"目录存在但文件不存在"是同一个结果,
+  // 也与改名前的行为一致。
+  if (!resolved) return defaultOnlyPreviewWorkspaceConfig();
+  const { directoryPath: configDirectoryPath, stats: directoryStat } = resolved;
+  const filePath = join(configDirectoryPath, WORKSPACE_CONFIG_FILE_NAME);
   if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
     throw new TypeError('Preview config directory must not be a symbolic link');
   }

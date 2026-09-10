@@ -591,6 +591,17 @@ export class OnlyPreviewWindowHelper {
     this.standaloneMount?.showSurface();
   }
 
+  /**
+   * 承载的地址栏该显示什么。只对**当前**那个 host 生效 —— 一个过期的 hostToken 推上来就丢掉。
+   *
+   * 独立窗口那一种的 `reportDisplayUrl` 是空操作(它没有地址栏),所以这里不分情况。
+   */
+  reportDisplayUrl(hostToken: string, url: string): void {
+    if (!hostToken || this.standaloneHost?.hostToken !== hostToken) return;
+    if (!this.standaloneMount?.isAlive()) return;
+    this.standaloneMount.reportDisplayUrl(url);
+  }
+
   reportShellMounted(
     hostToken: string,
     openTag: string,

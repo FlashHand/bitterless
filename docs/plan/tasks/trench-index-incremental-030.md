@@ -6,6 +6,10 @@ depends-on: [trench-host-toggle-029]
 
 # INDEX Incremental Token Import
 
+Superseded UI/command flow: [task 031](trench-index-generate-031.md) moves Add into the CA list,
+saves metadata without analysis, and provides explicit selected-chain Generate. The delivery and
+verification below describe task 030's historical implementation, not the current Add behavior.
+
 ## Contract
 
 - [INDEX](../../features/trench-index.md): incremental top-300 semantics and evidence provenance.

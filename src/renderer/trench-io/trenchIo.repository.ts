@@ -11,6 +11,7 @@ import type {
   TrenchIndexStorageTarget,
   TrenchIndexTargetRow,
   TrenchIndexTokenMetadata,
+  TrenchIndexTargetReceipt,
   TrenchIndexWalletRow,
   TrenchIndexWorkspaceSnapshot,
   TrenchIndexXIdentityEvidence,
@@ -61,6 +62,7 @@ interface RunRow {
   request_id: string;
   request_fingerprint: string;
   trigger: TrenchIndexRunSummary['trigger'];
+  scope_chain: TrenchChain | null;
   status: TrenchIndexRunSummary['status'];
   started_at: number;
   completed_at: number | null;
@@ -908,6 +910,34 @@ export class TrenchIoRepository {
     });
   }
 
+  saveTargets(input: TrenchIndexStorageAddTargetsAndBeginRunInput): TrenchIndexTargetReceipt {
+    assertFingerprint(input.requestFingerprint);
+    return this.database.transaction(() => {
+      const prior = this.database.raw.prepare(`
+        SELECT request_fingerprint,target_count,revision FROM trench_index_target_imports WHERE request_id=?
+      `).get(input.requestId) as { request_fingerprint: string; target_count: number; revision: number } | undefined;
+      if (prior) {
+        if (prior.request_fingerprint !== input.requestFingerprint) {
+          throw new TrenchIndexRepositoryError('REQUEST_CONFLICT', 'Request was already used for another CA batch.');
+        }
+        return { requestId: input.requestId, revision: prior.revision,
+          targetPersistedCount: prior.target_count, replayed: true };
+      }
+      if (this.database.raw.prepare('SELECT 1 FROM trench_index_runs WHERE request_id=?').get(input.requestId)) {
+        throw new TrenchIndexRepositoryError('REQUEST_CONFLICT', 'Request was already used for an analysis.');
+      }
+      this.assertIdle();
+      const now = this.now();
+      const identities = this.upsertTargets(input, now);
+      const revision = this.bumpRevision(now);
+      this.database.raw.prepare(`
+        INSERT INTO trench_index_target_imports (request_id,request_fingerprint,target_count,revision,created_at)
+        VALUES (?,?,?,?,?)
+      `).run(input.requestId, input.requestFingerprint, identities.size, revision, now);
+      return { requestId: input.requestId, revision, targetPersistedCount: identities.size, replayed: false };
+    });
+  }
+
   addTargetsAndBeginRun(
     input: TrenchIndexStorageAddTargetsAndBeginRunInput,
   ): TrenchIndexStorageBeginRunResult {
@@ -916,69 +946,79 @@ export class TrenchIoRepository {
       const replay = this.replay(input.requestId, input.requestFingerprint, 'add-target');
       if (replay) return replay;
       this.assertIdle();
-      if (input.targets.length < 1 || input.targets.length > TRENCH_INDEX_MAX_TARGETS) {
-        throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Target batch size is invalid.');
-      }
-      const identities = new Set<string>();
-      for (const target of input.targets) {
-        this.assertMetadata(target.metadata);
-        const identity = `${target.chain}:${target.canonicalAddress}`;
-        if (identities.has(identity)) {
-          throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Target batch contains a duplicate CA.');
-        }
-        identities.add(identity);
-      }
       const now = this.now();
-      for (const inputTarget of input.targets) {
-        const existing = this.database.raw.prepare(`
-          SELECT * FROM trench_index_targets WHERE chain=? AND canonical_address=?
-        `).get(inputTarget.chain, inputTarget.canonicalAddress) as TargetRow | undefined;
-        const targetId = existing?.target_id ?? this.uuid();
-        if (existing) {
-          const highest = preferredHighestMarketCap({
-            highestMarketCapUsd: existing.highest_market_cap_usd,
-            highestMarketCapKind: existing.highest_market_cap_kind,
-          }, inputTarget.metadata);
-          this.database.raw.prepare(`
-            UPDATE trench_index_targets
-            SET address=?,active=1,state='pending',token_name=?,token_symbol=?,price_usd=?,
-                circulating_supply=?,current_market_cap_usd=?,highest_market_cap_usd=?,
-                highest_market_cap_kind=?,metadata_observed_at=?,error_code=NULL,error_message=NULL,
-                error_at=NULL,updated_at=?
-            WHERE target_id=?
-          `).run(
-            inputTarget.contractAddress, inputTarget.metadata.name, inputTarget.metadata.symbol,
-            inputTarget.metadata.priceUsd, inputTarget.metadata.circulatingSupply,
-            inputTarget.metadata.currentMarketCapUsd, highest.highestMarketCapUsd,
-            highest.highestMarketCapKind, inputTarget.metadata.observedAt, now, targetId,
-          );
-        } else {
-          this.database.raw.prepare(`
-            INSERT INTO trench_index_targets (
-              target_id,chain,canonical_address,address,active,state,token_name,token_symbol,price_usd,
-              circulating_supply,current_market_cap_usd,highest_market_cap_usd,
-              highest_market_cap_kind,metadata_observed_at,created_at,updated_at
-            ) VALUES (?,?,?,?,1,'pending',?,?,?,?,?,?,?,?,?,?)
-          `).run(
-            targetId, inputTarget.chain, inputTarget.canonicalAddress, inputTarget.contractAddress,
-            inputTarget.metadata.name, inputTarget.metadata.symbol, inputTarget.metadata.priceUsd,
-            inputTarget.metadata.circulatingSupply, inputTarget.metadata.currentMarketCapUsd,
-            inputTarget.metadata.highestMarketCapUsd, inputTarget.metadata.highestMarketCapKind,
-            inputTarget.metadata.observedAt, now, now,
-          );
-        }
-      }
+      const identities = this.upsertTargets(input, now);
       return this.createRun(input.requestId, input.requestFingerprint, 'add-target', now, identities);
     });
+  }
+
+  private upsertTargets(input: TrenchIndexStorageAddTargetsAndBeginRunInput, now: number): Set<string> {
+    if (input.targets.length < 1 || input.targets.length > TRENCH_INDEX_MAX_TARGETS) {
+      throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Target batch size is invalid.');
+    }
+    const identities = new Set<string>();
+    for (const target of input.targets) {
+      this.assertMetadata(target.metadata);
+      const identity = `${target.chain}:${target.canonicalAddress}`;
+      if (identities.has(identity)) {
+        throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Target batch contains a duplicate CA.');
+      }
+      identities.add(identity);
+    }
+    for (const inputTarget of input.targets) {
+      const existing = this.database.raw.prepare(`
+        SELECT * FROM trench_index_targets WHERE chain=? AND canonical_address=?
+      `).get(inputTarget.chain, inputTarget.canonicalAddress) as TargetRow | undefined;
+      const targetId = existing?.target_id ?? this.uuid();
+      if (existing) {
+        const highest = preferredHighestMarketCap({
+          highestMarketCapUsd: existing.highest_market_cap_usd,
+          highestMarketCapKind: existing.highest_market_cap_kind,
+        }, inputTarget.metadata);
+        this.database.raw.prepare(`
+          UPDATE trench_index_targets
+          SET address=?,active=1,state='pending',token_name=?,token_symbol=?,price_usd=?,
+              circulating_supply=?,current_market_cap_usd=?,highest_market_cap_usd=?,
+              highest_market_cap_kind=?,metadata_observed_at=?,error_code=NULL,error_message=NULL,
+              error_at=NULL,updated_at=?
+          WHERE target_id=?
+        `).run(
+          inputTarget.contractAddress, inputTarget.metadata.name, inputTarget.metadata.symbol,
+          inputTarget.metadata.priceUsd, inputTarget.metadata.circulatingSupply,
+          inputTarget.metadata.currentMarketCapUsd, highest.highestMarketCapUsd,
+          highest.highestMarketCapKind, inputTarget.metadata.observedAt, now, targetId,
+        );
+      } else {
+        this.database.raw.prepare(`
+          INSERT INTO trench_index_targets (
+            target_id,chain,canonical_address,address,active,state,token_name,token_symbol,price_usd,
+            circulating_supply,current_market_cap_usd,highest_market_cap_usd,
+            highest_market_cap_kind,metadata_observed_at,created_at,updated_at
+          ) VALUES (?,?,?,?,1,'pending',?,?,?,?,?,?,?,?,?,?)
+        `).run(
+          targetId, inputTarget.chain, inputTarget.canonicalAddress, inputTarget.contractAddress,
+          inputTarget.metadata.name, inputTarget.metadata.symbol, inputTarget.metadata.priceUsd,
+          inputTarget.metadata.circulatingSupply, inputTarget.metadata.currentMarketCapUsd,
+          inputTarget.metadata.highestMarketCapUsd, inputTarget.metadata.highestMarketCapKind,
+          inputTarget.metadata.observedAt, now, now,
+        );
+      }
+    }
+    const count = this.database.raw.prepare('SELECT count(*) AS count FROM trench_index_targets WHERE active=1')
+      .get() as { count: number };
+    if (count.count > TRENCH_INDEX_MAX_TARGETS) {
+      throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Active target set exceeds its limit.');
+    }
+    return identities;
   }
 
   beginRun(input: TrenchIndexStorageBeginRunInput): TrenchIndexStorageBeginRunResult {
     assertFingerprint(input.requestFingerprint);
     return this.database.transaction(() => {
-      const replay = this.replay(input.requestId, input.requestFingerprint, input.trigger);
+      const replay = this.replay(input.requestId, input.requestFingerprint, input.trigger, input.chain);
       if (replay) return replay;
       this.assertIdle();
-      return this.createRun(input.requestId, input.requestFingerprint, input.trigger, this.now());
+      return this.createRun(input.requestId, input.requestFingerprint, input.trigger, this.now(), undefined, input.chain);
     });
   }
 
@@ -991,14 +1031,18 @@ export class TrenchIoRepository {
         throw new TrenchIndexRepositoryError('REQUEST_CONFLICT', 'The analysis run is not active.');
       }
       const incumbents = new Map<string, WalletRow & { evidence_run_id: string }>();
-      if (run.trigger === 'add-target') {
+      if (run.trigger === 'add-target' || run.scope_chain) {
         const rows = this.database.raw.prepare(`
           SELECT i.*,a.wallet_id,w.canonical_address FROM trench_repository_state s
           JOIN trench_index_wallets i ON i.run_id=s.current_run_id
           JOIN trench_wallet_chain_accounts a ON a.wallet_account_id=i.wallet_account_id
           JOIN trench_wallets w ON w.wallet_id=a.wallet_id WHERE s.id=1
         `).all() as Array<WalletRow & { evidence_run_id: string }>;
-        for (const row of rows) incumbents.set(`${row.chain}:${row.canonical_address}`, row);
+        for (const row of rows) {
+          if (run.trigger === 'add-target' || row.chain !== run.scope_chain) {
+            incumbents.set(`${row.chain}:${row.canonical_address}`, row);
+          }
+        }
       }
       const expectedTargets = this.runTargets(batch.runId);
       const actualIds = new Set(batch.targets.map(({ targetId }) => targetId));
@@ -1245,25 +1289,32 @@ export class TrenchIoRepository {
     trigger: TrenchIndexRunSummary['trigger'],
     startedAt: number,
     targetIdentities?: ReadonlySet<string>,
+    scopeChain?: TrenchChain,
   ): TrenchIndexStorageBeginRunResult {
+    if (scopeChain !== undefined && !['solana', 'bsc', 'robinhood'].includes(scopeChain)) {
+      throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Generate chain is invalid.');
+    }
+    if (this.database.raw.prepare('SELECT 1 FROM trench_index_target_imports WHERE request_id=?').get(requestId)) {
+      throw new TrenchIndexRepositoryError('REQUEST_CONFLICT', 'Request was already used for a CA import.');
+    }
     const activeTargets = this.database.raw.prepare(`
       SELECT * FROM trench_index_targets WHERE active=1 ORDER BY created_at,target_id
     `).all() as TargetRow[];
     if (activeTargets.length > TRENCH_INDEX_MAX_TARGETS) {
       throw new TrenchIndexRepositoryError('INVALID_INPUT', 'Active target set exceeds its limit.');
     }
-    const targets = targetIdentities
-      ? activeTargets.filter((row) => targetIdentities.has(`${row.chain}:${row.canonical_address}`))
-      : activeTargets;
+    const targets = activeTargets.filter((row) =>
+      (!targetIdentities || targetIdentities.has(`${row.chain}:${row.canonical_address}`)) &&
+      (!scopeChain || row.chain === scopeChain));
     if (targets.length === 0) {
       throw new TrenchIndexRepositoryError('EMPTY_TARGET_SET', 'Add a target CA before reanalyzing.');
     }
     const runId = this.uuid();
     this.database.raw.prepare(`
       INSERT INTO trench_index_runs (
-        run_id,request_id,request_fingerprint,trigger,status,started_at,target_count,policy_version
-      ) VALUES (?,?,?,?,'running',?,?,?)
-    `).run(runId, requestId, fingerprint, trigger, startedAt, targets.length, TRENCH_INDEX_POLICY_VERSION);
+        run_id,request_id,request_fingerprint,trigger,status,started_at,target_count,policy_version,scope_chain
+      ) VALUES (?,?,?,?,'running',?,?,?,?)
+    `).run(runId, requestId, fingerprint, trigger, startedAt, targets.length, TRENCH_INDEX_POLICY_VERSION, scopeChain ?? null);
     const insertSnapshot = this.database.raw.prepare(`
       INSERT INTO trench_index_target_snapshots (
         run_id,target_id,token_name,token_symbol,price_usd,circulating_supply,current_market_cap_usd,
@@ -1296,11 +1347,13 @@ export class TrenchIoRepository {
     requestId: string,
     fingerprint: string,
     trigger: TrenchIndexRunSummary['trigger'],
+    scopeChain?: TrenchChain,
   ): TrenchIndexStorageBeginRunResult | null {
     const run = this.database.raw.prepare('SELECT * FROM trench_index_runs WHERE request_id=?')
       .get(requestId) as RunRow | undefined;
     if (!run) return null;
-    if (run.request_fingerprint !== fingerprint || run.trigger !== trigger) {
+    if (run.request_fingerprint !== fingerprint || run.trigger !== trigger ||
+      run.scope_chain !== (scopeChain ?? null)) {
       throw new TrenchIndexRepositoryError(
         'REQUEST_CONFLICT',
         'requestId was already used for a different Trench INDEX command.',

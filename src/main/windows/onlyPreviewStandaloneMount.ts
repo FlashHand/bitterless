@@ -130,6 +130,11 @@ export class OnlyPreviewStandaloneMount implements OnlyPreviewMount {
     if (this.isAlive()) this.baseWindow.setTitle(title);
   }
 
+  reportDisplayUrl(): void {
+    // **故意空操作。** 独立窗口没有地址栏 —— 它的标题栏已经由 `reportTitle` 说明在看什么。
+    // 往一个不存在的控件写字不会报错,所以这里必须是一条有解释的空实现,而不是一个 TODO。
+  }
+
   dispose(): void {
     this.resizeListeners.clear();
     this.activationListeners.clear();

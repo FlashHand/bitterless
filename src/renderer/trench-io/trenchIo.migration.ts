@@ -6,14 +6,16 @@ export const TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE = '260807114211';
 export const TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE = '260811170011';
 export const TRENCH_IO_PERSON_SCHEMA_VERSION_CODE = '260813155644';
 export const TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE = '260813155645';
-export const TRENCH_IO_SCHEMA_VERSION_CODE = '260908130001';
+export const TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE = '260908130001';
+export const TRENCH_IO_SCHEMA_VERSION_CODE = '260910000001';
 
 export const TRENCH_IO_MIGRATION_MANIFEST = [
   { versionCode: TRENCH_IO_INITIAL_SCHEMA_VERSION_CODE, name: 'initial-index-schema' },
   { versionCode: TRENCH_IO_CHAIN_SCHEMA_VERSION_CODE, name: 'chain-partitioned-index' },
   { versionCode: TRENCH_IO_PERSON_SCHEMA_VERSION_CODE, name: 'global-wallet-person-registry' },
   { versionCode: TRENCH_IO_IMPORT_SCHEMA_VERSION_CODE, name: 'person-import-ledger' },
-  { versionCode: TRENCH_IO_SCHEMA_VERSION_CODE, name: 'incremental-index-evidence' },
+  { versionCode: TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE, name: 'incremental-index-evidence' },
+  { versionCode: TRENCH_IO_SCHEMA_VERSION_CODE, name: 'target-import-and-scoped-generate' },
 ] as const;
 
 export interface TrenchIoMigrationDatabase {
@@ -29,6 +31,7 @@ export interface TrenchIoMigrationDatabase {
 export const TRENCH_IO_TABLE_COLUMNS = {
   trench_schema_migrations: ['version_code', 'name', 'applied_at'],
   trench_repository_state: ['id', 'revision', 'current_run_id', 'updated_at'],
+  trench_index_target_imports: ['request_id', 'request_fingerprint', 'target_count', 'revision', 'created_at'],
   trench_index_targets: [
     'target_id', 'chain', 'canonical_address', 'address', 'active', 'state', 'token_name',
     'token_symbol', 'price_usd', 'circulating_supply', 'current_market_cap_usd',
@@ -47,7 +50,7 @@ export const TRENCH_IO_TABLE_COLUMNS = {
   trench_index_runs: [
     'run_id', 'request_id', 'request_fingerprint', 'trigger', 'status', 'started_at',
     'completed_at', 'target_count', 'candidate_count', 'eligible_count', 'published_count',
-    'policy_version', 'error_code', 'error_message',
+    'policy_version', 'error_code', 'error_message', 'scope_chain',
   ],
   trench_index_target_snapshots: [
     'run_id', 'target_id', 'token_name', 'token_symbol', 'price_usd', 'circulating_supply',
@@ -1329,7 +1332,26 @@ export const applyTrenchIoMigrations = (
       `);
       db.prepare(
         'INSERT INTO trench_schema_migrations (version_code,name,applied_at) VALUES (?,?,?)',
-      ).run(TRENCH_IO_SCHEMA_VERSION_CODE, 'incremental-index-evidence', now);
+      ).run(TRENCH_IO_EVIDENCE_SCHEMA_VERSION_CODE, 'incremental-index-evidence', now);
+    })();
+    ledger = readTrenchIoMigrationLedger(db);
+    assertTrenchIoMigrationLedgerPrefix(ledger);
+  }
+  if (ledger.length === 5) {
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE trench_index_runs ADD COLUMN scope_chain TEXT
+          CHECK (scope_chain IS NULL OR scope_chain IN ('solana', 'bsc', 'robinhood'));
+        CREATE TABLE trench_index_target_imports (
+          request_id TEXT PRIMARY KEY NOT NULL,
+          request_fingerprint TEXT NOT NULL CHECK (length(request_fingerprint)=64),
+          target_count INTEGER NOT NULL CHECK (target_count BETWEEN 1 AND 1000),
+          revision INTEGER NOT NULL CHECK (revision >= 0),
+          created_at INTEGER NOT NULL CHECK (created_at >= 0)
+        );
+      `);
+      db.prepare('INSERT INTO trench_schema_migrations (version_code,name,applied_at) VALUES (?,?,?)')
+        .run(TRENCH_IO_SCHEMA_VERSION_CODE, 'target-import-and-scoped-generate', now);
     })();
     ledger = readTrenchIoMigrationLedger(db);
     assertTrenchIoMigrationLedgerPrefix(ledger);

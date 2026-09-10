@@ -2,9 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   parseTrenchIndexAddTargetInput,
+  parseTrenchIndexReanalyzeInput,
+  trenchIndexRequestFingerprint,
   parseTrenchIndexWorkspaceSnapshot,
   TrenchIndexValidationError,
 } from '../../../src/shared/trench/trenchIndex.validation';
+
+test('Generate accepts one explicit supported chain and keeps full rebuild compatibility', () => {
+  const requestId = '11111111-1111-4111-8111-111111111111';
+  assert.deepEqual(parseTrenchIndexReanalyzeInput({ requestId }), { requestId });
+  for (const chain of ['bsc', 'solana', 'robinhood']) {
+    assert.deepEqual(parseTrenchIndexReanalyzeInput({ requestId, chain }), { requestId, chain });
+  }
+  for (const chain of ['auto', 'ethereum', '', null, 1]) {
+    assert.throws(() => parseTrenchIndexReanalyzeInput({ requestId, chain }));
+  }
+  assert.throws(() => parseTrenchIndexReanalyzeInput({ requestId, chain: 'bsc', targets: [] }));
+  assert.notEqual(trenchIndexRequestFingerprint('reanalyze', ['bsc']),
+    trenchIndexRequestFingerprint('reanalyze', ['solana']));
+  assert.notEqual(trenchIndexRequestFingerprint('reanalyze', ['bsc']),
+    trenchIndexRequestFingerprint('reanalyze', []));
+});
 
 test('accepts a bounded exact Add CA batch and rejects malformed batch contracts', () => {
   const parsed = parseTrenchIndexAddTargetInput({
@@ -62,7 +80,8 @@ test('accepts ordered workspace v2 projections and rejects v1 or mixed-chain row
       { chain: 'bsc', targets: [], wallets: [] },
     ],
   }), /workspace\.chainProjections\[0\] contains unknown field: legacyTargets/);
-  const { currentRun: _currentRun, ...missingCurrentRun } = base;
+  const missingCurrentRun: Partial<typeof base> = { ...base };
+  delete missingCurrentRun.currentRun;
   assert.throws(() => parseTrenchIndexWorkspaceSnapshot(missingCurrentRun),
     /workspace is missing required field: currentRun/);
   assert.throws(() => parseTrenchIndexWorkspaceSnapshot({ ...base, schema: 'bl-trench-index-workspace-v1' }),

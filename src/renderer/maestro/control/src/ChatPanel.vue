@@ -5,6 +5,7 @@ import AttachmentCard from './AttachmentCard.vue'
 import { Button, Drawer, Message, Modal, Tooltip } from '@arco-design/web-vue'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
 import { CONTEXT_GRAPH_MATCH_HEAD_CHARS } from '@maestro-shared/coach.api'
+import { MAESTRO_ONLY_PREVIEW_APP_NAME } from '@maestro-shared/compositeTab.identity'
 import type { AgentReply } from '@maestro-shared/coach.api'
 import type { CoachXpcContract } from '@maestro-shared/coach.api'
 import type { ContextGraphView } from '@maestro-shared/coach.api'
@@ -65,6 +66,9 @@ const turnLocked = computed(() => Boolean(messageStore.turnService.activeTurn())
 const workspace = computed(() => props.session.detail.workspace)
 const workspaceLabel = computed(() => workspace.value?.name || 'Workspace')
 const workspaceTitle = computed(() => workspace.value?.path || 'Set workspace')
+const openWorkspaceLabel = computed(() =>
+  i18nHelper.maestroControl.chat.openWorkspaceInPreview.replace('{app}', MAESTRO_ONLY_PREVIEW_APP_NAME)
+)
 
 const formatSessionTime = (ts: number): string => {
   if (!ts) return ''
@@ -443,16 +447,16 @@ async function chooseWorkspace(): Promise<void> {
   await messageStore.chooseWorkspace(props.session.id)
 }
 
-async function clearWorkspace(): Promise<void> {
+async function stopUsingWorkspace(): Promise<void> {
   if (turnLocked.value || props.session.archivedAt) return
   Modal.confirm({
-    title: i18nHelper.maestroControl.chat.clearWorkspaceTitle,
-    content: i18nHelper.maestroControl.chat.clearWorkspaceContent.replace('{name}', workspaceLabel.value),
-    okText: i18nHelper.maestroControl.chat.clearWorkspace,
+    title: i18nHelper.maestroControl.chat.stopUsingWorkspaceTitle,
+    content: i18nHelper.maestroControl.chat.stopUsingWorkspaceContent.replace('{name}', workspaceLabel.value),
+    okText: i18nHelper.maestroControl.chat.stopUsingWorkspace,
     cancelText: i18nHelper.maestroControl.chat.keepWorkspace,
     onOk: async () => {
       if (turnLocked.value || props.session.archivedAt) return
-      await messageStore.clearWorkspace(props.session.id)
+      await messageStore.stopUsingWorkspace(props.session.id)
     }
   })
 }
@@ -688,7 +692,7 @@ function setHistoryContainer(el: HTMLElement | null): void {
                 type="text"
                 html-type="button"
                 :disabled="turnLocked || Boolean(session.archivedAt)"
-                aria-label="Open workspace in OnlyPreview"
+                :aria-label="openWorkspaceLabel"
                 @click="revealWorkspace"
               >
                 <span name="maestro__composer__workspace-content" class="chat-panel__workspace-content">
@@ -697,24 +701,24 @@ function setHistoryContainer(el: HTMLElement | null): void {
                 </span>
               </Button>
             </Tooltip>
-            <Tooltip content="Switch workspace" position="top" mini>
+            <Tooltip :content="i18nHelper.maestroControl.chat.switchWorkspace" position="top" mini>
               <IconBtn
                 name="maestro__composer__workspace-switch"
                 class="chat-panel__workspace-action"
                 :disabled="turnLocked || Boolean(session.archivedAt)"
-                aria-label="Switch workspace"
+                :aria-label="i18nHelper.maestroControl.chat.switchWorkspace"
                 @click="chooseWorkspace"
               >
                 <IconFolderSearch class="chat-panel__button-icon" :size="14" stroke="1.8" />
               </IconBtn>
             </Tooltip>
-            <Tooltip content="Clear workspace" position="top" mini>
+            <Tooltip :content="i18nHelper.maestroControl.chat.stopUsingWorkspaceTooltip" position="top" mini>
               <IconBtn
-                name="maestro__composer__workspace-clear"
-                class="chat-panel__workspace-action chat-panel__workspace-action--danger"
+                name="maestro__composer__workspace-stop"
+                class="chat-panel__workspace-action chat-panel__workspace-action--stop"
                 :disabled="turnLocked || Boolean(session.archivedAt)"
-                aria-label="Clear workspace"
-                @click="clearWorkspace"
+                :aria-label="i18nHelper.maestroControl.chat.stopUsingWorkspaceTooltip"
+                @click="stopUsingWorkspace"
               >
                 <IconX class="chat-panel__button-icon" :size="13" stroke="2" />
               </IconBtn>

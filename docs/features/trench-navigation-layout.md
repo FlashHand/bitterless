@@ -44,7 +44,7 @@ surfaces remain unchanged.
   observation and statistical evidence, not Sniping triggers or execution. Its first metric is
   finalized BSC ERC-20 Transfer-event count; it never relabels that evidence as price or trades.
 - The old INDEX module/chain tab row is removed; there is one chain selection owner.
-- Header Add Token CA opens the global batch dialog; Refresh rereads the selected module.
+- The CA-list header Add Token CA opens the batch dialog; top-menu Refresh rereads the selected module.
   GMGN Settings remains global.
 - Ordinary Trench adds a Settings-right tab/window toggle, with one shared renderer. Omni keeps
   independent embedded panels and no toggle: [hosting contract](trench-host-toggle.md).
@@ -52,17 +52,17 @@ surfaces remain unchanged.
 ## INDEX page
 
 ```text
-│ INDEX / BSC                                                    │
-├────────────────────────────────────────────────────────────────┤
-│ [↻ Reanalyze all]  Last successful …                          │
-├───────────────────────────────┬────────────────────────────────┤
-│ BSC TARGET CAs               │ BSC INDEX WALLETS              │
-│ …                             │ #001 … #300                    │
-└───────────────────────────────┴────────────────────────────────┘
+INDEX / BSC
+Last successful ...
+
+BSC CA LIST            [+]     BSC INDEX WALLETS       [Generate]
+SYMBOL  Token name             #001 ... #300
+CA
 ```
 
-The current INDEX behavior stays intact except the final wallet projection is at most 300 per
-chain and ranks render as `#001..#300`. Each CA still reads only GMGN Top 100 traders.
+Add fetches and saves symbol/name only. Generate explicitly rebuilds the selected chain from all
+its saved CAs, reading GMGN Top 100 traders per CA and preserving the other chains' ranking.
+Each chain retains at most 300 wallets with ranks `#001..#300`.
 
 ## Trenchers page
 

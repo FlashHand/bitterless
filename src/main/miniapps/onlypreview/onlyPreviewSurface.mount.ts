@@ -110,6 +110,15 @@ export interface OnlyPreviewMount {
 
   reportTitle(title: string): void;
 
+  /**
+   * 承载的地址栏该显示什么。空串 = 退回承载自己的缺省。
+   *
+   * **不是每个承载都有地址栏** —— 独立窗口那一种实现为空操作。放进接口而不是让调用方分情况,
+   * 是因为"当前在预览哪个文件"是 mini app 侧的知识,而"我有没有地方显示它"是承载侧的知识;
+   * 让调用方去问后者等于把承载的种类漏进上游(Ral 2026-09-10,地址栏显示 `file://`)。
+   */
+  reportDisplayUrl(url: string): void;
+
   /** Release the mount's own listeners. Called by the composite as the last step of teardown. */
   dispose(): void;
 }

@@ -19,7 +19,7 @@ class TrayHelper {
     this.primaryWindowPresenter = primaryWindowPresenter;
 
     const isWin = process.platform === 'win32';
-    const iconFilename = isWin ? 'tray-win.ico' : 'bitterless-tray-mac-24.png';
+    const iconFilename = isWin ? 'tray-win.ico' : 'bitterless-tray-mac-22.png';
     let iconPath: string;
 
     if (import.meta.env.VITE_MODE === 'release') {
