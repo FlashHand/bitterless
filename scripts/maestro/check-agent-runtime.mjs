@@ -226,7 +226,23 @@ assert(maestroAgent.includes('freshSession: false') && maestroAgent.includes('me
 assert(!coachApi.includes('resetAgentConversation'), 'public Coach XPC contract should not expose the removed reset conversation action')
 assert(!coachHandler.includes('resetAgentConversation'), 'Coach XPC handler should not expose the removed reset conversation action')
 assert(!maestroWindow.includes('resetAgentConversation'), 'main helper should not keep the removed reset conversation action')
-assert(maestroAgent.includes('this.hydratedMaestroAgentSessions.delete(this.agentSessionKey(params?.sessionId))'), 'abort should clear hydration state')
+// 措辞过时(2026-09-10 把这个守卫改成收集全部之后才露出来):`abortAgent` 早就把
+// `agentSessionKey(...)` 提成了局部 `sessionKey`,断言还在找那个内联表达式。**行为一直是对的**
+// —— 按会话清,不是整集清。所以钉的是那件事本身,而不是它当时的写法:
+//  · `delete(sessionKey)` 必须在 abortAgent 里(停一个会话不该迫使别的会话重新注入记忆);
+//  · abortAgent 里不许出现 `.clear()`(那就是整集清)。
+const abortAgentBody = maestroAgent.slice(
+  maestroAgent.indexOf('async abortAgent(params: {'),
+  maestroAgent.indexOf('async abortDelegate(params?: {')
+)
+assert(
+  abortAgentBody.includes('this.hydratedMaestroAgentSessions.delete(sessionKey)'),
+  'abortAgent 必须按会话清 hydration 标记'
+)
+assert(
+  !abortAgentBody.includes('hydratedMaestroAgentSessions.clear()'),
+  'abortAgent 不许整集清 hydration —— 那会让停 A 迫使 B/C 重新注入会话记忆'
+)
 
 assert(!messageStore.includes('await coach.resetAgentConversation({ sessionId: session.id })'), 'composer reset action should no longer reset the host agent session')
 assert(!messageStore.includes('async reset(sessionId: string)'), 'message store should not keep the removed reset action')
