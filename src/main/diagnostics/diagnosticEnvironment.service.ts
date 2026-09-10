@@ -18,9 +18,6 @@ const isSafeRuntimeValue = (key: ApplicationDiagnosticEnvironmentKey, value: str
 const ENDPOINT_ORIGIN_KEYS = new Set<ApplicationDiagnosticEnvironmentKey>([
   'VITE_BITTERLESS_CORE_URL',
   'CDN_API_ENDPOINT',
-  'COACH_AI_CRMS_CORE_BASE_URL',
-  'COACH_AI_CRMS_MEDIA_UPLOAD_URL',
-  'COACH_AI_CRMS_RELAY_BASE_URL',
   'COACH_MEDIA_UPLOAD_URL'
 ]);
 

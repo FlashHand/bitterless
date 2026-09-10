@@ -450,7 +450,7 @@ test('built MCP helper persists exact synthetic evidence into already-open Trenc
   const omniTree = {
     id: 'trench-skill-integration',
     type: 'leaf',
-    url: `${mockOrigin}/ai-crms`,
+    url: `${mockOrigin}/sample-site`,
     contentMode: 'miniapp',
     miniAppId: 'trench'
   };

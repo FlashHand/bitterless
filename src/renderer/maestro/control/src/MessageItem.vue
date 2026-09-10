@@ -4,6 +4,7 @@ import MarkdownRender from 'markstream-vue'
 import { Trigger } from '@arco-design/web-vue'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
 import { IconActivity, IconDotsVertical, IconExternalLink, IconFolderOpen, IconSparkles } from '@tabler/icons-vue'
+import { messageStore } from './store/message.store'
 import type { AgentActivityStep, CoachXpcContract, FileStatusResult, ReplayResult } from '@maestro-shared/coach.api'
 import type { ChatFile, ChatMessage } from './store/message.type'
 import AttachmentCard from './AttachmentCard.vue'
@@ -48,6 +49,9 @@ const artifactFiles = computed(() => (props.message.role === 'ai' ? (props.messa
 const taskParts = computed(() => (props.message.role === 'ai' ? props.message.tasks || [] : []))
 const isTaskRow = computed(() => props.message.type === 'task')
 const isConfirmRow = computed(() => props.message.type === 'confirm')
+// 「刚被跳到的是不是我」—— **读 store,不在本组件里存第二份**。存副本就要自己接一个
+// watch 去清它,而清晚一帧就是两行同时在闪:哪条在闪只能有一个真相。
+const isJumped = computed(() => messageStore.highlightMessageId === props.message.id)
 const artifactPathKey = computed(() => artifactFiles.value.map((file) => file.path || '').filter(Boolean).join('\n'))
 const messageSkills = computed(() => {
   if (props.message.skills?.length) return props.message.skills
@@ -177,7 +181,12 @@ watch(artifactPathKey, () => void refreshFileStatuses(), { immediate: true })
 </script>
 
 <template>
-  <div name="messageItem" class="message-item" :class="messageAlignClass(props.message)">
+  <div
+    name="messageItem"
+    class="message-item"
+    :class="[messageAlignClass(props.message), { 'message-item--jumped': isJumped }]"
+    :data-message-id="props.message.id"
+  >
     <div
       class="message-item__content"
       :class="{

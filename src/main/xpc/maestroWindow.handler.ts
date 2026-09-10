@@ -7,9 +7,8 @@ import { sqliteWindowHelper as maestroSqliteWindowHelper } from '@maestro-main/w
 import { initMaestroXpc } from '@maestro-main/xpc/xpc.helper'
 import { acquireMaestroProxyDispatcher } from '@maestro-main/net/proxy'
 import { activateShortcuts } from '@maestro-main/common/shortcutsHelper/shortcuts.helper'
-import { ensureMicromeetCliIntegration, writeMicromeetCliCredential } from '@maestro-main/cli/micromeetCli.service'
-import { authBridge } from '@maestro-main/auth/authBridge'
 import { maestroDataRoot } from '@maestro-main/data/maestroDataRoot'
+import { runCrmsResidueCleanupOnce } from '@maestro-main/retirement/crmsResidueCleanup'
 import {
   MaestroOpenTimeoutError,
   classifyMaestroOpenFailure,
@@ -19,10 +18,8 @@ import {
 } from '@maestro-main/diagnostics/maestroOpenDiagnostics.service'
 import { deviceHelper } from '@maestro-shared/deviceHelper/device.helper'
 import type { SqliteBootApi } from '@maestro-shared/sqliteKey.api'
-import type { SessionApi } from '@maestro-shared/session.api'
 
 const sqliteBoot = createXpcMainEmitter<SqliteBootApi>('SqliteBootDao')
-const maestroSession = createXpcMainEmitter<SessionApi>('MaestroSessionDao')
 const authInvalidationMarker = (): string => join(maestroDataRoot(), '.auth-invalidated')
 const SQLITE_READY_TIMEOUT_MS = 10_000
 const MAESTRO_READY_TIMEOUT_MS = 30_000
@@ -193,7 +190,6 @@ class MaestroWindowHandler extends XpcMainHandler {
 
   private initializeRuntime(): void {
     if (this.runtimeInitialized) return
-    ensureMicromeetCliIntegration()
     initMaestroXpc()
     deviceHelper.getDeviceInfo()
     activateShortcuts({
@@ -216,11 +212,9 @@ class MaestroWindowHandler extends XpcMainHandler {
       await this.ensureMaestroSqliteReady(diagnostics)
       this.assertAuthReady()
 
-      const sessionStartedAt = diagnostics.mark()
-      const session = await maestroSession.getSession().catch(() => null)
-      writeMicromeetCliCredential(session)
-      diagnostics.completeStage('session', sessionStartedAt)
-      this.assertAuthReady()
+      // AI-CRMS 退役残留的一次性清理(sunset 2026-12-31)。夹在 sqlite 就绪与主窗口创建之间:
+      // ConfigDao / TabsDao 要先在,而历史 tab 是主窗口起来后才恢复的。永不抛。
+      await runCrmsResidueCleanupOnce()
 
       const controllerStartedAt = diagnostics.mark()
       maestroWindowHelper.setOpenBootDiagnostics(diagnostics)
@@ -335,37 +329,18 @@ class MaestroWindowHandler extends XpcMainHandler {
   }
 
   private async performAuthCleanup(): Promise<void> {
-    await authBridge.quiesce()
     const boot = this.bootPromise
     if (boot) await boot.catch(() => undefined)
-    await authBridge.quiesce()
-    await this.destroyMaestroRuntime(async () => {
-      await this.ensureMaestroSqliteReady()
-      const cleared = await maestroSession.clearSession()
-      if (!cleared?.ok) throw new Error('[maestro auth] session DAO refused to clear')
-      if (!writeMicromeetCliCredential(null)) {
-        throw new Error('[maestro auth] Micromeet CLI credential could not be cleared')
-      }
-    })
+    await this.destroyMaestroRuntime()
   }
 
-  private async destroyMaestroRuntime(beforeFinalize?: () => Promise<void>): Promise<void> {
-    if (this.cleanupPromise) {
-      await this.cleanupPromise
-      if (beforeFinalize) {
-        try {
-          await beforeFinalize()
-        } finally {
-          maestroSqliteWindowHelper.destroy()
-        }
-      }
-      return
-    }
+  // `beforeFinalize` 这个钩子随 AI-CRMS session 清理一起退役了(2026-09):它唯一的调用点是
+  // 「窗口关完、sqlite 宿主销毁前,清掉共享登录 session」,现在没有可清的东西。
+  private async destroyMaestroRuntime(): Promise<void> {
     if (!this.cleanupPromise) {
       this.cleanupPromise = (async () => {
         try {
           await maestroWindowHelper.shutdown()
-          await beforeFinalize?.()
         } finally {
           maestroSqliteWindowHelper.destroy()
           this.releaseProxy?.()

@@ -12,7 +12,6 @@ const DEFAULT_SETTINGS: CoachSettings = {
 }
 
 const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
-  'ai-crms': 'qwen3.7-plus',
   'openai-codex': 'gpt-5.6-luna'
 }
 
@@ -81,7 +80,6 @@ function normalizeLlmModel(model: string, fallbackModel: string): string {
 
 function normalizeLlmProvider(provider: string): string {
   const trimmed = provider.trim().toLowerCase()
-  if (trimmed === 'ai-crms' || trimmed === 'aicrms' || trimmed === 'ai crms' || trimmed === 'acms') return 'ai-crms'
   if (trimmed === 'openai-codex' || trimmed === 'codex' || trimmed === 'openai') return 'openai-codex'
   // Claude is still supported in the runtime, but the Maestro selector is hidden for now.
   if (trimmed === 'anthropic' || trimmed === 'claude' || trimmed === 'cloud' || trimmed === 'claude-code') return 'openai-codex'

@@ -225,6 +225,8 @@ export class OnlyPreviewAlertViewService {
     const dialog: OnlyPreviewAlertErrorDialog = {
       kind: 'error',
       dialogId: randomUUID(),
+      // 缺省 `error`:这个方法既有的调用方全都在报错,它们不该因为多了一个语气而改签名。
+      tone: request.tone === 'notice' ? 'notice' : 'error',
       title: boundOnlyPreviewAlertLabel(request.title, 'Alert title'),
       message: boundOnlyPreviewAlertText(request.message, 'Alert message'),
       confirmLabel: boundOnlyPreviewAlertLabel(request.confirmLabel, 'Alert confirm label')
@@ -305,6 +307,8 @@ export class OnlyPreviewAlertViewService {
     this.error = {
       kind: 'error',
       dialogId: randomUUID(),
+      // 这一条是**底下那个对话框自己报的错**,不是提示 —— 语气就是 `error`。
+      tone: 'error',
       title: boundOnlyPreviewAlertLabel(outcome.error.title, 'Alert title'),
       message: boundOnlyPreviewAlertText(outcome.error.message, 'Alert message'),
       confirmLabel: boundOnlyPreviewAlertLabel(outcome.error.confirmLabel, 'Alert confirm label')

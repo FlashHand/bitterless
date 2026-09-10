@@ -69,9 +69,9 @@ controller exposes only the narrow XPC and tool facades required by existing cal
 - XPC methods, parameter/return shapes, and broadcast channel names remain unchanged.
 - Startup order remains: create the top-level window, attach all child views, load the pinned
   bundled Home tab and first-party renderers, then reveal the window after the readiness fence.
-- The pinned local Home tab is non-recordable and non-debuggable. AI-CRMS authentication uses a
-  separate closable, non-persisted login tab whose auth bridge is detached before its debugger/view
-  on tab eviction, tab close, authentication cleanup, and native-window shutdown.
+- The pinned local Home tab is non-recordable and non-debuggable. (AI-CRMS authentication used to
+  add a separate closable, non-persisted login tab with its own auth bridge; that provider was
+  retired in 2026-09 and Maestro no longer opens any provider login tab.)
 - The warm/cold browser-tab cap, ordinary-tab debugger attachment, capture-target switching,
   workbench overlay, browser-tab persistence, and remaining close/shutdown behavior stay owned by
   their extracted services.

@@ -156,7 +156,6 @@ test('Main lifecycle wires every fixed route and cold-boot stage without private
     'proxy',
     'sqlite-window',
     'sqlite-preload',
-    'session',
     'controller',
     'show'
   ]) {

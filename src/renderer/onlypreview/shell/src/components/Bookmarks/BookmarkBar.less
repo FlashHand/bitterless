@@ -2,14 +2,82 @@
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
-  max-height: 30%;
+  /* 最高 320px,超出由 `__list` 自己滚(Ral 2026-09-09)。原来是 `30%` —— 那个比例在一块高屏上
+     算出来比 320px 还小,两条一起留会让指定的 320 永远到不了,所以是**替换**而不是叠加。 */
+  max-height: 320px;
   min-height: 22px;
   min-width: 0;
-  padding: 2px 6px;
-  border-bottom: 1px solid var(--onlypreview-divider);
+  /* Ral 2026-09-09:「距离左侧 8px,补充上下边距 8px,并增加合适的圆角」。
+     圆角取 8px:这棵树行级的圆角是 4px(全树 13 处),容器高一档到 8px,与他这一轮定的
+     8px 间距节奏一致 —— 不用 14px 那个孤例。
+     圆角看得见是因为有色差:书签栏是 `--onlypreview-surface`(#fff),
+     它坐在 `--onlypreview-project-surface`(#f9fafc)的侧栏上。
+     **右侧仍然是齐边的** —— 他只说了左侧,所以没自作主张加 `margin-right`。 */
+  margin-left: 8px;
+  padding: 8px 6px;
   background: var(--onlypreview-surface);
+  border-radius: 8px;
   -webkit-app-region: no-drag;
 }
+/* 标题一行。**无分割线、无边框** —— Ral 2026-09-09:「尽量不要用带 border 的 UI 设计」。
+   层次靠字号与颜色,不靠线。这一行不参与滚动:它 `flex: 0 0 auto`,滚的是下面的 `__list`。 */
+.onlypreview-bookmarks__header {
+  display: flex;
+  align-items: center;
+  flex: 0 0 22px;
+  gap: 8px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 2px;
+}
+.onlypreview-bookmarks__title {
+  flex: 0 0 auto;
+  color: var(--onlypreview-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* 问号 —— **必须自己写全 `border: 0` ＋ `background: transparent`。**
+ *
+ * Ral 2026-09-09:「不要用这种设计,用 iconbtn 无边框的设计」。他截到的那个带框的 `?` 不是哪个
+ * IconBtn 的样式,是**根本没有样式**:cowork 的 IconBtn 是一个 Tailwind `<button>`,而
+ * `renderer/onlypreview/shell/src/main.ts` 只引 Arco、**不引 Tailwind 那份 css**,于是那些
+ * `h-8 w-8 rounded-md …` 全是无意义的类名,按钮退回 Chromium 的 UA 默认样式 —— 灰底 ＋ 1px 边框。
+ *
+ * 所以本树里每一个 IconBtn 的外观都**只能**由这里的 Less 负责,不能指望底下那个组件。
+ * `PreviewToolbar__navigation-button` 与 `FileActions__button` 早就是这么写的(那也是为什么那几个
+ * 看起来是对的);守卫 `onlyPreviewBookmarks.test.mjs` 现在把这条要求钉住了。
+ *
+ * 两级选择器是为了赢过各自 IconBtn 的默认尺寸(cowork 32px 的 `h-8 w-8`、bitterless 的
+ * `.icon-btn.arco-btn`),不用 `!important`。`margin-left: auto` 把它推到这一行右端。 */
+.onlypreview-bookmarks__header .onlypreview-bookmarks__hint {
+  flex: 0 0 20px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--onlypreview-muted);
+  line-height: 1;
+  cursor: pointer;
+}
+.onlypreview-bookmarks__header .onlypreview-bookmarks__hint:hover {
+  color: var(--onlypreview-royal);
+  background: var(--onlypreview-royal-soft);
+}
+.onlypreview-bookmarks__header .onlypreview-bookmarks__hint:focus-visible {
+  outline: 2px solid var(--onlypreview-focus);
+  outline-offset: -2px;
+}
+.onlypreview-bookmarks__header .onlypreview-bookmarks__hint svg {
+  display: block;
+}
+
 .onlypreview-bookmarks__list {
   display: flex;
   flex-direction: column;
@@ -25,11 +93,43 @@
   flex: 0 0 22px;
   min-width: 0;
 }
-.onlypreview-bookmarks__remove {
+/* 用两级选择器提高优先级,而不是 `!important`。
+ *
+ * 原来单写 `.onlypreview-bookmarks__remove` 在 bitterless 有效,是因为那边的 IconBtn 包 Arco
+ * `Button`,尺寸来自 `.icon-btn.arco-btn`(单类 + 单类,同级但定义在前)。**micromeet-cowork 的
+ * IconBtn 是 Tailwind 原生 `<button>`**,尺寸来自 `h-8 w-8`(32px)——同为单类选择器,谁赢取决于
+ * 打包顺序,于是那边的关闭按钮会以 32px 撑破这行 22px 的书签行。
+ *
+ * 两级选择器让 22px 在两仓都确定性生效;圆角与悬停反馈仍由各仓自己的 IconBtn 提供,
+ * 所以它在两边都还是"那个标准图标按钮",只是被约束到行高。 */
+.onlypreview-bookmarks__row .onlypreview-bookmarks__remove {
   flex: 0 0 22px;
   width: 22px;
+  min-width: 22px;
   height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
+  /* 同 `__hint`:本树里 IconBtn 的外观只能由这里负责 —— 少了这两行,cowork 那边就是一个带边框的
+     UA 默认按钮(Ral 2026-09-09 截到的正是这个)。 */
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--onlypreview-muted);
+  line-height: 1;
+  cursor: pointer;
+}
+.onlypreview-bookmarks__row .onlypreview-bookmarks__remove:hover {
+  color: var(--onlypreview-royal);
+  background: var(--onlypreview-royal-soft);
+}
+.onlypreview-bookmarks__row .onlypreview-bookmarks__remove:focus-visible {
+  outline: 2px solid var(--onlypreview-focus);
+  outline-offset: -2px;
+}
+.onlypreview-bookmarks__row .onlypreview-bookmarks__remove svg {
+  display: block;
 }
 .onlypreview-bookmarks__item {
   display: inline-flex;
@@ -60,9 +160,18 @@
   text-overflow: ellipsis;
 }
 .onlypreview-bookmarks__empty {
+  /* 独占第二行(Ral 2026-09-09:「No bookmarks 应该放到第二行」),`flex: 0 0 auto` 所以它和标题行
+     一样不参与滚动。左内边距 2px 与 `__header` 对齐,读起来是同一列。
+     **无底色**(同日):它是一句状态文字,不是可点的条目;给它底色会读成"可点击"。 */
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 2px;
   color: var(--onlypreview-muted);
   font-size: 12px;
-  line-height: 22px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .onlypreview-bookmarks__failure {
   color: var(--onlypreview-danger);

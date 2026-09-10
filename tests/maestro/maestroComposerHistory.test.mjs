@@ -16,6 +16,8 @@ const activeTurn = vue.ref(null);
 const fixture = {
   mounts: [], unmounts: [], listeners: new Map(), calls: [], confirmations: [], notices: [], focused: true,
   copyContext: async () => ({ ok: true, chars: 123, entries: 4 }),
+  copySessionPath: async () => ({ ok: true, path: '/tmp/session-io' }),
+  readContextGraph: async () => ({ ok: true, graph: { sessionId: 'b', systemChars: 10, systemPreview: 'S', blocks: [], turns: 0, totalChars: 10, byType: [], pending: { chars: 0 }, noHistory: true } }),
   messageStore: vue.reactive({
     historySessions: [],
     turnService: {
@@ -61,18 +63,28 @@ const mocks = {
     export const Modal = { confirm: (params) => globalThis.__historyFixture.confirmations.push(params) };`,
   'electron-xpc/renderer': `export const createXpcRendererEmitter = () => ({ copyNextTurnContext: params => {
     globalThis.__historyFixture.calls.push(['copy', params]); return globalThis.__historyFixture.copyContext(params);
+  }, copySessionIoPath: params => {
+    globalThis.__historyFixture.calls.push(['path', params]); return globalThis.__historyFixture.copySessionPath(params);
+  }, readContextGraph: params => {
+    globalThis.__historyFixture.calls.push(['graph', params]); return globalThis.__historyFixture.readContextGraph(params);
   } });`,
   '@renderer/common/i18n/i18n.helper': `export const i18nHelper = { maestroControl: { chat: {
     clearWorkspaceTitle: 'Clear?', clearWorkspaceContent: 'Clear {name}?', clearWorkspace: 'Clear', keepWorkspace: 'Keep',
     slashClear: 'Start a fresh chat; keep this conversation', slashViewContext: 'Copy model context and pending input',
-    slashCopied: 'Copied {chars} / {entries}', newChatUnavailable: 'New chat is unavailable while a turn is running.'
-  } } };`,
+    slashCopied: 'Copied {chars} / {entries}', newChatUnavailable: 'New chat is unavailable while a turn is running.',
+    slashCopySessionPath: 'Copy the model I/O jsonl folder for this session', slashPathCopied: 'Session jsonl path copied',
+    slashViewContextGraph: 'Show the structure of the context the next send would give the model'
+  }, contextGraph: { readFailed: 'Could not read the context' } } };`,
   './store/message.store': 'export const messageStore = globalThis.__historyFixture.messageStore;',
   './store/channel.store': `export const channelStore = {
     startNewMaestroSession: async (id) => globalThis.__historyFixture.calls.push(['new', id]),
     selectMaestroHistorySession: async (id) => globalThis.__historyFixture.calls.push(['history', id])
   };`,
-  './store/turn.service': 'export const isRejection = () => false;'
+  './store/turn.service': 'export const isRejection = () => false;',
+  // 面板现在从这里**取值**(不只是取类型):`CONTEXT_GRAPH_MATCH_HEAD_CHARS`。
+  // 类型导入会被 esbuild 直接擦掉,值导入必须能解析 —— 而这个 harness 没有 `@maestro-*` 别名,
+  // 所以这条 mock 就是那个别名的替身。数必须与 `src/shared/maestro/coach.api.ts` 里的一致。
+  '@maestro-shared/coach.api': 'export const CONTEXT_GRAPH_MATCH_HEAD_CHARS = 200;'
 };
 const output = await build({
   stdin: { contents: `${script.content}\nexport default component;`, resolveDir: resolve(root, 'src/renderer/maestro/control/src'), loader: 'ts' },
@@ -92,11 +104,13 @@ const harness = (t, archivedAt) => {
   fixture.confirmations.length = 0;
   fixture.notices.length = 0;
   fixture.copyContext = async () => ({ ok: true, chars: 123, entries: 4 });
+  fixture.copySessionPath = async () => ({ ok: true, path: '/tmp/session-io' });
+  fixture.readContextGraph = async () => ({ ok: true, graph: { sessionId: 'b', systemChars: 10, systemPreview: 'S', blocks: [], turns: 0, totalChars: 10, byType: [], pending: { chars: 0 }, noHistory: true } });
   fixture.listeners.clear();
   fixture.focused = true;
   fixture.activeTurn = null;
   fixture.messageStore.historySessions = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
-  const props = vue.reactive({ session: { id: 'b', archivedAt, detail: { workspace: { name: 'Project' } } } });
+  const props = vue.reactive({ session: { id: 'b', archivedAt, messages: [], detail: { workspace: { name: 'Project' } } } });
   const ui = component.setup(props, { expose: () => undefined, emit: () => undefined });
   let focused = 0;
   ui.composerRef.value = { focus: () => focused++, style: {}, selectionStart: 0, scrollHeight: 44, setSelectionRange: () => undefined };
@@ -223,10 +237,10 @@ test('slash menu triggers only at a line start, filters predictably and wraps it
   await draft(ui, '/clear/file', 6);
   assert.equal(ui.slashVisible.value, false);
   await draft(ui, 'Question\n/');
-  assert.deepEqual(ui.shortcutStore.matches.map(item => item.name), ['/clear', '/view_context']);
+  assert.deepEqual(ui.shortcutStore.matches.map(item => item.name), ['/clear', '/copy_session_path', '/view_context', '/view_context_graph']);
   assert.equal(ui.shortcutStore.active.name, '/clear');
   composerKey(ui, 'ArrowUp');
-  assert.equal(ui.shortcutStore.active.name, '/view_context');
+  assert.equal(ui.shortcutStore.active.name, '/view_context_graph');
   composerKey(ui, 'ArrowDown');
   assert.equal(ui.shortcutStore.active.name, '/clear');
   await draft(ui, '/CONTEXT');

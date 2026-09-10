@@ -32,7 +32,6 @@ const vite = readProject('electron.vite.config.ts')
 const card = readProject('src/renderer/home/src/views/miniApp/MiniApp.vue')
 const apps = readProject('src/renderer/home/src/views/miniApp/miniApps.constant.ts')
 const builder = readProject('electron-builder.yml')
-const prepareCli = readProject('scripts/prepare-maestro-cli.cjs')
 const sqliteKey = readMaestro('main/security/sqliteKey.service.ts')
 const sqlitePreload = readMaestro('preload/sqlite.preload.ts')
 const controlViewSource = readMaestro('main/windows/main/maestroControlView.service.ts')
@@ -49,7 +48,6 @@ assert(appMain.includes("if (app.isPackaged)") && appMain.includes('BITTERLESS_E
 assert(appMain.includes("session.fromPartition(MAESTRO_PARTITION).protocol.handle"), 'E2E network isolation must cover the Maestro partition before opening the app')
 assert(appMain.includes('return Response.error()'), 'unknown E2E HTTP(S) requests must fail closed')
 assert(readProject('src/main/updateHelper/update.service.ts').includes("this.disabledForE2E ? '0' : this.getCurrentVersionCode()"), 'E2E updater disablement must not read package metadata or start transport')
-assert(handler.includes("createXpcMainEmitter<SessionApi>('MaestroSessionDao')"), 'Maestro session storage must use an isolated channel')
 assert(dataRoot.includes("join(app.getPath('userData'), 'cowork')"), 'Maestro files must live below Bitterless userData/cowork')
 assert(dataRoot.includes("persist:bitterless-cowork"), 'Maestro web state must use an isolated persistent partition')
 assert(sqliteKey.includes("process.env.BITTERLESS_E2E === '1'") && sqliteKey.includes('randomBytes(32)'), 'E2E SQLCipher key must be process-random')
@@ -89,8 +87,7 @@ assert(card.includes('await maestroWindowEmitter.openMaestroWindow()') && card.i
 for (const [id, action] of [['todo', 'openTodo'], ['eyes-on-agents', 'openEyesOnAgents'], ['omni-browser', 'openOmniBrowser']]) {
   assert(activeApps.includes(`id: '${id}'`) && activeApps.includes(`action: ${action}`), `Mini Apps must keep ${id} visible`)
 }
-assert(builder.includes('from: build/maestro-tools') && builder.includes('to: maestro-tools'), 'packaging must include the Maestro CLI bundle')
-assert(prepareCli.includes("packages', 'micromeet-cli'"), 'CLI preparation must source the vendored workspace package')
+assert(builder.includes('from: build/maestro-tools') && builder.includes('to: maestro-tools'), 'packaging must include the Maestro external-tools bundle')
 
 const setE2eEnvironment = (enabled) => {
   const previous = process.env.BITTERLESS_E2E

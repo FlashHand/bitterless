@@ -614,7 +614,11 @@ test('Electron Builder registers the audit and excludes non-runtime roots', () =
   assert.match(builder, /^\s+- '!dist\/\*\*'$/m);
   assert.match(builder, /^\s+- '!tmp\/\*\*'$/m);
   assert.match(builder, /^\s+- '!output\/\*\*'$/m);
-  assert.match(builder, /^\s+- '!node_modules\/@micromeet\/cli\{,\/\*\*\}'$/m);
+  assert.doesNotMatch(
+    builder,
+    /@micromeet\/cli/,
+    'the vendored CLI was retired in 2026-09; the template must not carry an exclusion for it',
+  );
   assert.match(builder, /^\s+- '!node_modules\/\*\*\/\*\.map'$/m);
   const config = parseYaml(builder);
   assert(
@@ -651,7 +655,6 @@ test('Electron Builder registers the audit and excludes non-runtime roots', () =
   );
 
   for (const binaryPath of [
-    'Contents/Resources/maestro-tools/micromeet',
     'Contents/Resources/maestro-tools/bun',
     'Contents/Resources/maestro-tools/rg',
     'Contents/Resources/maestro-tools/fd',

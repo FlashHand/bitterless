@@ -1,20 +1,16 @@
 import { shell } from 'electron'
 import { dirname } from 'path'
-import { mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { mkdirSync } from 'fs'
 import { createServer } from 'node:http'
 import { createXpcMainEmitter, xpcMain } from 'electron-xpc/main'
 import { injectable } from 'inversify'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import type { CoachSettings } from '@maestro-shared/coach.api'
-import type { AuthSession, SessionApi } from '@maestro-shared/session.api'
-import { AUTH_BROADCAST } from '@maestro-shared/session.api'
-import { writeMicromeetCliCredential } from '@maestro-main/cli/micromeetCli.service'
 import type { ConfigApi } from '@maestro-shared/config.api'
 import { LLM_COMPRESSION_REMAINING_KEY, LLM_CONFIG_DOMAIN, LLM_TARGET_KEY } from '@maestro-shared/config.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
 import type { LlmConfig, LlmEffort, LlmProviderState } from '@maestro-shared/coach.api'
 import {
-  DEFAULT_COMPRESSION_REMAINING_PERCENT,
   DEFAULT_PRESET_MODEL,
   LLM_PRESETS,
   LLM_PROVIDERS,
@@ -37,11 +33,9 @@ import {
   type LlmStoredTarget
 } from './llmModels'
 import { maestroAuthPath, maestroModelsPath } from './llmPaths'
-import { buildAiCrmsPiProviderConfig } from '@maestro-main/networking/api/aiCrmsRelay.api'
 import { codexCredentialService } from '../../codex/codexCredential.runtime'
 
 const configStore = createXpcMainEmitter<ConfigApi>('ConfigDao')
-const aiCrmsSession = createXpcMainEmitter<SessionApi>('MaestroSessionDao')
 
 interface PiAuthStorage {
   login: (
@@ -126,7 +120,6 @@ export interface MaestroLlmServiceState {
   resetLlmAgentSessions(): void
   readMaestroSettings(): CoachSettings
   saveMaestroSettings(patch: Partial<CoachSettings>): CoachSettings
-  openAiCrmsLoginTab(): Promise<void>
   emitTrace(e: TraceEvent): void
 }
 
@@ -135,45 +128,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
   private activeLlmLoginProvider = ''
   private anthropicIpv6Server: ReturnType<typeof createServer> | null = null
   private anthropicCaptureResolve: ((url: string) => void) | null = null
-
-  private readPiModelsJson(): Record<string, unknown> {
-    try {
-      const parsed = JSON.parse(readFileSync(maestroModelsPath(), 'utf8')) as unknown
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
-    } catch {
-      return {}
-    }
-  }
-
-  private async syncAiCrmsProviderModels(session?: AuthSession | null): Promise<boolean> {
-    const activeSession = session ?? (await aiCrmsSession.getSession().catch(() => null))
-    if (!activeSession?.jwt_token) {
-      console.log('[coach llm] AI-CRMS provider not ready: no shared session')
-      return false
-    }
-    try {
-      const compressionPrefs = await this.readStoredLlmCompressionPrefs()
-      const compressionRemainingPercent =
-        compressionPrefs[modelPresetKey('ai-crms', 'qwen3.7-plus')] ?? DEFAULT_COMPRESSION_REMAINING_PERCENT
-      const doc = this.readPiModelsJson()
-      const providers = doc.providers && typeof doc.providers === 'object' && !Array.isArray(doc.providers) ? (doc.providers as Record<string, unknown>) : {}
-      const providerConfig = buildAiCrmsPiProviderConfig({ session: activeSession, compressionRemainingPercent })
-      providers['ai-crms'] = providerConfig
-      doc.providers = providers
-      mkdirSync(dirname(maestroModelsPath()), { recursive: true })
-      writeFileSync(maestroModelsPath(), JSON.stringify(doc, null, 2), 'utf8')
-      console.log('[coach llm] AI-CRMS provider synced', {
-        baseUrl: providerConfig.baseUrl,
-        region: providerConfig.headers['x-region'] || '',
-        compressionRemainingPercent
-      })
-      return true
-    } catch (err) {
-      this._state.emitTrace({ kind: 'error', msg: 'sync AI-CRMS provider: ' + (err as Error).message, ts: Date.now() })
-      console.error('[coach llm] AI-CRMS provider sync failed:', err)
-      return false
-    }
-  }
 
   private async readStoredLlmTarget(): Promise<LlmStoredTarget> {
     const fallback = this._state.readMaestroSettings()
@@ -201,10 +155,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
   }
 
   private async checkLlmProviderReady(provider: string, model: string): Promise<boolean> {
-    if (provider === 'ai-crms') {
-      const session = await aiCrmsSession.getSession().catch(() => null)
-      return Boolean(session?.jwt_token) && (await this.syncAiCrmsProviderModels(session))
-    }
     if (provider === 'openai-codex') {
       return (await codexCredentialService.getStatus()).connected
     }
@@ -252,7 +202,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
 
   async getLlmConfig(): Promise<LlmConfig> {
     const target = await this.readStoredLlmTarget()
-    if (target.provider === 'ai-crms') await this.syncAiCrmsProviderModels()
     const active = this._state.getLlmRuntimeTarget()
     if (active.provider !== target.provider || active.model !== target.model || active.effort !== target.effort) {
       this._state.applyLlmTarget(target.provider, target.model, target.effort)
@@ -278,7 +227,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
       throw new Error('The model cannot be changed while a Maestro turn is active.')
     }
     const target = requireSelectableLlmTarget(params)
-    if (target.provider === 'ai-crms') await this.syncAiCrmsProviderModels()
     await this.writeStoredLlmTarget(target)
     this._state.applyLlmTarget(target.provider, target.model, target.effort)
     this._state.resetLlmTurnState()
@@ -295,7 +243,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
     const prefs = await this.readStoredLlmCompressionPrefs()
     prefs[modelPresetKey(preset.provider, preset.model)] = normalizeCompressionRemainingPercent(params.compressionRemainingPercent)
     await this.writeStoredLlmCompressionPrefs(prefs)
-    if (preset.provider === 'ai-crms') await this.syncAiCrmsProviderModels()
     return await this.getAndBroadcastLlmConfig()
   }
 
@@ -344,10 +291,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
     })
     await this.writeStoredLlmTarget(target)
     this._state.applyLlmTarget(target.provider, target.model, target.effort)
-    if (provider === 'ai-crms') {
-      await this._state.openAiCrmsLoginTab()
-      return await this.getAndBroadcastLlmConfig()
-    }
     try {
       if (provider === 'openai-codex') {
         await codexCredentialService.connect({
@@ -452,18 +395,6 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
     const provider = requireSelectableLlmProvider(
       params?.provider || active.provider || 'openai-codex'
     )
-    if (provider === 'ai-crms') {
-      await aiCrmsSession.clearSession().catch((err) => {
-        this._state.emitTrace({ kind: 'error', msg: 'AI-CRMS logout failed: ' + (err as Error).message, ts: Date.now() })
-      })
-      writeMicromeetCliCredential(null)
-      xpcMain.broadcast(AUTH_BROADCAST, { loggedIn: false, session: null })
-      await this._state.openAiCrmsLoginTab()
-      const cfg = await this.getLlmConfig()
-      const next = { ...cfg, ready: false, hint: undefined }
-      xpcMain.broadcast('coach/llm-config', next)
-      return next
-    }
     try {
       if (provider === 'openai-codex') {
         await codexCredentialService.disconnect()

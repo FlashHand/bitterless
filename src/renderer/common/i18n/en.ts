@@ -409,7 +409,6 @@ export const en = {
     panes: {
       recording: 'Capture',
       skills: 'Skills',
-      integrations: 'Integrations',
       injections: 'Injections',
       tools: 'Tools',
       models: 'Models',
@@ -435,6 +434,7 @@ export const en = {
       newChat: 'New chat',
       slashClear: 'Start a fresh chat; keep this conversation',
       slashViewContext: 'Copy model context and pending input',
+      slashViewContextGraph: 'Show the structure of the context the next send would give the model',
       slashCopied: 'Copied {chars} characters · {entries} model history entries',
       newChatUnavailable: 'New chat is unavailable while a turn is running or this chat is inactive.',
       chooseWorkspace: 'Choose workspace',
@@ -513,6 +513,26 @@ export const en = {
         running: 'running',
         completed: 'completed'
       }
+    },
+    // `/view_context_graph` 的弹窗文案。`{n}` / `{blocks}` / `{chars}` 是**字面花括号** ——
+    // 本仓没有插值器,调用点自己替换(`ContextGraphModal.vue` 的 `fill()`)。
+    contextGraph: {
+      title: 'Context structure',
+      systemPrompt: 'system prompt',
+      turn: 'turn {n}',
+      turns: '{n} turns',
+      blocks: '{n} blocks',
+      chars: '{n} chars',
+      absorbed: 'absorbed into the summary · {blocks} blocks · {chars} chars',
+      absorbedNote: 'the model no longer sees these',
+      notShown: 'not shown in the chat',
+      notLocated: 'could not locate this message',
+      jump: 'Jump to this message',
+      pending: 'pending · this send',
+      workspace: 'Workspace',
+      noHistory: 'No model-side history yet — this chat has not sent a turn.',
+      readFailed: 'Could not read the context',
+      close: 'Close'
     }
   },
   translator: {

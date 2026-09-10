@@ -129,7 +129,10 @@ class TabStoreState {
   // the bundled Home tab to active; built-ins activate by kind, restored browser tabs by URL.
   private async restoreLastActive(): Promise<void> {
     const savedKey = localStorage.getItem(LAST_ACTIVE_KEY)
-    // Migrate the pre-local-Home fixed-tab sentinel without reviving a remote AI-CRMS tab.
+    // Migrate the pre-local-Home fixed-tab sentinel. The AI-CRMS provider was retired in 2026-09,
+    // but this key survives on any machine that ran the old build — without the rewrite the first
+    // screen lands on a tab kind that no longer exists. Pure string migration: it references no
+    // AI-CRMS code, so it outlives the provider.
     const key = savedKey === 'ai-crms' ? 'home' : savedKey
     if (savedKey === 'ai-crms') localStorage.setItem(LAST_ACTIVE_KEY, 'home')
     if (!key || key === 'home') return

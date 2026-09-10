@@ -53,7 +53,12 @@ async function onTabClick(id: string): Promise<void> {
 // The fixed Home tab is a bundled renderer, so its icon must be bundled too.
 import bitterlessIcon from '@maestro-renderer/common/assets/icons/bitterless-icon.png'
 
+// Handed to menuBarStore on mount — it is the address bar's controller, and the main process
+// asks it to focus after the operator opens a blank tab.
+const addressInput = ref<HTMLInputElement | null>(null)
+
 onMounted(() => {
+  menuBarStore.bindAddressInput(addressInput.value)
   menuBarStore.init()
   tabStore.init()
   updateStore.init()
@@ -301,6 +306,7 @@ function fixedTabClass(tab: TabInfo): string {
            navigated away from their trusted entry; ordinary browser tabs keep the normal
            schemeless/pasted-address behavior. -->
       <input
+        ref="addressInput"
         v-model="addressValue"
         :disabled="workbenchStore.visible || tabStore.activeLocked"
         :title="workbenchStore.visible || tabStore.activeLocked ? i18nHelper.menuBar.maestro.fixedAddressLocked : ''"

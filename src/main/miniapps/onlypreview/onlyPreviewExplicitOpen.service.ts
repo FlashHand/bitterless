@@ -7,7 +7,7 @@ import {
 } from '@shared/onlypreview/onlyPreview.types';
 import { fileSearchWindowService } from '@main/fileSearch/fileSearchWindow.service';
 import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper';
-import { onlyPreviewPreviewRegionService } from './views/onlyPreviewPreviewRegion.service';
+import { resolveOnlyPreviewPreviewRegion } from './views/onlyPreviewPreviewRegion.service';
 import { onlyPreviewWorkspaceRegistry } from './onlyPreviewWorkspace.registry';
 import { onlyPreviewSelectionCoordinator } from './onlyPreviewSelectionCoordinator.service';
 import { onlyPreviewRecentDirectoryService } from './onlyPreviewRecentDirectory.service';
@@ -81,7 +81,9 @@ export const presentOnlyPreviewExplicitFile = async (
     // Both outside and unsettled targets keep the Project's selection and index intact.
   }
 
-  await onlyPreviewPreviewRegionService.present(host.hostToken, fileRef, trace?.tag, fragment);
+  // 预览区按 host 解析(不再是进程级单例)。OnlyPreview 自己的 host 在 `start()` 时已登记,
+  // 所以这里拿到的就是原来那一份 —— 行为不变,只是不再假设"全进程只有一个预览区"。
+  await resolveOnlyPreviewPreviewRegion(host.hostToken).present(host.hostToken, fileRef, trace?.tag, fragment);
   trace?.mark({ phase: 'presentation-issued' });
   if (!isCurrent()) {
     trace?.end({ outcome: 'superseded' });
@@ -162,7 +164,7 @@ const performOpenOnlyPreviewAbsoluteTarget = async (
       if (workspace) {
         trace.mark({ phase: 'authority', authority: 'directory' });
         onlyPreviewSelectionCoordinator.advance(host.hostToken);
-        onlyPreviewPreviewRegionService.clearWorkspace(host.hostToken, workspace.workspaceId);
+        resolveOnlyPreviewPreviewRegion(host.hostToken).clearWorkspace(host.hostToken, workspace.workspaceId);
         xpcMain.broadcast(ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT, { hostId: host.hostId });
         onlyPreviewWindowHelper.show();
       }
@@ -171,10 +173,31 @@ const performOpenOnlyPreviewAbsoluteTarget = async (
       return;
     }
 
+    // 一个**文件**目标不绑项目,所以它不该挡住「恢复上次打开的项目」。
+    //
+    // `beginExplicitTarget` 上面无条件占了那道闸门(它同时是 supersede 记账,必须占),而闸门只对
+    // 要自己绑项目的目标成立。不放开的话:这条路在新窗口里跑时,shell 挂载即问 `restoreWorkspace`
+    // 会拿到 `null`,顶栏落成「No project open」,而文件那支结束时广播的是 `SELECTION_CHANGED`
+    // 不是 `WORKSPACE_CHANGED` —— shell 再也不会问第二次,空状态就留在那里。
+    // 详见 `docs/issues/onlypreview-external-file-open-drops-the-project.md`。
+    onlyPreviewRecentDirectoryService.releaseProjectRestoreClaim(recentGeneration);
     if (
       await presentOnlyPreviewExplicitFile(host, inspected, trace, undefined, preserveTreeSelection)
     ) {
       await recordOnlyPreviewRecentFile(host.hostToken, resolve(inspected.rootRealPath, inspected.selectedRelativePath));
+    }
+    // 补一次「再问」的机会 —— **不 await**:项目索引可能是几万个文件,让一个 PDF 的预览等在索引
+    // 后面是另一种坏。预览先出,项目随后出现。
+    // **只有真恢复出项目时才广播**:没有可恢复的项目时广播 `workspaceChanged` 会让 shell 再走一遍
+    // 「置空 ＋ 重置索引状态」,那是在说一件没发生的事。
+    if (!onlyPreviewWorkspaceRegistry.restore(host.hostToken)) {
+      void onlyPreviewRecentDirectoryService
+        .restoreWorkspace(host.hostToken)
+        .then((workspace) => {
+          if (!workspace || !onlyPreviewHostRegistry.isLive(host.hostToken)) return;
+          xpcMain.broadcast(ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT, { hostId: host.hostId });
+        })
+        .catch(() => undefined);
     }
   } catch (error) {
     trace.end({ outcome: 'failure' });

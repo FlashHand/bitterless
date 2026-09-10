@@ -19,19 +19,19 @@ class TrayHelper {
     this.primaryWindowPresenter = primaryWindowPresenter;
 
     const isWin = process.platform === 'win32';
-    const iconFilename = isWin ? 'tray-win.ico' : 'tray-mac@2x.png';
+    const iconFilename = isWin ? 'tray-win.ico' : 'bitterless-tray-mac-24.png';
     let iconPath: string;
 
     if (import.meta.env.VITE_MODE === 'release') {
       const unpacked = join(app.getAppPath(), '..', 'app.asar.unpacked', 'icons');
       iconPath = join(unpacked, iconFilename);
     } else {
-      iconPath = join(__dirname, '../../build', iconFilename);
+      const sourceDirectory = isWin ? '../../build' : '../../doc';
+      iconPath = join(__dirname, sourceDirectory, iconFilename);
     }
 
-    let icon = nativeImage.createFromPath(iconPath);
+    const icon = nativeImage.createFromPath(iconPath);
     if (process.platform === 'darwin') {
-      icon = icon.resize({ width: 16, height: 16 });
       icon.setTemplateImage(true);
     }
 

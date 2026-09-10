@@ -1,6 +1,9 @@
 # Maestro still uses pre-migration Cowork controls and a remote fixed tab
 
 Status: implemented; owner verification pending
+Update 2026-09-10: the AI-CRMS provider was retired entirely
+([maestro-crms-retirement](../features/maestro-crms-retirement.md)). "Observed behavior" below is
+kept as the pre-fix record; the forward-looking rules have been restated without that provider.
 
 ## Observed behavior
 
@@ -60,16 +63,16 @@ visual correction reduces that strip and its tab geometry by 8px.
 - Keep the tab pinned, non-closable, non-recordable, and address-locked. Display
   `bitterless://home`; never expose a dev-server URL or packaged file path. Navigation is confined
   to the local Home entry.
-- Existing AI-CRMS provider/login code is not the fixed tab owner. If that flow requests a login
-  page, it must never replace or navigate the pinned local Home tab.
+- No provider's login code is the fixed tab owner. If such a flow requests a login page, it must
+  never replace or navigate the pinned local Home tab. (Written for AI-CRMS, which was retired in
+  2026-09; the rule outlives it and binds the next remote provider.)
 
 ## Compatibility boundary
 
 - Preserve Maestro's dark Omni surface, localized update action, Demo controls, Control chat, Local
   provider, capture lifecycle, and ordinary browser tabs.
-- Do not copy Cowork's forked CRMS renderer, AI-CRMS avatar/profile UI, generic mini-app page-type
-  menus, update-progress contract, or newer loading/crash tab state as part of this focused
-  migration.
+- Do not copy Cowork's forked CRMS renderer, generic mini-app page-type menus, update-progress
+  contract, or newer loading/crash tab state as part of this focused migration.
 
 ## Acceptance
 
@@ -79,7 +82,8 @@ visual correction reduces that strip and its tab geometry by 8px.
 - Exact source geometry is 36px tab strip, 28px tabs/wrappers, 48px address row, 84px total chrome,
   and macOS traffic lights at `{ x: 12, y: 10 }`.
 - The pinned tab's real target is local Home, its visible URL is `bitterless://home`, and no pinned
-  tab path can load or navigate to `crms.micromeet.ai`.
+  tab path can load or navigate to a remote host. (`crms.micromeet.ai` was the host this was written
+  against; it is unreachable from Maestro since the 2026-09 retirement.)
 - Ral verifies the real Electron window, recording status, sidebar close/reopen, Workbench toggle,
   embedded Home content, and native-control alignment.
 

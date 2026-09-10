@@ -421,7 +421,7 @@ test('renders the persisted INDEX workspace in standalone and Omni host geometri
     path: join(screenshotRoot, 'trench-index-standalone-1360x860.png'),
   });
 
-  const preservedBrowserUrl = `${mockOrigin}/ai-crms`;
+  const preservedBrowserUrl = `${mockOrigin}/sample-site`;
   const singleTree = trenchLeaf('trench-index-primary', preservedBrowserUrl);
   await sendHomeXpc(hostPage, 'SettingDao/upsert', {
     key: 'omni_layout',

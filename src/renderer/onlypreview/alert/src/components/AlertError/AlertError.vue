@@ -2,8 +2,14 @@
   <section
     v-if="dialog"
     name="onlypreview__alertError"
-    class="onlypreview-alert-panel onlypreview-alert-panel--error onlypreview-alert-error"
-    role="alertdialog"
+    :class="[
+      'onlypreview-alert-panel',
+      'onlypreview-alert-error',
+      dialog.tone === 'notice'
+        ? 'onlypreview-alert-panel--notice'
+        : 'onlypreview-alert-panel--error'
+    ]"
+    :role="dialog.tone === 'notice' ? 'dialog' : 'alertdialog'"
     aria-modal="true"
     :aria-label="dialog.title"
   >

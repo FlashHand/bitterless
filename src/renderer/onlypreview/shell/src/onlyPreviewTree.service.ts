@@ -9,6 +9,47 @@ export const getOnlyPreviewParentPath = (relativePath: string): string => {
   return separator < 0 ? '' : relativePath.slice(0, separator);
 };
 
+/**
+ * 状态栏左侧的面包屑 —— **从项目目录本身开始,一直指到当前选中的那个文件或文件夹**
+ * (Ral 2026-09-09)。
+ *
+ * 与 `resolveOnlyPreviewCurrentDirectory` 的两点关键区别,都是刻意的:
+ *
+ *   1. **不把文件折叠成它的父目录。** 那个函数回答「当前目录是哪个」,所以选中一个文件时
+ *      它返回父目录;这里要求「选中什么就指到什么」,所以文件是终点本身。
+ *   2. **不需要索引。** 那个函数要查 `nodeKind` 才能分辨选中的是文件还是目录;这里两者
+ *      一视同仁,所以不查 —— 于是索引还没就绪时面包屑**已经是对的**,而不是先空着再补上。
+ *      这一点省掉的不只是一次查找,还有一整类「索引未就绪时显示什么」的边界情况。
+ *
+ * 选中优先级:树的选中优先(它可以是目录,`''` 表示根目录本身),没有树选中时退回被预览的文件,
+ * 两者都没有时只显示项目目录 —— 因为要求是「从 project 目录本身开始」,所以空选中不是空面包屑。
+ */
+export interface OnlyPreviewBreadcrumb {
+  /** 第一段恒为项目目录名;至少一段。 */
+  segments: string[];
+  /** 完整路径,给 `title` 用 —— 段被截断时鼠标悬停仍然读得出完整位置。 */
+  title: string;
+}
+
+export const resolveOnlyPreviewBreadcrumb = (
+  workspace: { rootName: string; displayPath: string } | null,
+  treeSelectedRelativePath: string | null,
+  previewSelectedRelativePath: string
+): OnlyPreviewBreadcrumb | null => {
+  if (!workspace) return null;
+  const relative =
+    treeSelectedRelativePath !== null ? treeSelectedRelativePath : previewSelectedRelativePath;
+  // 过滤空段:前导/尾随/重复的 `/` 都不该变成一个空面包屑。
+  const tail = String(relative || '')
+    .split('/')
+    .filter((segment) => segment.length > 0);
+  const root = workspace.rootName || workspace.displayPath || '';
+  return {
+    segments: [root, ...tail],
+    title: [workspace.displayPath, ...tail].join('/')
+  };
+};
+
 export const resolveOnlyPreviewCurrentDirectory = (
   index: OnlyPreviewIndex | null,
   treeSelectedRelativePath: string | null,

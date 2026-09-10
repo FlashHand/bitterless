@@ -11,7 +11,11 @@ const en = {
   bookmarks: {
     label: 'Bookmarks',
     remove: 'Remove bookmark',
-    empty: 'Right-click a file or folder to add a bookmark.',
+    empty: 'No bookmarks',
+    hint: 'Bookmark hint',
+    hintTitle: 'Hint',
+    hintMessage: 'Right-click a folder to add a bookmark.',
+    hintClose: 'Close',
     unavailable: 'This bookmarked folder is unavailable. You can remove its bookmark.'
   },
   productName: 'OnlyPreview',
@@ -243,7 +247,11 @@ const zh: Localized<typeof en> = {
   bookmarks: {
     label: '书签',
     remove: '移除书签',
-    empty: '右击文件或目录可添加书签。',
+    empty: '暂无书签',
+    hint: '书签提示',
+    hintTitle: '提示',
+    hintMessage: '右击文件夹可以添加书签。',
+    hintClose: '关闭',
     unavailable: '此书签目录已不可用，可移除书签。'
   },
   productName: 'OnlyPreview',

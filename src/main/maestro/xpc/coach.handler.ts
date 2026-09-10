@@ -1,5 +1,6 @@
 import { XpcMainHandler } from 'electron-xpc/main'
 import { maestroWindowHelper } from '@maestro-main/windows/main/maestroWindow.controller'
+import { getMaestroPreviewOpener } from '@maestro-main/windows/main/previewOpener.registry'
 import { updateService } from '@maestro-main/update/update.service'
 import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
 import type { MaestroTask } from '@maestro-shared/task.api'
@@ -7,6 +8,8 @@ import type {
   AgentConversationContext,
   ContextExportRequest,
   ContextExportSummary,
+  ContextGraphRequest,
+  ContextGraphResult,
   SessionIoPathResult,
   AgentCompactReply,
   AgentCompactRequest,
@@ -15,8 +18,6 @@ import type {
   AgentTurnClaimRequest,
   AgentTurnClaimResult,
   AgentTurnRecoverySnapshot,
-  AudioScribeRequest,
-  AudioScribeResult,
   AttachFileResult,
   CaptureExportFormat,
   CaptureOptions,
@@ -41,23 +42,6 @@ import type {
   HostToolScope,
   InjectedButtonDomain,
   InjectedButtonRemoveResult,
-  IntegrationMappingDeleteRequest,
-  IntegrationMappingListRequest,
-  IntegrationMappingListResult,
-  IntegrationMappingUpsertRequest,
-  IntegrationMappingWriteResult,
-  IntegrationMigrationRunRequest,
-  IntegrationMigrationTargetRequest,
-  IntegrationRecordedSiteApplyRequest,
-  IntegrationRecordedSiteSyncRequest,
-  IntegrationReportReadinessRequest,
-  IntegrationTarget,
-  IntegrationTargetCreateResult,
-  IntegrationTargetDeleteResult,
-  IntegrationTargetRunResult,
-  IntegrationTargetScheduleRequest,
-  IntegrationTargetScheduleResult,
-  IntegrationTargetSummary,
   IngestRecord,
   LlmConfig,
   LlmEffort,
@@ -177,66 +161,6 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     return await maestroWindowHelper.clearHostApprovalEvents()
   }
 
-  async listIntegrationTargets(): Promise<IntegrationTargetSummary[]> {
-    return await maestroWindowHelper.listIntegrationTargets()
-  }
-
-  async getIntegrationTarget(params: { targetId: string }): Promise<IntegrationTarget | null> {
-    return await maestroWindowHelper.getIntegrationTarget(params)
-  }
-
-  async createIntegrationTargetFromCapture(params?: { name?: string; domain?: string }): Promise<IntegrationTargetCreateResult> {
-    return await maestroWindowHelper.createIntegrationTargetFromCapture(params)
-  }
-
-  async createAiCrmsMigrationTarget(params: IntegrationMigrationTargetRequest): Promise<IntegrationTargetCreateResult> {
-    return await maestroWindowHelper.createAiCrmsMigrationTarget(params)
-  }
-
-  async deleteIntegrationTarget(params: { targetId: string }): Promise<IntegrationTargetDeleteResult> {
-    return await maestroWindowHelper.deleteIntegrationTarget(params)
-  }
-
-  async runIntegrationTargetDryRun(params: { targetId: string }): Promise<IntegrationTargetRunResult> {
-    return await maestroWindowHelper.runIntegrationTargetDryRun(params)
-  }
-
-  async runIntegrationRecordedSiteDryRun(params: IntegrationRecordedSiteSyncRequest): Promise<IntegrationTargetRunResult> {
-    return await maestroWindowHelper.runIntegrationRecordedSiteDryRun(params)
-  }
-
-  async runIntegrationRecordedSitePlan(params: IntegrationRecordedSiteSyncRequest): Promise<IntegrationTargetRunResult> {
-    return await maestroWindowHelper.runIntegrationRecordedSitePlan(params)
-  }
-
-  async runIntegrationRecordedSiteApply(params: IntegrationRecordedSiteApplyRequest): Promise<IntegrationTargetRunResult> {
-    return await maestroWindowHelper.runIntegrationRecordedSiteApply(params)
-  }
-
-  async runIntegrationMigration(params: IntegrationMigrationRunRequest): Promise<IntegrationTargetRunResult> {
-    return await maestroWindowHelper.runIntegrationMigration(params)
-  }
-
-  async runIntegrationReportReadiness(params: IntegrationReportReadinessRequest): Promise<IntegrationTargetRunResult> {
-    return await maestroWindowHelper.runIntegrationReportReadiness(params)
-  }
-
-  async setIntegrationTargetSchedule(params: IntegrationTargetScheduleRequest): Promise<IntegrationTargetScheduleResult> {
-    return await maestroWindowHelper.setIntegrationTargetSchedule(params)
-  }
-
-  async listIntegrationMappings(params: IntegrationMappingListRequest): Promise<IntegrationMappingListResult> {
-    return await maestroWindowHelper.listIntegrationMappings(params)
-  }
-
-  async upsertIntegrationMapping(params: IntegrationMappingUpsertRequest): Promise<IntegrationMappingWriteResult> {
-    return await maestroWindowHelper.upsertIntegrationMapping(params)
-  }
-
-  async deleteIntegrationMapping(params: IntegrationMappingDeleteRequest): Promise<IntegrationMappingWriteResult> {
-    return await maestroWindowHelper.deleteIntegrationMapping(params)
-  }
-
   async listInjectedButtons(): Promise<InjectedButtonDomain[]> {
     return await maestroWindowHelper.listInjectedButtons()
   }
@@ -309,6 +233,10 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     return await maestroWindowHelper.copyNextTurnContext(params)
   }
 
+  async readContextGraph(params: ContextGraphRequest): Promise<ContextGraphResult> {
+    return await maestroWindowHelper.readContextGraph(params)
+  }
+
   async copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult> {
     return await maestroWindowHelper.copySessionIoPath(params)
   }
@@ -379,10 +307,6 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
 
   async attachClipboardImage(params?: { sessionId?: string }): Promise<AttachFileResult> {
     return await maestroWindowHelper.attachClipboardImage(params)
-  }
-
-  async scribeAudio(params: AudioScribeRequest): Promise<AudioScribeResult> {
-    return await maestroWindowHelper.scribeAudio(params)
   }
 
   async chooseWorkspaceDirectory(params?: { sessionId?: string }): Promise<WorkspaceRefResult> {
@@ -472,7 +396,25 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
    * instead of filling the tab.
    */
   async openWorkspaceInPreview(params: { path: string }): Promise<{ ok: boolean; error?: string }> {
-    return await maestroWindowHelper.openWorkspaceInPreview(params)
+    // 走**宿主注册的那个 preview 槽**,而不是直接开某个 composite tab。
+    //
+    // 「开哪一种承载」是宿主才知道的事:OnlyPreview 可能已经被切成一个独立窗口,那时正确动作是
+    // 复用它而不是新建 tab(`docs/issues/onlypreview-detached-window-gets-a-second-tab.md`)。
+    // 这个槽本来就是为此存在的(EyesOnAgents 也用它),而 maestro 这棵树不许 import OnlyPreview,
+    // 所以判断只能在槽的那一端。
+    const opener = getMaestroPreviewOpener()
+    if (!opener) {
+      // 没有宿主注册预览应用的构建 —— 退回既有的「开 tab 再交目标」。
+      return await maestroWindowHelper.openWorkspaceInPreview(params)
+    }
+    const target = String(params?.path || '').trim()
+    if (!target) return { ok: false, error: 'A path is required.' }
+    try {
+      await opener.open(target)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    }
   }
 
   async activateTab(params: { id: string }): Promise<void> {

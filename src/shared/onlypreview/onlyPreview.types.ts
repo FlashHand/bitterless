@@ -178,6 +178,12 @@ export interface OnlyPreviewWorkspace {
   selectedRelativePath?: string;
 }
 
+export interface OnlyPreviewNoticeRequest extends OnlyPreviewHostRequest {
+  title: string;
+  message: string;
+  confirmLabel: string;
+}
+
 export interface OnlyPreviewFileRef {
   workspaceId: string;
   relativePath: string;
@@ -677,6 +683,13 @@ export interface OnlyPreviewApi {
   saveSettings(
     params: OnlyPreviewHostRequest & { settings: OnlyPreviewSettings }
   ): Promise<OnlyPreviewResult<OnlyPreviewSettings>>;
+  /**
+   * 弹一条**纯提示**(标题 ＋ 一段话 ＋ 一个关闭)。
+   *
+   * 复用 alert 面那一层,所以「回车 / esc / 点关闭都能关」和焦点管理都是既有行为,不需要新写。
+   * 文案由渲染进程给 —— 提示语属于发起它的那个界面,而不是 main。
+   */
+  showNotice(params: OnlyPreviewNoticeRequest): Promise<OnlyPreviewResult<void>>;
   openSettings(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
   closeSettings(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;
   openAgentSkillGuide(params: OnlyPreviewHostRequest): Promise<OnlyPreviewResult<void>>;

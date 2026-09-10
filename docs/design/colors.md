@@ -114,14 +114,17 @@ or a background tile.
 
 | Platform | Runtime asset | Color contract | Container contract |
 |---|---|---|---|
-| macOS | `build/tray-mac@2x.png` | Black opaque core on transparency; Electron marks it as a Template Image so macOS supplies the visible menu-bar color | 80x80 RGBA source, resized to 16x16 at runtime |
+| macOS | `doc/bitterless-tray-mac-24.png` and `doc/bitterless-tray-mac-24@2x.png` | Black opaque core on transparency; Electron marks it as a Template Image so macOS supplies the visible menu-bar color | 24x24 logical size, with 24x24 (1x) and 48x48 (2x) RGBA representations |
 | Windows | `build/tray-win.ico` | `#4E5882` Royal Blue core on transparency | ICO representations for 16, 20, 24, 32, 40, 48, 64, and 256 pixels |
 
-Documentation masters live at `doc/bitterless-tray-mac.png` and
-`doc/bitterless-tray-win.png`, both 208x208 RGBA. Release packaging copies the runtime assets to
-`app.asar.unpacked/icons/`; development loads them from `build/`.
+The unchanged macOS artwork master is `doc/bitterless-tray-mac.png` (208x208). Generate both runtime
+representations with `node scripts/package/trayIcon.generate.mjs`; development loads the 24px base
+from `doc/`, and release packaging copies both representations to `app.asar.unpacked/icons/`. Electron
+selects the appropriate representation without resizing the logical image. The Windows
+documentation master remains `doc/bitterless-tray-win.png`, while its runtime ICO is generated under
+`build/`.
 
-The tray artwork must remain legible at 16x16: use bold filled geometry and negative-space facial
+The macOS tray artwork must remain legible at 24x24 (Windows also supports 16x16): use bold filled geometry and negative-space facial
 features, not thin line art or hand-drawn surface texture that disappears under downsampling.
 
 ### PNG generation rules

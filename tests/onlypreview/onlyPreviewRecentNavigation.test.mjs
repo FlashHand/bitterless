@@ -109,7 +109,10 @@ const stubs = {
   'onlyPreviewWindow.helper':
     'export const onlyPreviewWindowHelper = globalThis.__recentNavigation.window;',
   'onlyPreviewPreviewRegion.service':
-    'export const onlyPreviewPreviewRegionService = globalThis.__recentNavigation.preview;',
+    // 预览区**按 host 解析**(不再是进程级单例)。stub 里两者指向同一个假实例 —— 这个用例只有一个
+    // host,它要验的是"谁被调用了什么",不是"哪一个实例"。
+    'export const onlyPreviewPreviewRegionService = globalThis.__recentNavigation.preview;' +
+    'export const resolveOnlyPreviewPreviewRegion = () => globalThis.__recentNavigation.preview;',
   'fileSearchWindow.service':
     'export const fileSearchWindowService = globalThis.__recentNavigation.files;',
   'onlyPreviewOpenDiagnostics.runtime':

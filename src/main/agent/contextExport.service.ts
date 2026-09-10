@@ -89,13 +89,37 @@ const textOfContent = (content: unknown): string => {
  * assistant 里的 `toolCall` 单独成行(**它是上下文里最容易被忽略的一块**:模型看到的不是
  * "调用了工具"这句话,而是完整参数)。
  */
-export const flattenEntries = (entries: SessionEntry[]): ContextExportEntry[] => {
-  const rows: ContextExportEntry[] = []
+export const flattenEntries = (entries: SessionEntry[]): ContextExportEntry[] =>
+  flattenEntryRows(entries).map((row) => row.row)
+
+/**
+ * 同一次展平,但**保留每行来自哪个 pi 条目**(`entryId` / `parentId`)。
+ *
+ * 为什么是两个函数而不是给 `ContextExportEntry` 加两个字段:那条记录**逐字进审计 JSONL**,
+ * 多两个键就改了盘上已有证据的形状,而那些文件已经被用来追过 bug。所以身份走这条并行出口,
+ * 而**映射只有一份** —— `flattenEntries` 现在就是它的投影。
+ *
+ * 一条 assistant 条目会展平成多行(说的话 + 每个 toolCall 一行),它们**共享同一个 `entryId`** ——
+ * 这是对的:它们确实是同一个条目里的东西。
+ */
+export const flattenEntryRows = (
+  entries: SessionEntry[]
+): { row: ContextExportEntry; entryId: string; parentId: string | null }[] => {
+  const rows: { row: ContextExportEntry; entryId: string; parentId: string | null }[] = []
+  let current: { id: string; parentId: string | null } = { id: '', parentId: null }
   const push = (type: string, text: string, tool?: string): void => {
-    rows.push({ i: rows.length + 1, type, tool, chars: text.length, text })
+    rows.push({
+      row: { i: rows.length + 1, type, tool, chars: text.length, text },
+      entryId: current.id,
+      parentId: current.parentId
+    })
   }
   for (const entry of entries) {
     const record = entry as unknown as Record<string, unknown>
+    current = {
+      id: typeof record.id === 'string' ? record.id : '',
+      parentId: typeof record.parentId === 'string' ? record.parentId : null
+    }
     const type = String(record.type || 'unknown')
     if (type === 'message') {
       const message = record.message as { role?: string; content?: unknown; toolName?: string } | undefined

@@ -5,6 +5,7 @@ import {
   ONLY_PREVIEW_BOOKMARKS_CHANGED_EVENT
 } from '@shared/onlypreview/onlyPreviewBookmarks.type';
 import { unwrapOnlyPreviewResult } from '@shared/onlypreview/onlyPreview.contract';
+import { onlyPreviewI18n } from '../../common/onlyPreviewI18n';
 import type { OnlyPreviewBookmark, OnlyPreviewBookmarksSnapshot } from '@shared/onlypreview/onlyPreviewBookmarks.type';
 import type {
   OnlyPreviewBookmarksClient,
@@ -90,6 +91,31 @@ export class OnlyPreviewBookmarksStore {
   async showMenu(relativePath: string): Promise<void> {
     if (this.entries.some((entry) => entry.relativePath === relativePath)) {
       await this.runAction('showBookmarkContextMenu', relativePath);
+    }
+  }
+  /**
+   * 弹一条纯提示,告诉用户怎么加书签。
+   *
+   * 复用 alert 面(`showNotice` → main 的 `showError(tone:'notice')`),所以
+   * 「回车 / esc / 点关闭都能关」与焦点管理都是那一层既有的行为 —— 这里不新写任何键盘处理。
+   * 文案从本渲染进程的 i18n 取:提示语属于这个界面,不属于 main。
+   *
+   * 失败**静默**:一条帮助提示弹不出来,不该在书签条上留一条错误 —— 那比没有提示更糟。
+   */
+  async showHint(): Promise<void> {
+    const { hostToken } = this.host;
+    if (!this.active || !hostToken) return;
+    try {
+      unwrapOnlyPreviewResult(
+        await onlyPreviewClient.showNotice({
+          hostToken,
+          title: onlyPreviewI18n.bookmarks.hintTitle,
+          message: onlyPreviewI18n.bookmarks.hintMessage,
+          confirmLabel: onlyPreviewI18n.bookmarks.hintClose
+        })
+      );
+    } catch {
+      // 见上:提示失败不留痕。
     }
   }
   receive(event: unknown, add = false): void {

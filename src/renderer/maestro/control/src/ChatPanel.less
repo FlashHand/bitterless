@@ -266,64 +266,6 @@
   cursor: not-allowed;
 }
 
-.chat-panel__textarea--recording {
-  padding-right: 132px;
-}
-
-.chat-panel__voice-recording {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  height: 28px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  color: rgb(var(--danger-6));
-  font-size: 11px;
-  font-weight: 650;
-  border: 1px solid rgb(var(--danger-2));
-  border-radius: 6px;
-  background: rgb(255 255 255 / 95%);
-  box-shadow: 0 1px 3px rgb(16 19 33 / 8%);
-  pointer-events: none;
-}
-
-.chat-panel__voice-wave {
-  display: inline-flex;
-  height: 14px;
-  align-items: center;
-  gap: 2px;
-}
-
-.chat-panel__voice-wave-bar {
-  width: 2px;
-  height: 8px;
-  border-radius: 999px;
-  background: currentColor;
-  animation: chat-panel-voice-wave-pulse 0.8s ease-in-out infinite;
-}
-
-.chat-panel__voice-wave-bar:nth-child(2) {
-  animation-delay: 0.1s;
-}
-
-.chat-panel__voice-wave-bar:nth-child(3) {
-  animation-delay: 0.2s;
-}
-
-.chat-panel__voice-wave-bar:nth-child(4) {
-  animation-delay: 0.3s;
-}
-
-.chat-panel__voice-wave-bar:nth-child(5) {
-  animation-delay: 0.4s;
-}
-
-.chat-panel__voice-time {
-  font-variant-numeric: tabular-nums;
-}
-
 .chat-panel__composer-footer {
   display: flex;
   min-width: 0;
@@ -499,24 +441,6 @@
   color: inherit;
 }
 
-.chat-panel__voice-button--recording.icon-btn.arco-btn,
-.chat-panel__voice-button--recording.icon-btn.arco-btn:hover {
-  color: rgb(var(--danger-6));
-  background: rgb(var(--danger-1));
-  animation: chat-panel-recording-pulse 1.4s ease-in-out infinite;
-}
-
-.chat-panel__voice-button--busy.icon-btn.arco-btn,
-.chat-panel__voice-button--busy.icon-btn.arco-btn[disabled] {
-  color: #4e5882;
-  background: #f3f5fc;
-}
-
-.chat-panel__voice-spinner {
-  display: block;
-  animation: chat-panel-spin 0.8s linear infinite;
-}
-
 /* Stop:与 Send 同形同位的 32px 纯图标按钮,软红底、无边框 —— 以 cowork 的
    `chat-panel__composer-stop` 为准(Ral 2026-09-09)。选择器带 `.chat-panel` 与
    `.icon-btn.arco-btn` 是为了压过 Arco 自己的 text-button 配色,与上面 send 那两条同形。 */
@@ -659,30 +583,6 @@
   height: 8px;
   background: @session-unread-blue;
   border-radius: 999px;
-}
-
-@keyframes chat-panel-voice-wave-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scaleY(0.45);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scaleY(1.25);
-  }
-}
-
-@keyframes chat-panel-recording-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(var(--danger-6), 0);
-  }
-
-  50% {
-    box-shadow: 0 0 0 3px rgba(var(--danger-6), 0.12);
-  }
 }
 
 @keyframes chat-panel-aborting-pulse {

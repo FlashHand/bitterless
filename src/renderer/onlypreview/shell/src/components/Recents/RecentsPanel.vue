@@ -56,7 +56,6 @@
         @dblclick.prevent="open(entry.id)"
         @keydown="handleKeydown($event, entry.id)"
       >
-        <IconFile class="onlypreview-recents__icon" :size="14" aria-hidden="true" />
         <span class="onlypreview-recents__identity">
           <span class="onlypreview-recents__name">{{ entry.name }}</span>
           <span class="onlypreview-recents__path">{{ entry.relativePath }}</span>
@@ -68,7 +67,6 @@
 
 <script setup lang="ts">
 import { nextTick, ref } from 'vue';
-import { IconFile } from '@tabler/icons-vue';
 import { onlyPreviewI18n } from '../../../../common/onlyPreviewI18n';
 import { onlyPreviewRecentsStore } from '../../onlyPreviewRecents.store';
 

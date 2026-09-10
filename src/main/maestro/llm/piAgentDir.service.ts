@@ -4,9 +4,9 @@ import { join } from 'node:path';
 /**
  * Where pi's agent state lives, and the one-time move off the pre-2026-09-08 layout.
  *
- * Electron-free on purpose (same reason as `micromeetCliPath.service.ts`): the decisions worth
- * testing here are "which dir" and "what does the migration copy", and both become untestable the
- * moment this module reaches for `app.getPath()`. `llmPaths.ts` is the thin Electron-bound wrapper.
+ * Electron-free on purpose: the decisions worth testing here are "which dir" and "what does the
+ * migration copy", and both become untestable the moment this module reaches for `app.getPath()`.
+ * `llmPaths.ts` is the thin Electron-bound wrapper.
  */
 
 /** pi's own `CONFIG_DIR_NAME`. Cowork uses the same `<userData>/.pi` shape. */

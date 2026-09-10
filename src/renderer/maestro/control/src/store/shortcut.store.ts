@@ -57,6 +57,12 @@ export class ShortcutStore {
         case '/copy_session_path':
           await context.copySessionPath()
           return { ok: true }
+        // 结构与 `/view_context` 是**两条不同的命令**,不是重复:那条出正文(逐字、不截断,
+        // 所以去剪贴板),这条出结构(类型 / 体量 / 回合 / 压缩边界,有界投影,所以进弹窗)。
+        // 成功不回 error:弹窗本身就是结果,再补一句 toast 是替它证明自己。
+        case '/view_context_graph':
+          await context.openContextGraph()
+          return { ok: true }
         default:
           return { ok: false, error: `unknown command ${item.name}` }
       }

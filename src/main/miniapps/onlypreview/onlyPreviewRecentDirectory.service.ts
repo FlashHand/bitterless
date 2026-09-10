@@ -164,6 +164,24 @@ export class OnlyPreviewRecentDirectoryService {
     }
   }
 
+  /**
+   * 这个 explicit 目标**不会**绑项目 —— 放开「别恢复上次目录」那道闸门。
+   *
+   * `beginExplicitTarget` 一次占下两样东西:`mutationGeneration`(per-host 的 supersede 记账)
+   * 与 `activeExplicitGeneration`(`restoreWorkspace` 里的抑制)。抑制只对**要自己绑项目**的目标
+   * 成立 —— 一个 explicit **文件** 目标根本不碰 `projectWorkspaceByHost`(外部预览住在另一个 map),
+   * 却同样把恢复挡掉了,于是新窗口里 shell 挂载时问到的是 `null`,顶栏变成「No project open」
+   * (`docs/issues/onlypreview-external-file-open-drops-the-project.md`)。
+   *
+   * 只在 `activeExplicitGeneration` 仍等于该 generation 时清 —— 否则会把**后来者**的 claim 抢掉。
+   * `mutationGeneration` 与 per-host 记账不动:那是 supersede 用的,和"能不能恢复"是两件事。
+   */
+  releaseProjectRestoreClaim(generation: number): void {
+    if (this.activeExplicitGeneration === generation) {
+      this.activeExplicitGeneration = null;
+    }
+  }
+
   async openExplicitTarget(
     hostToken: string,
     absoluteTarget: string,

@@ -4,14 +4,10 @@ import { File } from 'buffer'
 import { fetch, FormData } from 'undici'
 import { isDownloadableMediaUrl } from '@main/agent/runtime/mediaRefResolver'
 import type { AgentRuntimeMediaRef } from '@main/agent/runtime/agentRuntime.types'
-import { resolveAiCrmsRelayEndpoint } from '@maestro-main/networking/clients/relay.client'
-import { normalizeCoachRegion } from '@maestro-shared/networking/coachRegion'
-import type { AuthSession } from '@maestro-shared/session.api'
 
 export interface MediaUploadParams {
   providerId: string
   refs: AgentRuntimeMediaRef[]
-  session?: AuthSession | null
 }
 
 export interface MediaUploadResult {
@@ -22,7 +18,7 @@ export interface MediaUploadResult {
 
 export const uploadMediaRefsForProvider = async (params: MediaUploadParams): Promise<MediaUploadResult> => {
   const normalized = normalizeUploadMediaRefs(params.refs)
-  const uploadUrl = resolveMediaUploadUrl(params.providerId, params.session)
+  const uploadUrl = resolveMediaUploadUrl()
   if (!uploadUrl) {
     return {
       refs: normalized.refs,
@@ -40,7 +36,7 @@ export const uploadMediaRefsForProvider = async (params: MediaUploadParams): Pro
       continue
     }
     try {
-      const url = await uploadOneMediaRef(uploadUrl, ref, params.session)
+      const url = await uploadOneMediaRef(uploadUrl, ref)
       refs.push({ ...ref, url })
       uploaded += 1
     } catch (err) {
@@ -70,23 +66,16 @@ const normalizeUploadMediaRef = (ref: AgentRuntimeMediaRef): AgentRuntimeMediaRe
   return { ...ref, url: undefined }
 }
 
-const resolveMediaUploadUrl = (providerId: string, session?: AuthSession | null): string => {
-  const provider = providerId.trim().toLowerCase()
-  const raw =
-    (provider === 'ai-crms' ? process.env.COACH_AI_CRMS_MEDIA_UPLOAD_URL : '') ||
-    process.env.COACH_MEDIA_UPLOAD_URL ||
-    ''
-  const value = raw.trim()
+// 只认绝对 URL:AI-CRMS 退役后没有任何 provider 再提供「相对路径 + 自己的 relay base」这条解析,
+// 相对值无处可拼,当作未配置。
+const resolveMediaUploadUrl = (): string => {
+  const value = (process.env.COACH_MEDIA_UPLOAD_URL || '').trim()
   if (!value) return ''
   if (/^https?:\/\//i.test(value)) return value.replace(/\/+$/, '')
-  if (provider === 'ai-crms') {
-    const endpoint = resolveAiCrmsRelayEndpoint(session)
-    return new URL(value.replace(/^\/+/, ''), endpoint.baseUrl.replace(/\/+$/, '') + '/').toString()
-  }
   return ''
 }
 
-const uploadOneMediaRef = async (url: string, ref: AgentRuntimeMediaRef, session?: AuthSession | null): Promise<string> => {
+const uploadOneMediaRef = async (url: string, ref: AgentRuntimeMediaRef): Promise<string> => {
   if (!ref.path) throw new Error('missing local path')
   const form = new FormData()
   const name = ref.name || basename(ref.path)
@@ -96,14 +85,7 @@ const uploadOneMediaRef = async (url: string, ref: AgentRuntimeMediaRef, session
   form.set('kind', ref.kind)
   if (ref.mimeType) form.set('mimeType', ref.mimeType)
 
-  const headers: Record<string, string> = {}
-  if (session?.jwt_token) headers.Authorization = `Bearer ${session.jwt_token}`
-  if (session) {
-    headers['x-region'] = normalizeCoachRegion(session.region)
-    if (session.tenant_id) headers['x-workspace-id'] = session.tenant_id
-  }
-
-  const res = await fetch(url, { method: 'POST', headers, body: form })
+  const res = await fetch(url, { method: 'POST', body: form })
   const text = await res.text()
   if (!res.ok) throw new Error(`HTTP ${res.status}${text ? ` ${text.slice(0, 180)}` : ''}`)
   const uploadedUrl = extractUploadedUrl(text)

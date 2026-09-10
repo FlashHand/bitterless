@@ -79,12 +79,14 @@ try {
   const createMatch = controllerSource.match(/create\(\): BrowserWindow \{([\s\S]*?)\n  \}\n\n  async whenReady/)
   assert(createMatch, 'controller should keep a bounded create readiness flow')
   const createSource = createMatch?.[1] || ''
+  // 固定首 tab 早已从远端 AI-CRMS 换成本地 Home,AI-CRMS 本身也于 2026-09 退役。
+  // 守的仍是同一条时序:自定义启动 tab 必须排在固定首 tab 之后,不能抢它。
   assert(
-    /loadURL\(AI_CRMS_URL\)[\s\S]*await this\.browserView\.openStartupTabIfNeeded\(\)/.test(createSource),
-    'controller readiness should invoke the extracted custom-startup-tab flow after pinned AI-CRMS load'
+    /loadPinnedHomeTab\(\)[\s\S]*this\.browserView\.openStartupTabIfNeeded\(/.test(createSource),
+    'controller readiness should invoke the extracted custom-startup-tab flow after the pinned local Home load'
   )
   assert(!createSource.includes('demo.start()'), 'controller readiness should not add a local-demo startup fallback')
-  assert(startupDocs.includes('Pinned AI-CRMS tab'), 'embedded feature contract should preserve the pinned default tab')
+  assert(startupDocs.includes('Pinned local Bitterless Home tab'), 'embedded feature contract should preserve the pinned default tab')
 
   const service = new CoachSettingsService(dir)
   assert(service.read().startUrl === DEFAULT_START_URL, 'fresh settings should read the default startUrl')
@@ -117,10 +119,10 @@ try {
 
   console.log('[check-startup-settings] ok', JSON.stringify({
     defaultSentinel: DEFAULT_START_URL,
-    defaultRoute: 'pinned-ai-crms',
+    defaultRoute: 'pinned-local-home',
     custom: saved.startUrl,
     reset: reset.startUrl,
-    resetRoute: 'pinned-ai-crms'
+    resetRoute: 'pinned-local-home'
   }))
 } catch (err) {
   console.error('[check-startup-settings] failed')

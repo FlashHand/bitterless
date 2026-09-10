@@ -23,8 +23,9 @@ artifacts on different runs.
 - Keep initialization as the only network-capable phase. A macOS ARM, macOS Intel, or Windows
   package must fail closed with an actionable initialization instruction when its local tools are
   missing, stale, structurally invalid, or changed after initialization.
-- Stage only the selected target into `build/maestro-tools`, alongside the separately built
-  Micromeet CLI. Electron Builder must copy that directory to `Resources/maestro-tools`.
+- Stage only the selected target into `build/maestro-tools`. Electron Builder must copy that
+  directory to `Resources/maestro-tools`. (It was staged alongside a separately built Micromeet CLI
+  until the 2026-09 AI-CRMS retirement removed that CLI.)
 - Keep every external-tool source/cache directory out of `app.asar`; only the selected staged copy
   may enter the application bundle as an external resource.
 - Preserve the existing Linux package path until Linux gets an explicitly supported external-tools
@@ -35,8 +36,9 @@ artifacts on different runs.
 - A source-only regression proves the tracked directory/ignore contract, pinned tool inventory,
   offline stage behavior, manifest/hash validation, target filename isolation, builder resource
   mapping, and macOS signing-list coverage.
-- The supported package scripts invoke the Micromeet CLI build first and the offline external-tool
-  stage second; they do not call the legacy network-capable AnyDoc/Ouch preparation scripts.
+- The supported package scripts invoke the offline external-tool stage; they do not call the legacy
+  network-capable AnyDoc/Ouch preparation scripts. (A Micromeet CLI build ran first until the
+  2026-09 retirement removed it.)
 - `electron-builder.tmp.yml` excludes both `external_tools/**` and legacy `prebuilt/**` from
   `app.asar`.
 - Focused Node tests, script syntax checks, `git diff --check`, and an independent P0-P2 review pass.
@@ -53,9 +55,10 @@ Implementation task:
 - Added `yarn external-tools:init`, with fixed versions plus archive and extracted-payload digests
   for Bun, ripgrep, fd, Ouch, and AnyDoc. Each valid existing platform is reused; a replacement is
   built and validated in temporary directories before the old platform is swapped out.
-- macOS and Windows packaging now builds the Micromeet CLI first, then validates and stages exactly
-  one initialized target without network access. Generic unpack dispatches those hosts to the same
-  offline path while preserving the established Linux AnyDoc/Ouch preparation path.
+- macOS and Windows packaging validates and stages exactly one initialized target without network
+  access. Generic unpack dispatches those hosts to the same offline path while preserving the
+  established Linux AnyDoc/Ouch preparation path. (Delivered with a preceding Micromeet CLI build
+  step, removed by the 2026-09 AI-CRMS retirement.)
 - Electron Builder excludes both source/cache roots from `app.asar`, retains the
   `build/maestro-tools -> Resources/maestro-tools` resource mapping, and explicitly signs every
   macOS executable/native entry.

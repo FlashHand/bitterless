@@ -30,7 +30,7 @@ other — which is the design working, not a gap.
 **One real caveat, and it is cowork-only.** There, `deps.close()` lands on
 `BrowserController.closeTab`, which silently refuses in two cases: `tabs.length <= 1`, and a
 `pinned` tab. So if OnlyPreview were ever the only tab, undocking would leave its tab behind and
-the refusal would be invisible. Today the pinned AI-CRMS tab guarantees `length >= 2`, so it does
+the refusal would be invisible. Today the pinned first tab guarantees `length >= 2`, so it does
 not bite — but it is a latent edge, and the same silent-refusal behaviour is what
 `closeActiveTab` had to work around for Cmd+W (it now hides the window when the close does not
 happen). If this ever needs hardening, the check belongs behind `onlyPreviewDockHost`, not in the

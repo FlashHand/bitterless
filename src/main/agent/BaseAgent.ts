@@ -80,8 +80,8 @@ export interface BaseAgentOptions {
    * 运行时适配器。**必填,没有默认值。**
    *
    * 曾经默认 `new CoworkRuntimeAdapter()`,那让 SDK 反向依赖宿主:那个路由器会 eager
-   * `new AiCrmsRuntimeAdapter()` → `electron-xpc/main` → `electron`。更要紧的是,
-   * 给它一个「pi 兜底」的默认值会让 ai-crms 的目标**静默走错路由** —— 宁可编译期报错。
+   * `new` 出宿主的运行时 → `electron-xpc/main` → `electron`。更要紧的是,给它一个
+   * 「pi 兜底」的默认值会让非 pi 的目标**静默走错路由** —— 宁可编译期报错。
    */
   runtime: AgentRuntimeAdapter
   /**
@@ -280,7 +280,7 @@ export class BaseAgent {
    * 2. **`busy` 为真时不交出去。** 写入(`appendCompaction` / `appendCustomMessage`)会推进 pi 的
    *    `leafId`,对着一个正在流式的回合做等于在它脚下换地板。压缩的两个调用点
    *    (`turn.service.ts:234` 发送前 / `:310` 回合结束后)都在回合之外,所以这道闸只会挡住误用。
-   * 3. **拿不到就返回 null,不抛。** 运行时不实现这个面(AI-CRMS 那条)也是一个合法答案:
+   * 3. **拿不到就返回 null,不抛。** 运行时不实现这个面也是一个合法答案:
    *    调用方据此如实报「这条运行时没有可压的上下文」,而不是假装压了。
    */
   async existingContextSurface(): Promise<AgentRuntimeContextSurface | null> {

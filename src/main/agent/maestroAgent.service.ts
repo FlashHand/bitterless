@@ -10,9 +10,16 @@ import { injectable } from 'inversify'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import { BaseAgent, STEER_NOT_STREAMING, type PiToolSpec } from '@main/agent/BaseAgent'
 import { buildContextRecord, entriesOfSurface, renderContextText } from '@main/agent/contextExport.service'
+import { buildContextGraph } from '@main/agent/contextGraph.service'
 import { assertContextTextSize } from './runtime/contextExportLimit.service'
 import { MAESTRO_SYSTEM_PROMPT } from './prompt/maestroSysPrompt'
-import type { ContextExportRequest, ContextExportSummary, SessionIoPathResult } from '@maestro-shared/coach.api'
+import type {
+  ContextExportRequest,
+  ContextExportSummary,
+  ContextGraphRequest,
+  ContextGraphResult,
+  SessionIoPathResult
+} from '@maestro-shared/coach.api'
 import { MaestroAgent } from '@main/agent/MaestroAgent'
 import { CoachAgent } from '@main/agent/CoachAgent'
 import { DelegateAgent } from '@main/agent/DelegateAgent'
@@ -46,29 +53,23 @@ import {
 } from '@main/agent/runtime/agentBroadcast'
 import {
   AGENT_IMAGE_MIME_BY_EXT,
-  AI_CRMS_ASR_MODEL,
   MAX_AGENT_IMAGE_BYTES,
   MAX_AGENT_IMAGES,
   MAX_AGENT_MEDIA_REFS,
-  MAX_ASR_AUDIO_BYTES,
   MAX_ATTACHMENT_BYTES,
   agentMediaMimeForPath,
-  bailianMultimodalGenerationUrl,
   buildAgentTurnPrompt,
   buildConversationCompactPrompt,
   buildTrainerTurnPrompt,
-  normalizeAsrFormat,
   normalizeCompactSummary,
   normalizeHostToolPolicies,
   normalizeHostToolPolicyMode,
-  readScribeText,
   safeUrlForDebug,
   summarizeApprovalArgs,
   summarizeRecordsForTrainer,
   type AgentSkillBrief
 } from '@main/agent/runtime/agentPrompt'
 import type { CaptureRecordSource } from '@maestro-main/capture/captureRecordSource'
-import { cleanupTempFile } from '@maestro-main/files/tempCleanup.service'
 import {
   MAX_ARCHIVE_ATTACHMENT_BYTES,
   isArchivePath
@@ -80,9 +81,7 @@ import { modelIoLog } from './runtime/modelIoLog'
 import { maestroAgentDir, maestroAuthPath, maestroModelsPath } from '@maestro-main/llm/llmPaths'
 import { describeLlmTarget, providerLabel, type LlmStoredTarget } from '@maestro-main/llm/llmModels'
 import { CoachRuntimeAdapter } from './runtime/coachRuntimeAdapter'
-import { uploadFileThroughAiCrmsCore } from '@maestro-main/networking/api/aiCrmsCoreFileUpload.api'
 import { uploadMediaRefsForProvider } from '@maestro-main/networking/api/mediaUpload.api'
-import { resolveAiCrmsRelayEndpoint } from '@maestro-main/networking/clients/relay.client'
 import type { SkillGeneratorService } from '@maestro-main/skills/skillGenerator.service'
 import type { SkillRegistryService } from '@maestro-main/skills/skillRegistry.service'
 import type {
@@ -100,8 +99,6 @@ import type {
   AgentTurnSnapshot,
   AgentTurnUpdate,
   AttachFileResult,
-  AudioScribeRequest,
-  AudioScribeResult,
   HostApprovalEvent,
   HostApprovalExportResult,
   HostApprovalHistoryResult,
@@ -117,7 +114,6 @@ import type {
   WorkspaceRef
 } from '@maestro-shared/coach.api'
 import { AGENT_TURN_CHANNEL, MODEL_RETRY_CHANNEL, type ModelRetryProgress } from '@maestro-shared/coach.api'
-import type { AuthSession, SessionApi } from '@maestro-shared/session.api'
 import {
   HOST_APPROVAL_HISTORY_KEY,
   HOST_TOOL_CONFIG_DOMAIN,
@@ -127,7 +123,6 @@ import {
 import type { TraceEvent } from '@maestro-shared/trace.types'
 
 const configStore = createXpcMainEmitter<ConfigApi>('ConfigDao')
-const aiCrmsSession = createXpcMainEmitter<SessionApi>('MaestroSessionDao')
 
 const MODEL_RETRY_MAX = 5
 const MODEL_RETRY_GAP_MS = 3_000
@@ -725,219 +720,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     )
   }
 
-  async scribeAudio(params: AudioScribeRequest): Promise<AudioScribeResult> {
-    const startedAt = Date.now()
-    const fail = (code: AudioScribeResult['code'], error: string): AudioScribeResult => ({
-      ok: false,
-      text: '',
-      model: AI_CRMS_ASR_MODEL,
-      durationMs: Date.now() - startedAt,
-      code,
-      error
-    })
-    const session = await aiCrmsSession.getSession().catch(() => null)
-    if (!session?.jwt_token) {
-      return fail('ai-crms-login-required', 'Sign in to AI-CRMS before using voice scribe.')
-    }
-
-    const audioPath = resolve(String(params.path || ''))
-    let audioSize = 0
-    try {
-      const stats = statSync(audioPath)
-      if (!stats.isFile()) {
-        return fail('audio-not-found', 'Audio file is not a file.')
-      }
-      if (stats.size <= 0) return fail('invalid-audio', 'Audio file is empty.')
-      if (stats.size > MAX_ASR_AUDIO_BYTES) {
-        return fail(
-          'audio-too-large',
-          `Audio is too large for ASR (${(stats.size / 1024 / 1024).toFixed(1)} MB).`
-        )
-      }
-      audioSize = stats.size
-    } catch {
-      return fail('audio-not-found', 'Audio file not found.')
-    }
-
-    let stage: 'core-upload' | 'asr-request' = 'core-upload'
-    try {
-      const format = normalizeAsrFormat(params.format, params.mime)
-      const uploadStartedAt = Date.now()
-      broadcastCodexDebug({
-        scope: 'agent',
-        phase: 'ai-crms-asr-upload',
-        level: 'info',
-        message: 'AI-CRMS ASR audio upload starting.',
-        detail: {
-          transport: 'core-sts-private-url',
-          bytes: audioSize,
-          format,
-          mimeType: params.mime || 'audio/wav',
-          purpose: 'coach_voice_scribe'
-        },
-        ts: Date.now()
-      })
-      const upload = await uploadFileThroughAiCrmsCore({
-        session,
-        path: audioPath,
-        mimeType: params.mime || 'audio/wav',
-        name: basename(audioPath),
-        size: audioSize,
-        purpose: 'coach_voice_scribe'
-      })
-      const audioUrl = upload.fileUrl
-      broadcastCodexDebug({
-        scope: 'agent',
-        phase: 'ai-crms-asr-upload',
-        level: 'info',
-        message: 'AI-CRMS ASR core upload completed.',
-        detail: {
-          transport: 'core-sts-private-url',
-          durationMs: Date.now() - uploadStartedAt,
-          fileId: upload.fileId,
-          coreBaseUrl: upload.coreBaseUrl,
-          audioUrl: safeUrlForDebug(audioUrl),
-          uploadUrl: safeUrlForDebug(upload.uploadUrl)
-        },
-        ts: Date.now()
-      })
-      const endpoint = resolveAiCrmsRelayEndpoint(session)
-      const url = bailianMultimodalGenerationUrl(endpoint.baseUrl)
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-        Authorization: `Bearer ${session.jwt_token}`,
-        'Content-Type': 'application/json',
-        'x-region': endpoint.region
-      }
-      if (session.tenant_id) headers['x-workspace-id'] = session.tenant_id
-      const parameters: Record<string, unknown> = { format }
-      const sampleRate = Math.round(Number(params.sampleRate))
-      if (Number.isFinite(sampleRate) && sampleRate > 0) {
-        parameters.sample_rate = String(sampleRate)
-      }
-      const body = {
-        model: AI_CRMS_ASR_MODEL,
-        input: {
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_audio',
-                  input_audio: {
-                    data: audioUrl
-                  }
-                }
-              ]
-            }
-          ]
-        },
-        parameters
-      }
-      broadcastCodexDebug({
-        scope: 'agent',
-        phase: 'ai-crms-asr-request',
-        level: 'info',
-        message: 'AI-CRMS ASR request.',
-        detail: {
-          url,
-          model: AI_CRMS_ASR_MODEL,
-          transport: 'core-sts-private-url',
-          endpoint: 'multimodal-generation.generation',
-          format,
-          parameters,
-          bytes: audioSize,
-          fileId: upload.fileId,
-          audioUrl: safeUrlForDebug(audioUrl),
-          region: endpoint.region,
-          headerKeys: Object.keys(headers).sort(),
-          hasAuthorizationHeader: true
-        },
-        ts: Date.now()
-      })
-      stage = 'asr-request'
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body)
-      })
-      const text = await res.text()
-      let json: unknown = {}
-      try {
-        json = text ? JSON.parse(text) : {}
-      } catch {
-        json = { raw: text }
-      }
-      if (!res.ok) {
-        const error = sanitizeRuntimeError(text || `HTTP ${res.status}`, 'AI-CRMS ASR')
-        broadcastCodexDebug({
-          scope: 'agent',
-          phase: 'ai-crms-asr-error',
-          level: 'error',
-          message: 'AI-CRMS ASR failed.',
-          detail: {
-            status: res.status,
-            transport: 'core-sts-private-url',
-            durationMs: Date.now() - startedAt,
-            error
-          },
-          ts: Date.now()
-        })
-        return fail('relay-error', `AI-CRMS ASR HTTP ${res.status}${error ? ` ${error}` : ''}`)
-      }
-      const transcript = readScribeText(json)
-      broadcastCodexDebug({
-        scope: 'agent',
-        phase: 'ai-crms-asr-response',
-        level: transcript ? 'info' : 'warn',
-        message: 'AI-CRMS ASR response.',
-        detail: {
-          durationMs: Date.now() - startedAt,
-          status: res.status,
-          transport: 'core-sts-private-url',
-          outputChars: transcript.length,
-          requestId:
-            typeof (json as Record<string, any>)?.request_id === 'string'
-              ? (json as Record<string, any>).request_id
-              : ''
-        },
-        ts: Date.now()
-      })
-      if (!transcript) {
-        return fail('relay-error', 'AI-CRMS ASR returned no transcript.')
-      }
-      return {
-        ok: true,
-        text: transcript,
-        model: AI_CRMS_ASR_MODEL,
-        durationMs: Date.now() - startedAt
-      }
-    } catch (err) {
-      const error = sanitizeRuntimeError(
-        err instanceof Error ? err.message : String(err),
-        'AI-CRMS ASR'
-      )
-      broadcastCodexDebug({
-        scope: 'agent',
-        phase: stage === 'core-upload' ? 'ai-crms-asr-upload' : 'ai-crms-asr-error',
-        level: 'error',
-        message:
-          stage === 'core-upload'
-            ? 'AI-CRMS ASR core upload failed.'
-            : 'AI-CRMS ASR failed before response.',
-        detail: {
-          transport: 'core-sts-private-url',
-          durationMs: Date.now() - startedAt,
-          error
-        },
-        ts: Date.now()
-      })
-      return fail(stage === 'core-upload' ? 'media-upload-unavailable' : 'relay-error', error)
-    } finally {
-      cleanupTempFile(audioPath)
-    }
-  }
-
   claimAgentTurn(params: AgentTurnClaimRequest): AgentTurnClaimResult {
     const sessionId = this.agentSessionKey(params.sessionId)
     const turnId = params.turnId.trim()
@@ -1142,6 +924,90 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       assertContextTextSize(text)
       clipboard.writeText(text)
       return { ok: true, chars: text.length, entries: record.entries.length }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /**
+   * `/view_context_graph` 的执行体 —— **与 `copyNextTurnContext` 同一批真源**,但出的是**结构投影**
+   * 而不是正文,所以它可以过 xpc 而那条不行(那条不截断,原则上无界 ⇒ 它去剪贴板)。
+   *
+   * 刻意与 `copyNextTurnContext` 并列,而不是给它加一个"要不要顺便回结构"的开关:一个出剪贴板、
+   * 一个出渲染层,两条出口的失败语义与载荷约束都不同,一个函数同时承担会让两边互相牵制。
+   * 共享的是**下面这几行来源**与 `flattenEntryRows` 那一份映射,不是这个方法。
+   *
+   * 逐条说明这里为什么留下 / 去掉了那条路上的哪些步骤 —— 别把任何一条当成抄漏:
+   * · `assertAgentRuntimeActive()` **留** —— 这份结构读的是**活着的** runtime(条目面 +
+   *   `composedSystemPrompt()`)。与 `copySessionIoPath` 刻意不调它正好相反:那条只问盘上的路径。
+   * · 会话键 + **换会话再检测一次** 留 —— `existingContextSurface()` 是 await,期间会话可能被换掉;
+   *   拿一个已经不属于这个会话的条目面画结构,画的是**别人的**上下文,而且看起来完全正常。
+   * · `buildAgentTurnPrompt` **留** —— pending 那一块的真实体量是**整块拼装后的** turn prompt
+   *   (含每轮注入的上下文与技能简介),不是输入框里那几十个字。只送原始草稿会把 pending 少报一整个
+   *   前缀,而"谁在吃窗口"正是这个弹窗存在的理由;顺带让 `/view_context` 与这条对同一状态报同一个
+   *   pending,不出现两个口径。里面那次 `new Date()` 是**提示词内容**的一部分(真 send 也这么读),
+   *   与投影本身的确定性无关 —— 确定性那条在 `buildContextGraph`(它一个时钟都不读)。
+   * · 静态系统提示词兜底 留 —— 还没有 agent 时(会话一轮都没发过)它就是下一轮会注入的那份。
+   * · `assertContextTextSize(params.draft)` 留 —— 草稿是这条路上**唯一**无界的入参,同一条宿主闸
+   *   (8 MiB)把"载荷有界"这个承诺守住。闸的文案提到剪贴板是因为它是共用的那一份,不为此分叉。
+   * · **不写剪贴板、不抛异常** —— 失败回 `{ ok: false, error }`,渲染层把它显示成一行提示
+   *   (弹窗根本不开);抛出去只会变成一个没人接的 xpc 拒绝。
+   */
+  async readContextGraph(params: ContextGraphRequest): Promise<ContextGraphResult> {
+    try {
+      this.assertAgentRuntimeActive()
+      if (!params || typeof params.sessionId !== 'string' || !params.sessionId.trim() || typeof params.draft !== 'string') {
+        throw new Error('A chat session and draft are required to read the context graph.')
+      }
+      const sessionKey = this.agentSessionKey(params.sessionId)
+      assertContextTextSize(params.draft)
+      // 与 `copyNextTurnContext` 里那个内联表达式同一个解析(default → this.pi,否则会话表),
+      // 只是走已有的具名口子,免得同一句话在这个文件里出现第四遍。
+      const agent = this.getExistingMaestroAgent(sessionKey)
+      const context = params.context
+      const attachmentPaths = context?.attachedPaths ?? []
+      if (!Array.isArray(attachmentPaths) || attachmentPaths.some((path) => typeof path !== 'string')) {
+        throw new Error('Attachment references must be paths.')
+      }
+      const surface = agent ? await agent.existingContextSurface() : null
+      if (agent !== this.getExistingMaestroAgent(sessionKey)) {
+        throw new Error('The model session changed while reading the context graph. Retry.')
+      }
+      const message = params.draft.trim()
+      const registry = this._state.existingSkillRegistry()
+      // 技能简介进 pending 提示词,所以目录没就绪时**明确失败**,而不是回一个少了简介的 pending 体量
+      // ——后者是一个没人会察觉的错数。窗口创建时就 `ensureServices()`,所以这条在实践中不会挡人。
+      if (!registry) throw new Error('The skill catalog is not ready for the context graph. Retry after initialization.')
+      const recordings = registry.listSkillsForDomain(this._state.currentUrl)
+      const pending = buildAgentTurnPrompt({
+        message,
+        context,
+        includeConversationMemory: !this.hydratedMaestroAgentSessions.has(sessionKey),
+        nowIso: new Date().toISOString(),
+        currentUrl: this._state.currentUrl,
+        briefs: this.agentSkillBriefs(message, recordings, registry)
+      })
+      const graph = buildContextGraph({
+        sessionId: sessionKey,
+        provider: this.activeLlmProvider,
+        model: this.activeLlmModel,
+        systemPrompt: agent ? agent.composedSystemPrompt() : MAESTRO_SYSTEM_PROMPT,
+        entries: entriesOfSurface(surface),
+        pending: {
+          // workspace 从入参里的 `WorkspaceRef` 取:渲染层早就把它一起送上来了,不为一行显示字段
+          // 给这个服务新增一个依赖(cowork 那边是控制器补的,因为它那条入参不带 context)。
+          workspace: context?.workspace?.path,
+          // 附件给**绝对路径**而不是 basename —— 与本仓 `copyNextTurnContext` 同一口径。两条命令
+          // 描述的是同一个 pending 集合,这里改成短名就会出现"同一状态两种说法"。
+          attachments: attachmentPaths,
+          draft: pending
+        },
+        messages: params.messages,
+        // 结构投影不用时间戳 —— 但 `ContextExportInput` 要求它。给一个确定的空串比给 `Date.now()` 好:
+        // 这条路上没有任何东西读它,而读时钟会让守卫拿不到确定输出。**别把它"修"成真时钟。**
+        timestamp: ''
+      })
+      return { ok: true, graph }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
@@ -1548,8 +1414,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     ) {
       const upload = await uploadMediaRefsForProvider({
         providerId: this.activeLlmProvider,
-        refs: media,
-        session: await this.mediaUploadSessionForProvider(this.activeLlmProvider)
+        refs: media
       })
       refs = upload.refs
       uploadWarnings.push(...upload.warnings)
@@ -1605,11 +1470,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       images: resolved.images.length ? resolved.images : undefined,
       note: parts.length ? '\n\n' + parts.join('\n') : ''
     }
-  }
-
-  private async mediaUploadSessionForProvider(providerId: string): Promise<AuthSession | null> {
-    if (providerId.trim().toLowerCase() !== 'ai-crms') return null
-    return await aiCrmsSession.getSession().catch(() => null)
   }
 
   private async routeAgentMessage(

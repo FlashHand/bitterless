@@ -63,11 +63,6 @@ const mocks = {
   `,
   '@maestro-main/capture/chromeIdentity':
     'export const chromeIdentity = () => ({ userAgent: "test" });',
-  '@maestro-main/auth/authBridge': `
-    export const AI_CRMS_AUTH_HOST = 'auth.example.invalid';
-    export const authBridge = { detach: async () => {} };
-    export const isTrustedAiCrmsAuthUrl = () => false;
-  `,
   '@maestro-main/drive/replayEngine': 'export class ReplayEngine {}',
   '@maestro-main/settings/coachSettings.service': 'export const normalizeUrl = (url) => url;',
   '@maestro-main/data/maestroDataRoot': 'export const MAESTRO_PARTITION = "test:maestro";'

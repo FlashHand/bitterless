@@ -3,7 +3,6 @@ export const MAESTRO_OPEN_STAGES = [
   'proxy',
   'sqlite-window',
   'sqlite-preload',
-  'session',
   'controller',
   'shell',
   'home-mount',

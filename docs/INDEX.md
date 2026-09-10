@@ -6,6 +6,24 @@ design document.
 
 ## Feature contracts
 
+- [macOS tray documentation master](plan/tasks/tray-mac-document-master-runtime-171.md) — implemented; owner testing pending;
+  regenerate 24px / Retina 48px assets from `doc/bitterless-tray-mac.png` for a 24x24 macOS tray image.
+
+  control 展开时内容区左右各让 8px、前台 view 走原生 16px 圆角。内缩只在唯一入口做一次
+  (`layout()` 的缓存分支不再回灌 `setViewBounds`),圆角只在翻转 / 成为前台时设,不进每帧路径。
+  姊妹落地在 micromeet-cowork,两份要一起改。
+
+- [OnlyPreview 承载方式持久化](features/onlypreview-host-mount-persistence.md) — implemented; owner testing pending;
+  上次 tab 就 tab、上次窗口就窗口(尺寸/位置/屏幕本来就已经持久化了)。含「先问承载再问偏好」的顺序理由。
+
+- [Project 树按文件类型换图标](features/onlypreview-tree-file-icons.md) — implemented; owner testing pending;
+  docx/xlsx/pptx/md 各自的 tabler 图标(刻意不用 `IconFileType*`:14px 下那几个字读不出来)。
+  含一条实测坑:HTML 注释插进 v-if 链会让 `v-else` 那一支编译成注释节点。
+
+- [Address bar takes a local absolute path](features/address-bar-local-path.md) — implemented; owner testing pending;
+  maestro 顶栏敲一条 `/…` 或 `C:\…` 路径:在 → OnlyPreview 独立窗口,不在 → Chromium 自己的
+  「文件不存在」页。判据与 micromeet-cowork 共用 vendored 的那一份,落点刻意不同。
+
 - [INDEX incremental Token CA import](features/trench-index.md) - menu-bar batch input, incumbent
   retention and per-chain top 300; [delivery](plan/tasks/trench-index-incremental-030.md).
 
@@ -14,6 +32,26 @@ design document.
 
 - [Project bookmark list and state SQLite](features/onlypreview-project-bookmarks.md) — implemented; owner testing pending;
   fixed Project-only list, direct removal, preload commit-driven UI and per-Project state DB.
+
+- [Maestro model-io chain is dead](issues/maestro-model-io-chain-is-dead.md) — open, needs an owner decision (2026-09-09):
+  `setModelIoRoot()` has no caller anywhere in `src/`, so `dirForSession()` always returns null and
+  `/copy_session_path` always answers "this session has no model I/O log yet" — a sentence that reads like
+  "you have not sent a message" rather than "this build does not write that log". Two ways out (wire the root,
+  or retire the command and the `ioLogDir` line); also records that `/view_context` never passes
+  `pending.workspace`, so its clipboard export always prints `workspace: (none)`.
+
+- [Maestro · AI-CRMS 链路整体退役](features/maestro-crms-retirement.md) — 删除契约,实施中(2026-09-10):
+  Ral 定「bl 的 Maestro 不能包含 crms 的东西」,代价是 bl 从此没有 `ai-crms` 这个 LLM provider,
+  连带撤掉 Workbench Integration 子系统(13 条 agent 工具)、Control 的语音录音/转写、vendored 的
+  `packages/micromeet-cli` 及其打包链。#3「保留面」比 #2「删除面」重要 —— 删错那几处是静默的。
+
+- [Maestro context-structure modal](features/maestro-context-graph.md) — implemented; owner testing pending (2026-09-09):
+  `/view_context_graph` draws the live context as a vertical block stack (types, sizes, context turns, compaction
+  boundary) in a semi-transparent in-panel modal; clicking a user/assistant block jumps to that chat message and
+  blocks with no UI carrier deliberately cannot be clicked. Ported from Cowork with six deliberate divergences —
+  reuses BL's own `compactionBoundary()` (it has pi's `firstKeptEntryId` fallback that Cowork's version lacks),
+  two-table `i18nHelper` with no interpolator, sibling `.less` + flat BEM, borderless, and no jsonl footer because
+  `setModelIoRoot()` has no caller in this repo.
 
 - [Maestro slash commands](features/maestro-slash-commands.md) — implemented; owner testing pending: Cowork-style
   `/clear` and `/view_context` menu, preserving BL runtime and composer behavior.
@@ -593,6 +631,13 @@ earlier review rounds were remediated; Ral's runtime/visual verification remains
 
 ## Issues
 
+- [AI-CRMS 退役前的安全契约 —— 留档](issues/maestro-crms-retirement-security-record.md) — 留档,不再是活约束:
+  专用登录 tab 的隔离要求与 bundled CLI 凭据信封两段从 `features/maestro.md` 正文移出。正文只描述
+  今天成立的契约,但「当年为什么要这么严」值得留给下一个往 Maestro 接远端后端 + 落盘凭据的人。
+- [AI-CRMS 残留清理到 2026-12-31 到期删除](issues/maestro-crms-residue-cleanup-sunset.md) — 待到期执行:
+  退役时加的一次性开机清理(pi `models.json` 的明文 JWT、CLI 凭据、隐藏 sqlite 窗口的四个
+  localStorage 键、指向 crms.micromeet.ai 的历史 tab 行)是有寿命的代码;这条账记的是到期要删
+  哪些文件与那个 config marker 键。
 - [A watch commit revokes a Global Search session that began after the commit started](issues/onlypreview-watch-commit-revokes-a-newer-search-session.md) -
   fixed: `engine.search()` never serialized against the watch reconcile, and the writer lease
   scheduled rather than prevented the clash - the commit waited for exactly the query it then

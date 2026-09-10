@@ -41,6 +41,15 @@ export const maestroModelsPath = (): string => {
 }
 
 /**
+ * 2026-09-08 之前 pi 的 auth/models 所在的目录。**只给退役残留清理用。**
+ *
+ * 为什么它还有意义:那次迁移是 `copyFileSync` 而不是 rename(`migratePiStateFiles` 自己的注释
+ * 写着「the old dir is cheap to leave behind」),所以旧目录里那几份同名副本原样留在盘上。
+ * 正常读写一律走新路径 —— 这个 accessor 存在只是为了让清理代码够得着那份副本里的凭据。
+ */
+export const maestroLegacyPiDir = (): string => piPaths().legacyDir
+
+/**
  * Point pi's `getAgentDir()` at our dir, for every code path that does not take an explicit
  * `agentDir`.
  *

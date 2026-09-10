@@ -66,6 +66,7 @@ import {
   openOnlyPreviewAbsoluteTarget,
 } from './xpc/onlyPreview.handler';
 import { onlyPreviewSettingsService } from './miniapps/onlypreview/onlyPreviewSettings.service';
+import { hydrateOnlyPreviewHostMount } from './miniapps/onlypreview/onlyPreviewHostMount.service';
 import { onlyPreviewRecentDirectoryService } from './miniapps/onlypreview/onlyPreviewRecentDirectory.service';
 import { onlyPreviewRecentsService } from './miniapps/onlypreview/onlyPreviewRecents.runtime';
 import { onlyPreviewBookmarksService } from './miniapps/onlypreview/onlyPreviewBookmarks.runtime';
@@ -340,21 +341,9 @@ const installE2ENetworkGuard = (): void => {
     return deniedResponse(request);
   };
 
-  const maestroHandler = async (request: Request): Promise<Response> => {
-    const url = new URL(request.url);
-    if (
-      url.protocol === 'http:' &&
-      url.origin === 'http://crms.micromeet.ai' &&
-      !url.username &&
-      !url.password &&
-      url.pathname === '/' &&
-      !url.search &&
-      request.method === 'GET'
-    ) {
-      return await mockResponse('/ai-crms', request);
-    }
-    return deniedResponse(request);
-  };
+  // Maestro 分区在 E2E 下没有任何被放行的远端来源 —— AI-CRMS 那条 mock 随 provider 于 2026-09
+  // 一并退役。保留独立 handler 是为了「这个分区默认拒绝」这件事在代码里有个明确的落点。
+  const maestroHandler = async (request: Request): Promise<Response> => deniedResponse(request);
 
   for (const scheme of ['http', 'https']) {
     session.defaultSession.protocol.handle(scheme, defaultHandler);
@@ -569,6 +558,9 @@ const startGui = async (): Promise<void> => {
       void runDiagnosedStartupStage('window-layout', async () => {
         await mainWindowHelper.hydratePersistedLayout();
       });
+      // 承载偏好(tab / 窗口)也在这里预热 —— 同一个存储、同一个时机。预热之后打开路径读的是
+      // 内存那一份,不必 await(`onlyPreviewHostMount.service.ts` 里说明了为什么)。
+      void hydrateOnlyPreviewHostMount().catch(() => undefined);
       void onlyPreviewSettingsService.hydrateFromStorage().catch((err: unknown) => {
         console.warn('[app] OnlyPreview settings hydration failed:', err);
       });

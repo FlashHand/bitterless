@@ -229,13 +229,21 @@ const parseProgressDialog = (record: Record<string, unknown>): OnlyPreviewAlertP
 
 const parseErrorDialog = (value: unknown): OnlyPreviewAlertErrorDialog => {
   const record = expectRecord(value, 'Error dialog');
-  expectExactKeys(record, ['kind', 'dialogId', 'title', 'message', 'confirmLabel'], 'Error dialog');
+  // `tone` 必须进这张精确键表:`expectExactKeys` 见到不认识的键会**拒绝整个快照**,
+  // 所以少加一处的后果不是"语气丢了",而是提示对话框根本到不了渲染进程。
+  expectExactKeys(
+    record,
+    ['kind', 'dialogId', 'tone', 'title', 'message', 'confirmLabel'],
+    'Error dialog'
+  );
   if (record.kind !== 'error') {
     throw new OnlyPreviewContractError('INVALID_INPUT', 'Alert dialog kind is invalid.');
   }
   return {
     kind: 'error',
     dialogId: expectToken(record.dialogId, 'Alert dialog'),
+    // 不认识的值一律当 `error` —— 保守方向:把一条真错误显示成提示,比反过来危险。
+    tone: record.tone === 'notice' ? 'notice' : 'error',
     title: boundOnlyPreviewAlertLabel(record.title, 'Alert title'),
     message: boundOnlyPreviewAlertText(record.message, 'Alert message'),
     confirmLabel: boundOnlyPreviewAlertLabel(record.confirmLabel, 'Alert confirm label')

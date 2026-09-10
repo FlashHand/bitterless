@@ -17,8 +17,6 @@ const controlApp = readFileSync(join(root, 'renderer/maestro/control/src/Control
 const messageStore = readFileSync(join(root, 'renderer/maestro/control/src/store/message.store.ts'), 'utf8')
 const maestroWindow = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
 const maestroAgent = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
-const agentPrompt = readFileSync(join(root, 'main/agent/runtime/agentPrompt.ts'), 'utf8')
-const aiCrmsCoreUpload = readFileSync(join(root, 'main/maestro/networking/api/aiCrmsCoreFileUpload.api.ts'), 'utf8')
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message)
@@ -46,10 +44,12 @@ assert(chatPanel.includes("import IconBtn from '../../../common/components/IconB
 assert(chatPanel.includes("import './ChatPanel.less'"), 'ChatPanel should import its sibling Less stylesheet')
 assert(chatPanel.includes("import { Button, Drawer, Message, Modal, Tooltip } from '@arco-design/web-vue'"), 'ChatPanel should use Arco Button for text and status actions')
 assert(!chatTemplate.includes('<button'), 'ChatPanel should not retain raw button controls')
-assert(!chatPanel.includes('<style'), 'ChatPanel voice and layout styles should live in ChatPanel.less')
+assert(!chatPanel.includes('<style'), 'ChatPanel layout styles should live in ChatPanel.less')
 assert(chatPanelLess.includes('.chat-panel {'), 'ChatPanel Less should own the chat-panel BEM block')
-assert(chatPanelLess.includes('.chat-panel__voice-wave-bar'), 'ChatPanel Less should own voice wave styling')
-assert(chatPanelLess.includes('padding-right: 132px'), 'recording state should retain textarea space for the timer')
+// 语音录音/转写随 AI-CRMS 于 2026-09 退役,`__voice-*` 与录音态的 textarea 留白一起删了。
+// 这里改盯 composer 自己的结构规则 —— 守的是「样式归 .less」这条约束,不是那个已删的功能。
+assert(chatPanelLess.includes('.chat-panel__composer {'), 'ChatPanel Less should own the composer layout')
+assert(chatPanelLess.includes('.chat-panel__textarea {'), 'ChatPanel Less should own the composer textarea styling')
 // 原来这里盯的是 `container-type: inline-size` + `@container (max-width: 480px)` 那对窄宽度容器查询。
 // composer footer 后来改成了 column-first(竖排 + stretch),在**任何**宽度下 tools/actions 都各占一行,
 // 比"窄于 480px 才折行"更强,容器查询随之删掉。守卫改盯真正在生效的机制;文件里残留的
@@ -132,28 +132,5 @@ assert(!chatPanel.includes('@click="resetConversation"'), 'composer should not c
 assert(!chatPanel.includes('function resetConversation'), 'resetConversation handler should be removed')
 assert(!messageStore.includes('async reset(sessionId: string)'), 'messageStore should not expose the removed reset action')
 assert(!messageStore.includes('await coach.resetAgentConversation({ sessionId: session.id })'), 'renderer should not reset the host agent session from composer')
-assert(chatPanel.includes('await appendTranscript(result.text)'), 'voice scribe should insert the transcript into the composer input')
-assert(chatPanel.includes('IconPlayerPause v-else-if="voiceRecording"'), 'voice button should show a pause icon while recording')
-assert(chatPanel.includes('IconLoader2 v-if="voiceBusy"'), 'voice button should show loading while audio is uploading/transcribing')
-assert(chatPanel.includes('const VOICE_SCRIBE_SAMPLE_RATE = 16_000'), 'voice scribe should downsample recordings to 16k before upload')
-assert(chatPanel.includes('const VOICE_SCRIBE_MAX_MS = 5 * 60 * 1000'), 'voice scribe should cap Flash ASR recordings at 5 minutes')
-assert(chatPanel.includes('resamplePcm(concatPcmChunks(chunks)'), 'voice scribe should resample raw microphone PCM before WAV encoding')
-assert(chatPanel.includes('void stopVoiceScribe(true)'), 'voice scribe should auto-stop at the Flash ASR duration limit')
-assert(chatPanel.includes('sampleRate: wav.sampleRate'), 'voice scribe should send the resampled WAV rate to ASR')
-assert(maestroWindow.includes('return await this.agentService.scribeAudio(params)'), 'controller should expose the ASR facade')
-assert(maestroAgent.includes("transport: 'core-sts-private-url'"), 'AI-CRMS ASR should use core STS private URL transport')
-assert(agentPrompt.includes('export const MAX_ASR_AUDIO_BYTES = 16 * 1024 * 1024'), 'agent runtime should allow a 5-minute 16k WAV while keeping an ASR file-size guard')
-assert(maestroAgent.includes('uploadFileThroughAiCrmsCore({'), 'AI-CRMS ASR should upload audio through core before calling Bailian')
-assert(maestroAgent.includes('bailianMultimodalGenerationUrl(endpoint.baseUrl)'), 'Fun-ASR-Flash should call the DashScope multimodal generation relay route')
-assert(maestroAgent.includes('input: {') && maestroAgent.includes('parameters') && maestroAgent.includes('sample_rate'), 'Fun-ASR-Flash request should use DashScope input/parameters body shape')
-assert(maestroAgent.includes('input_audio:') && maestroAgent.includes('data: audioUrl'), 'AI-CRMS ASR should send the uploaded audio URL to Bailian')
-assert(agentPrompt.includes('record.output?.text') && agentPrompt.includes('record.text'), 'AI-CRMS ASR should parse Fun-ASR-Flash text fields')
-assert(agentPrompt.includes('record.output?.choices?.[0]?.message?.content'), 'AI-CRMS ASR should parse DashScope generation output choices')
-assert(!maestroAgent.includes("audio.toString('base64')"), 'AI-CRMS ASR should not inline audio as base64')
 assert(controlApp.includes('formatDebugDetail') && controlApp.includes('JSON.stringify(detail, null, 2)'), 'debug logs should stringify object details')
-assert(aiCrmsCoreUpload.includes("'/share/file/get-upload-url'"), 'core upload should request a presigned upload URL')
-assert(aiCrmsCoreUpload.includes("method: 'PUT'") && aiCrmsCoreUpload.includes('ticket.upload_url'), 'core upload should PUT the audio to the returned OSS URL')
-assert(aiCrmsCoreUpload.includes("'/share/file/complete-upload'"), 'core upload should mark upload completion')
-assert(aiCrmsCoreUpload.includes("'/share/file/file-url'"), 'core upload should request a downloadable/signed file URL for Bailian')
-
 console.log('[check-chat-composer] ok')

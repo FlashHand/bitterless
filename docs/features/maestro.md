@@ -8,6 +8,26 @@ Current MenuBar/fixed-local-tab parity reference: Cowork `dev/next` commit `19b0
 Current Control-chat parity source: Cowork `dev/next` commit
 `67b056bc08ac345d223a69fb3f954613f3e588d3` (2026-08-31).
 
+### Control-chat context structure — ported 2026-09-09 (Ral: 「bitterless 也做下,先做文档然后做」)
+
+`/view_context_graph` 把「此刻的上下文」画成面板内一张半透明的竖向块栈:system prompt 起头,每块带
+类型色轨 + 与字符数成比例的体量条,按**上下文回合**吸顶分组;点 user / assistant 块跳到聊天里那条消息
+并闪 1.6s,界面上没有载体的块**不可点**。契约与八处刻意偏离见
+[`maestro-context-graph.md`](./maestro-context-graph.md);cowork 侧的上游契约是
+`micromeet-cowork/docs/features/cowork-context-graph.md`。
+
+- 结构在 **main** 生成(`main/agent/contextGraph.service.ts`),渲染层一个字都不算 —— 渲染层的上下文
+  投影是**预算账**,没有工具调用与工具返回的正文,而那是窗口里最大的一块。
+- 压缩边界用**本仓自己的** `compactionBoundary()`,不移植 cowork 的 `absorbedBoundaryIndex()`:
+  `firstKeptEntryId` 认不到任何条目时它退到上一条 compaction 之后(与 pi 一致),而 cowork 那版退成 0
+  = 报告"什么都没被吸收"。**这条差异要回流给 cowork**(记在契约 #8)。
+- 认领「哪一块对应界面上哪条消息」在 main 做:`user` 条目的正文是整块拼装后的 turn prompt,不是用户
+  那句话,所以渲染层只送每条消息正文的前 200 字符(`CONTEXT_GRAPH_MATCH_HEAD_CHARS`,两侧共享一个数),
+  main 用 `includes` + 只前进的游标认领,认领不到就留空 —— **错链比不可点糟得多**。
+- 没有 jsonl 页脚:`setModelIoRoot()` 在本仓无调用点,那条证据链是死的
+  (`docs/issues/maestro-model-io-chain-is-dead.md`)。
+- 守卫 `scripts/maestro/check-context-graph.mjs`(18 个变异全部被捕获);umbrella 计数 42 → 43。
+
 ### Control-chat link policy — ported 2026-09-08 (Ral: 「做 A,把 bitterless cowork 同步做」)
 
 A web link in a chat reply now becomes a **new tab in the operation view**. Before this, the Control
@@ -153,9 +173,9 @@ tokens, renderer values, and raw errors are forbidden.
   [tasks 089](../plan/tasks/maestro-cowork-chat-core-089.md) and
   [090](../plan/tasks/maestro-cowork-chat-files-090.md); both independent reviews report no
   unresolved P0-P2 findings, with runtime/E2E acceptance owned by Ral.
-- Maestro Control omits Micromeet (`ai-crms`) and Local (`local`) choices. Previously saved targets
-  remain labelled but disabled until an explicit provider selection; no automatic provider switch
-  or configuration rewrite. Shared backend/Workbench providers are unaffected (task159).
+- Maestro Control omits the Local (`local`) choice. Previously saved targets remain labelled but
+  disabled until an explicit provider selection; no automatic provider switch or configuration
+  rewrite. Shared backend/Workbench providers are unaffected (task159).
   Other provider/model/effort/compression selection retains the existing login flows.
   GPT-5.5 remains selectable and a stored GPT-5.5 target is preserved alongside GPT-5.6 Luna, Sol,
   and Terra; the new-install Codex default may remain GPT-5.6 Luna.
@@ -171,15 +191,14 @@ tokens, renderer values, and raw errors are forbidden.
   [workspace preview 138](../plan/tasks/onlypreview-cowork-workspace-preview-138.md).
 - New/recovered empty BL chats do not insert a synthetic greeting. Real conversation and recovery
   messages remain intact; the existing composer remains the entry point for an empty chat.
-- Voice recording and AI-CRMS transcription within the upstream five-minute limit.
 - Maestro, Coach, and Delegate agent runtimes with host tool policy and approval history.
 
 ### Capture and Workbench
 
 - UI/network/snapshot recording, debugger gating, filters, request-response folding, detail/timing/body
   inspection, replay, JSON/HAR export, curated evidence persistence, Preview, and Ingest.
-- Skills browse/detail/import/export/open/delete/train/replay, domain injections, integration targets,
-  mappings, dry-run/apply/readiness flows, app-open schedules, host tools, models, About, and Log.
+- Skills browse/detail/import/export/open/delete/train/replay, domain injections, app-open
+  schedules, host tools, models, About, and Log.
 - `Apps`, `Connectors`, and `Settings` embed the former Home surfaces inside Workbench. Home owns
   customer authentication and Todo readiness through a bounded metadata/command bridge; it never
   copies its token or browser storage into Maestro's Chromium partition.
@@ -190,17 +209,15 @@ tokens, renderer values, and raw errors are forbidden.
 - `Configuration` owns metadata-only Claude subscription accounts, isolated Claude CLI login,
   routing enablement/status, and the fixed `Local` provider/model/effort controls. It exposes only
   `http://127.0.0.1:8741/v1`; no API key or configurable remote endpoint is accepted.
-- Bundled Micromeet CLI invocation and credential synchronization remain available to integration
-  flows in packaged builds.
 
 ### Bundled external tools
 
 Maestro's standalone executables and native document converter are application resources, not
 JavaScript dependencies. `yarn external-tools:init` prepares the pinned Bun, ripgrep, fd, Ouch, and
 AnyDoc inventories for `mac_arm`, `mac_intel`, and `win` under the gitignored `external_tools/`
-store. Packaging never downloads them: after the Micromeet CLI build clears and recreates the
-staging root, the selected platform is validated and copied to `build/maestro-tools`, which Electron
-Builder installs as `Resources/maestro-tools`.
+store. Packaging never downloads them: each external-tool preparation step creates the staging
+directories it needs, then the selected platform is validated and copied to `build/maestro-tools`,
+which Electron Builder installs as `Resources/maestro-tools`.
 
 Only the target platform enters an application bundle. `external_tools/**` and the legacy
 `prebuilt/**` cache are excluded from `app.asar`; macOS executable/native entries remain in the
@@ -214,7 +231,6 @@ Current upstream limitations are parity, not migration defects:
 
 - Connectors retain their existing management UI and runtime behavior; a unified connector inbox is
   still outside this migration.
-- Voice scribe audio over five minutes remains unsupported.
 - Cowork's five-segment context-compaction replacement remains deferred in Maestro until its own
   real-session acceptance and projection contract are complete; this chat parity delivery preserves
   Maestro's current compaction behavior.
@@ -248,10 +264,9 @@ default renderer session.
 | Claude subscription account metadata | Main-owned `userData/claude-subscription`; renderer never receives profile paths or credentials. |
 | Local provider route | Fixed loopback `127.0.0.1:8741`; Pi receives no bearer header and no remote URL override. |
 | Window and pane preferences | Legacy-compatible Maestro keys/files. |
-| CLI shim/credential envelope | Stable keeps the existing `~/.micromeet` contract. Preview owns `${app.getPath('userData')}/cowork/cli` and never touches the Stable tree. |
 
-The hidden database XPC handler names are namespaced wherever they collide with Bitterless. In
-particular, Maestro's auth-session DAO must not register as Bitterless's existing `SessionDao`.
+The hidden database XPC handler names are namespaced wherever they collide with Bitterless: a
+Maestro DAO must never register under a channel name Bitterless already owns.
 
 Existing standalone Micromeet Cowork data is not deleted. The embedded app starts with an isolated
 profile; importing a live standalone profile is outside this delivery because copying an open
@@ -263,27 +278,9 @@ icon filenames use `Maestro`. The literals `userData/cowork`, `persist:bitterles
 only as compatibility identifiers. Renaming those values requires an explicit profile/schema
 migration and is outside this source-layout change.
 
-The bundled Micromeet CLI resolves its executable and writable paths by desktop release channel.
-Stable preserves the public external-CLI layout: shim under `~/.micromeet/bin`, encrypted CRMS/Sys
-credentials and their shared random key under `~/.micromeet/credentials`, and legacy session at
-`~/.micromeet/session.json`. Stable continues honoring supplied executable, realm-specific, generic
-credential, and session overrides before falling back to those established global defaults.
-
-Preview instead places its shim, `credentials/crms.json`, `credentials/sys.json`, shared
-`credentials/.credential-key-v2`, and `session.json` below
-`${app.getPath('userData')}/cowork/cli`. It prepends that local `bin` directory to its internal PATH,
-ignores inherited `MICROMEET_CLI_PATH`, uses only its packaged/development bundled executable, and
-never probes, migrates, clears, or otherwise touches `~/.micromeet`. Main and every CLI child receive
-forced `MICROMEET_CLI_PATH`, `MICROMEET_CRMS_CREDENTIAL_FILE`,
-`MICROMEET_SYS_CREDENTIAL_FILE`, `MICROMEET_CREDENTIAL_FILE`, and `MICROMEET_SESSION_FILE` values;
-the generic credential variable is pinned locally as defense against fallback, while exact realm
-paths remain authoritative for login/logout.
-
-Preview installs this environment boundary before any directory, permission, shim, or cleanup I/O.
-An initialization failure propagates, leaves hostile inherited path values overwritten, and does
-not mark the Maestro runtime initialized. A later open may retry the idempotent CLI setup; no window
-boot, device initialization, or shortcut activation begins before it succeeds. Maestro's handler
-modules remain process-level imports and are not repeatedly registered by that retry.
+The vendored Micromeet CLI and its per-channel shim/credential layout were removed with the
+AI-CRMS retirement (2026-09); Maestro no longer ships or invokes an external CLI. Maestro's handler
+modules remain process-level imports and are not repeatedly registered by a retried open.
 
 Because the embedded profile is new, it must not retain the standalone application's fixed legacy
 SQLCipher fallback. If an embedded `config.db` exists without its generated key file, startup fails
@@ -296,20 +293,15 @@ unavailable in packaged builds.
   XPC-only preload in the Maestro partition. Its visible address is `bitterless://home`; it never
   exposes or navigates to the real dev/file target, and ordinary website tabs never receive its
   preload.
-- AI-CRMS authentication uses one closable, non-persisted, non-recordable login tab with no preload.
-  Main confines it to the trusted AI-CRMS host and accepts login/logout bindings only from that
-  trusted main frame. Closing, cooling, auth cleanup, and native-window shutdown invalidate pending
-  preparation and detach the auth bridge before detaching its debugger and closing the view.
+- The AI-CRMS provider was retired in 2026-09; its dedicated login tab, auth bridge, and credential
+  chain are gone. The isolation contract they carried is archived in
+  [AI-CRMS 退役前的安全契约](../issues/maestro-crms-retirement-security-record.md).
 - Workspace/file tools retain root-boundary checks, size limits, explicit permissions, and approval
   policy. No credential value is written into the Bitterless repository or log output.
 - Proxy credentials are never logged. When the user explicitly supplies an HTTP(S)/ALL proxy,
   Maestro may install its Undici dispatcher only for the lifetime of the Maestro runtime; teardown
   restores the previous dispatcher only when Maestro still owns the global slot. While Maestro is
   open, other Bitterless main-process Undici traffic follows that same explicit proxy setting.
-- Bundled Micromeet CLI credentials use a random local key protected with restrictive filesystem
-  permissions and an
-  authenticated encryption envelope shared by the embedded runtime and bundled CLI. They must not
-  be decryptable from a public constant plus the account email.
 - Claude subscription credentials remain owned by the unmodified Claude CLI and the operating
   system credential store. Bitterless persists only account metadata and managed profile paths; it
   never extracts, encrypts, exposes, or injects Claude.ai tokens.
@@ -355,7 +347,7 @@ Royal Blue/i18n and existing model/turn persistence, migrate the UI interaction 
 ```text
 message input
 [Choose workspace / full selected name] [Attach]
-             [provider / model / effort] [Voice] [Stop OR Send]
+             [provider / model / effort] [Stop OR Send]
 ```
 
 Use two stable rows at all Chat widths rather than container-dependent wrapping. Workspace
@@ -499,8 +491,7 @@ inherit the canonical Royal Blue mapping from `theme.ts`: `#4e5882` by default, 
 and `#323955` while pressed. Danger, warning, success, loading, recording, and disabled semantics
 retain their own colors.
 
-The fixed first tab is a local `home` tab rather than the legacy remote `ai-crms` tab. Before
-authentication it renders the same Login presentation and interaction flow as the hidden Home route,
+The fixed first tab is a local `home` tab. Before authentication it renders the same Login presentation and interaction flow as the hidden Home route,
 backed by an adapter over `HomeShellBridgeHandler`; it never imports `authStore`, persists a customer
 token, or calls authentication HTTP directly. The bridge snapshot is explicit and token-free, and
 window recreation subscribes before the initial read so authenticated content fails closed.
@@ -519,7 +510,7 @@ back to Login without exposing the legacy native window.
 
 The fixed view keeps an XPC-only preload, is pinned, address-locked, non-recordable, confined to the
 local entry, and displays `bitterless://home` rather than a dev-server URL or packaged file path.
-AI-CRMS provider/login code is not allowed to navigate or replace this fixed tab.
+No provider's login code is allowed to navigate or replace this fixed tab.
 
 The pinned Home tab favicon and the centered blank New-tab splash use one bundled Bitterless icon
 derived from the canonical `build/icon.png` artwork. They do not reuse Maestro's blue `M` app logo;
@@ -531,9 +522,8 @@ opens DevTools only when that view does not already have one, without stealing f
 E2E runtimes never auto-open fixed-Home DevTools; ordinary browser-tab debugging and the other
 Maestro renderer DevTools policies remain independent.
 
-This focused parity pass deliberately excludes Cowork's forked CRMS renderer, AI-CRMS avatar/profile
-UI, generic mini-app page-type menus, update-progress protocol, and loading/crash tab-state
-expansion. Maestro's localized updater, Control chat, Local provider, and browser tabs remain
+This focused parity pass deliberately excludes Cowork's forked CRMS renderer, generic mini-app
+page-type menus, update-progress protocol, and loading/crash tab-state expansion. Maestro's localized updater, Control chat, Local provider, and browser tabs remain
 authoritative. The former visible Demo controls were retired by the Control-entry follow-up while
 the Main-owned Demo service/XPC contract stayed intact.
 
@@ -550,15 +540,15 @@ Automated gates for Ral to run:
 - `yarn typecheck:web`
 - `yarn build`
 - `yarn check:maestro` parity checks for startup, tabs, capture, chat, files, skills, agents,
-  auth, integrations, and packaging paths
+  auth, and packaging paths
 - Playwright Electron baseline launched through Bitterless and opening Maestro from Mini Apps
 
 Manual/package gates:
 
 - First Open and repeat-focus behavior; close/reopen without host impact.
 - All four Maestro render surfaces load and resize correctly.
-- AI-CRMS/Codex login, chat streaming/abort, attachments/workspace/artifacts, capture/replay/export,
-  skills/injections/integrations/tools/models.
-- macOS arm64/x64 and Windows packaged native SQLite ABI, CLI extra resource, signing/entitlements,
-  folder/microphone permissions, and update installation.
+- Codex login, chat streaming/abort, attachments/workspace/artifacts, capture/replay/export,
+  skills/injections/tools/models.
+- macOS arm64/x64 and Windows packaged native SQLite ABI, external-tools extra resource,
+  signing/entitlements, folder permissions, and update installation.
 - Authentication invalidation and Bitterless quit clean up Maestro without leaking privileged content.

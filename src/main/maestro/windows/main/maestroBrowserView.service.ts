@@ -9,13 +9,12 @@ import { pathToFileURL } from 'url'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import { DebuggerCapture } from '@maestro-main/capture/debuggerCapture'
 import { chromeIdentity } from '@maestro-main/capture/chromeIdentity'
-import {
-  AI_CRMS_AUTH_HOST,
-  authBridge,
-  isTrustedAiCrmsAuthUrl
-} from '@maestro-main/auth/authBridge'
 import { ReplayEngine } from '@maestro-main/drive/replayEngine'
 import { normalizeUrl } from '@maestro-main/settings/coachSettings.service'
+import { openOnlyPreviewAbsoluteTarget } from '@main/miniapps/onlypreview/onlyPreviewExplicitOpen.service'
+import { isAbsoluteFilePath } from '@shared/onlypreview/onlyPreviewTargetInput'
+import { resolveLocalPathTarget } from './localPathTarget'
+import { focusAddressBarForBlankTab } from './newTabFocus'
 import { MAESTRO_PARTITION } from '@maestro-main/data/maestroDataRoot'
 import type { NetworkInterceptionRule } from '@maestro-main/capture/networkInterception'
 import type {
@@ -29,10 +28,7 @@ import type {
   WorkbenchTabState,
   ViewRect
 } from '@maestro-shared/coach.api'
-import {
-  MAESTRO_AI_CRMS_LOGIN_DISPLAY_URL,
-  MAESTRO_LOCAL_HOME_DISPLAY_URL
-} from '@maestro-shared/coach.api'
+import { MAESTRO_LOCAL_HOME_DISPLAY_URL } from '@maestro-shared/coach.api'
 import type { MaestroCompositeTabSpec } from '@maestro-shared/compositeTab.api'
 import type { InjectBtnApi, InjectBtnEntry, InjectBtnInput } from '@maestro-shared/injectBtn.api'
 import type { SavedTab } from '@maestro-shared/tabs.api'
@@ -51,9 +47,6 @@ export const shouldOpenPinnedHomeDevTools = (): boolean => {
   return process.env.BITTERLESS_E2E !== '1'
 }
 
-export const AI_CRMS_LOGIN_URL = `http://${AI_CRMS_AUTH_HOST}/?mrgn=ID#/login`
-const AI_CRMS_TITLE = 'AI-CRMS'
-const AI_CRMS_FAVICON = ''
 const LOCAL_HOME_TITLE = 'Home'
 const LOCAL_HOME_FAVICON = ''
 const ATTACH_BEFORE_NAVIGATE_TIMEOUT_MS = 3000
@@ -146,11 +139,8 @@ export interface OperationTab {
    */
   surface?: View | null
   capture: DebuggerCapture | null
-  /** Internal debugger owner for the trusted AI-CRMS auth bridge; never exposed to agent tools. */
-  bridgeCapture?: DebuggerCapture | null
   replay: ReplayEngine | null
   attachReady?: Promise<void>
-  preparationReady?: Promise<void>
   coolingReady?: Promise<void>
   cooling?: boolean
   closeReady?: Promise<void>
@@ -204,11 +194,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   private creatingTab = false
   private injectedButtonNonces = new Map<string, string>()
   private readonly compositeTabs = new Map<string, MaestroCompositeTabSpec>()
-  private authBridgeOwner: WebContents | null = null
-  private authBridgeCleanup: Promise<void> = Promise.resolve()
-  private aiCrmsPreparation: Promise<void> = Promise.resolve()
   private lifecycleEpoch = 0
-  private shuttingDown = false
 
   createPinnedHomeTab(): WebContentsView {
     const view = this.buildPinnedHomeView()
@@ -230,7 +216,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
     this.tabs.push(first)
     this.activeTabId = first.id
-    this._state.operationView = view
+    this.setOperationView(view)
     this._state.capture = null
     this._state.replayEngine = null
     return view
@@ -269,7 +255,31 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     if (!this._state.operationView) return
     const active = this.tabs.find((tab) => tab.id === this.activeTabId)
     if (active?.kind !== 'browser') return
-    const target = normalizeUrl(params.url)
+    // 本机绝对路径(Ral 2026-09-09,`docs/features/address-bar-local-path.md`)。
+    //
+    // **在** → 交给 OnlyPreview。这里落的是**独立窗口**,而 micromeet-cowork 那边落 mini-app tab ——
+    // 那是刻意的分歧:bitterless 的 OnlyPreview 本来就是一个一等窗口,在 tab 里再造一个预览面等于
+    // 同一件事有两个入口。判据本身两仓共用(`@shared/onlypreview/onlyPreviewTargetInput`,那一面
+    // 逐字节等同),分歧只在落点。
+    //
+    // **不在** → 落一发 `file://`,让 Chromium 出它自己的「文件不存在」页 —— 也就是网页那条路上
+    // 一次失败加载的落地页,Ral 要的「和网页共用不存在的组件」。
+    const raw = (params.url || '').trim()
+    const isLocalPath = isAbsoluteFilePath(raw)
+    let localFileUrl = ''
+    if (isLocalPath) {
+      const local = resolveLocalPathTarget(raw)
+      if (local.kind === 'preview') {
+        await openOnlyPreviewAbsoluteTarget(local.path)
+        return
+      }
+      // `chrome` 与 `missing` 都落到下面那一发 `file://`:一个是 Chromium 自己渲染这个文件,
+      // 一个是 Chromium 自己的「文件不存在」页 —— 同一条加载路径,两种落地页都不是我们画的。
+      localFileUrl = local.fileUrl
+    }
+    // 路径那一支**不能**过 `normalizeUrl` —— 它会把 `/Users/…` 补成 `https:///Users/…`,
+    // 落地是一张无解的错误页,而不是「这个文件不存在」。
+    const target = isLocalPath ? localFileUrl : normalizeUrl(params.url)
     if (!target) return
     await this._state.operationView.webContents.loadURL(target).catch((err) => {
       this._state.emitTrace({ kind: 'error', msg: 'navigate: ' + (err as Error).message, ts: Date.now() })
@@ -279,10 +289,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   async reload(): Promise<void> {
     const active = this.getActiveTab()
     if (!active) return
-    if (active.kind === 'ai-crms') {
-      await this.queueAiCrmsPreparation(active, { targetUrl: active.url, reload: true })
-      return
-    }
     const wc = active.view?.webContents
     if (!wc || wc.isDestroyed()) {
       await this.warmAndLoad(active)
@@ -366,6 +372,18 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
   }
 
+  /**
+   * `operationView` 的**唯一写入口**。
+   *
+   * 收成一个口子是为了圆角:原生圆角按 view 设,而后台 view 错过了它不在前台时的每一次 control
+   * 翻转 —— 所以"成为前台内容"这件事本身必须补一次。这条路有三个入口(固有 Home 装配、切到
+   * composite 时置空、切到网页 tab),散着挂钩子必然漏一条,漏掉的症状是"某个 tab 切回来是方角",
+   * 而且**不报错**。
+   */
+  private setOperationView(view: WebContentsView | null): void {
+    this._state.operationView = view
+  }
+
   layout(bounds: { x: number; y: number; width: number; height: number }): void {
     this.setBounds(bounds)
   }
@@ -391,31 +409,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       loadWatchdog: null
     }
     this.tabs.push(tab)
-    return tab
-  }
-
-  private async addAiCrmsLoginTab(): Promise<OperationTab> {
-    // This is intentionally a fresh normal slot, not the pre-warmed spare: a never-navigated
-    // webContents needs an about:blank render process before DebuggerCapture can attach reliably.
-    const slot = this.buildViewSlot()
-    const tab: OperationTab = {
-      id: `tab-${++this.tabSeq}`,
-      kind: 'ai-crms',
-      view: slot.view,
-      capture: null,
-      bridgeCapture: slot.capture,
-      replay: null,
-      url: AI_CRMS_LOGIN_URL,
-      title: AI_CRMS_TITLE,
-      favicon: AI_CRMS_FAVICON,
-      debuggerEnabled: false,
-      pinned: false,
-      lastActive: Date.now(),
-      loading: false,
-      loadWatchdog: null
-    }
-    this.tabs.push(tab)
-    await this.enforceWarmCap([tab.id])
     return tab
   }
 
@@ -632,16 +625,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     return true
   }
 
-  private preventAiCrmsEscape(tab: OperationTab | undefined, url: string, openInBrowser: boolean): boolean {
-    if (tab?.kind !== 'ai-crms' || isTrustedAiCrmsAuthUrl(url)) return false
-    if (url === 'about:blank' && !tab.view?.webContents.getURL()) return false
-    this._state.emitTrace({ kind: 'info', msg: `blocked AI-CRMS login navigation · ${url}`, ts: Date.now() })
-    if (openInBrowser && /^https?:\/\//i.test(url)) {
-      queueMicrotask(() => void this.openTabWithUrl(url))
-    }
-    return true
-  }
-
   private isLiveTabView(tab: OperationTab, view: WebContentsView, epoch = this.lifecycleEpoch): boolean {
     return (
       this.lifecycleEpoch === epoch &&
@@ -650,107 +633,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       tab.view === view &&
       !view.webContents.isDestroyed()
     )
-  }
-
-  private detachAuthBridgeForView(wc: WebContents | undefined): Promise<void> {
-    if (!wc) return this.authBridgeCleanup
-    return this.detachAuthBridge(wc)
-  }
-
-  async detachAuthBridge(owner?: WebContents): Promise<void> {
-    const target = owner ?? this.authBridgeOwner ?? undefined
-    if (!owner || this.authBridgeOwner === owner) this.authBridgeOwner = null
-    const cleanup = this.authBridgeCleanup
-      .catch(() => undefined)
-      .then(() => authBridge.detach(target))
-      .catch((err) => {
-        this._state.emitTrace({ kind: 'error', msg: 'auth bridge detach: ' + (err as Error).message, ts: Date.now() })
-      })
-    this.authBridgeCleanup = cleanup
-    await cleanup
-  }
-
-  async quiesceAuthBridge(): Promise<void> {
-    this.shuttingDown = true
-    this.lifecycleEpoch += 1
-    const authTabs = this.tabs.filter((tab) => tab.kind === 'ai-crms')
-    for (const tab of authTabs) await this.coolTab(tab)
-    await this.aiCrmsPreparation.catch(() => undefined)
-    await this.detachAuthBridge()
-  }
-
-  private queueAiCrmsPreparation(
-    tab: OperationTab,
-    options: { targetUrl: string; reload?: boolean }
-  ): Promise<void> {
-    if (this.shuttingDown) return Promise.reject(new Error('Maestro window is shutting down.'))
-    if (tab.cooling) return Promise.reject(new Error('AI-CRMS login tab is cooling down.'))
-    const run = this.aiCrmsPreparation
-      .catch(() => undefined)
-      .then(() => this.prepareAiCrmsTab(tab, options))
-    this.aiCrmsPreparation = run.catch(() => undefined)
-    tab.preparationReady = run
-    void run.then(
-      () => {
-        if (tab.preparationReady === run) tab.preparationReady = undefined
-      },
-      () => {
-        if (tab.preparationReady === run) tab.preparationReady = undefined
-      }
-    )
-    return run
-  }
-
-  private async prepareAiCrmsTab(
-    tab: OperationTab,
-    options: { targetUrl: string; reload?: boolean }
-  ): Promise<void> {
-    if (this.shuttingDown) throw new Error('Maestro window is shutting down.')
-    if (tab.cooling) throw new Error('AI-CRMS login tab is cooling down.')
-    if (tab.kind !== 'ai-crms') throw new Error('AI-CRMS bridge requires the dedicated login tab.')
-    const epoch = this.lifecycleEpoch
-    if (!this.tabs.includes(tab)) throw new Error('AI-CRMS login tab is closed.')
-    const targetUrl = isTrustedAiCrmsAuthUrl(options.targetUrl) ? options.targetUrl : AI_CRMS_LOGIN_URL
-    await this.ensureWarm(tab)
-    const view = tab.view
-    const capture = tab.bridgeCapture
-    if (!view || !capture || view.webContents.isDestroyed()) {
-      throw new Error('AI-CRMS login view is unavailable.')
-    }
-    const wc = view.webContents
-    if (!this.isLiveTabView(tab, view, epoch)) throw new Error('AI-CRMS login tab closed before preparation.')
-    const bridgeReady =
-      this.authBridgeOwner === wc &&
-      capture.isAttached() &&
-      authBridge.isAttached(wc) &&
-      isTrustedAiCrmsAuthUrl(wc.getURL())
-
-    if (!bridgeReady) {
-      await this.detachAuthBridge()
-      if (!this.isLiveTabView(tab, view, epoch)) throw new Error('AI-CRMS login tab closed before debugger attach.')
-
-      // A fresh WebContents has no renderer process and DebuggerCapture.attach() can otherwise
-      // hang. Bootstrap the process first, then wait for the real attach with no timeout fallback.
-      await wc.loadURL('about:blank')
-      if (!this.isLiveTabView(tab, view, epoch)) throw new Error('AI-CRMS login tab closed during bootstrap.')
-      tab.attachReady = capture.attach()
-      await tab.attachReady
-      if (!capture.isAttached()) throw new Error('AI-CRMS login debugger did not attach.')
-      if (!this.isLiveTabView(tab, view, epoch)) throw new Error('AI-CRMS login tab closed before auth bridge attach.')
-
-      await authBridge.attach(wc)
-      if (
-        !authBridge.isAttached(wc) ||
-        !this.isLiveTabView(tab, view, epoch)
-      ) {
-        await this.detachAuthBridge(wc)
-        throw new Error('AI-CRMS auth bridge was detached before navigation.')
-      }
-      this.authBridgeOwner = wc
-    }
-
-    tab.url = targetUrl
-    if (options.reload || wc.getURL() !== targetUrl) await wc.loadURL(targetUrl)
   }
 
   async prewarmSpare(): Promise<void> {
@@ -781,18 +663,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       tab.lastActive = Date.now()
       return
     }
-    if (tab.kind === 'ai-crms') {
-      const slot = this.buildViewSlot()
-      tab.view = slot.view
-      tab.capture = null
-      tab.bridgeCapture = slot.capture
-      tab.replay = null
-      tab.attachReady = undefined
-      tab.debuggerEnabled = false
-      tab.lastActive = Date.now()
-      await this.enforceWarmCap([tab.id])
-      return
-    }
     let slot = this.spareSlot
     if (slot) {
       this.spareSlot = null
@@ -813,10 +683,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   }
 
   async warmAndLoad(tab: OperationTab): Promise<void> {
-    if (tab.kind === 'ai-crms') {
-      await this.queueAiCrmsPreparation(tab, { targetUrl: tab.url })
-      return
-    }
     const wasCold = !tab.view || tab.view.webContents.isDestroyed()
     await this.ensureWarm(tab)
     const wc = tab.view?.webContents
@@ -850,29 +716,18 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     tab.cooling = true
     const view = tab.view
     const capture = tab.capture
-    const bridgeCapture = tab.bridgeCapture
-    const preparationReady = tab.preparationReady
 
     // The old view cannot promise a stop event after this point. Settle before detaching ownership.
     this.setTabLoading(tab, false)
 
-    // Make the old slot non-live before the first await. A queued AI-CRMS preparation can then
-    // neither pass its next ownership fence nor reattach the singleton bridge during teardown.
+    // Drop the old slot from the tab before touching it, so nothing can pick it back up.
     tab.view = null
     tab.capture = null
-    tab.bridgeCapture = null
     tab.replay = null
     tab.attachReady = undefined
-    tab.preparationReady = undefined
 
-    const wc = view?.webContents
-    await this.detachAuthBridgeForView(wc)
-    bridgeCapture?.suspend()
-    await preparationReady?.catch(() => undefined)
-    await this.detachAuthBridgeForView(wc)
     try {
       capture?.detach()
-      bridgeCapture?.detach()
     } catch {
       // Already detached.
     }
@@ -921,30 +776,16 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
 
   private attachViewListeners(view: WebContentsView): void {
     const wc = view.webContents
-    wc.on('will-frame-navigate', (event) => {
-      if (!event.isMainFrame) return
-      if (this.preventAiCrmsEscape(this.ownerOf(view), event.url, true)) event.preventDefault()
-    })
     wc.on('will-navigate', (event) => {
-      const tab = this.ownerOf(view)
-      if (tab?.kind === 'ai-crms') return
-      if (this.preventPinnedHomeEscape(tab, event.url)) event.preventDefault()
+      if (this.preventPinnedHomeEscape(this.ownerOf(view), event.url)) event.preventDefault()
     })
     wc.on('will-redirect', (event) => {
       const tab = this.ownerOf(view)
-      if (event.isMainFrame && this.preventAiCrmsEscape(tab, event.url, true)) {
-        event.preventDefault()
-        return
-      }
       if (event.isMainFrame && this.preventPinnedHomeEscape(tab, event.url)) event.preventDefault()
     })
     wc.on('did-navigate', (_event, url) => {
       const tab = this.ownerOf(view)
       if (!tab || url === 'about:blank') return
-      if (tab.kind === 'ai-crms' && !isTrustedAiCrmsAuthUrl(url)) {
-        void this.detachAuthBridgeForView(tab.view?.webContents)
-        return
-      }
       if (tab.kind !== 'home') tab.url = url
       if (this.activeTabId === tab.id || this._state.captureTargetTabId === tab.id) this.sendTabNav(tab, true)
       this.broadcastTabs()
@@ -952,7 +793,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     wc.on('did-navigate-in-page', (event, url) => {
       const tab = this.ownerOf(view)
       if (!tab || !event.isMainFrame) return
-      if (tab.kind === 'ai-crms' && !isTrustedAiCrmsAuthUrl(url)) return
       if (tab.kind !== 'home') tab.url = url
       if (this.activeTabId === tab.id || this._state.captureTargetTabId === tab.id) this.sendTabNav(tab, false)
       this.broadcastTabs()
@@ -998,15 +838,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     })
     wc.setWindowOpenHandler((details) => {
       if (this.handleInjectedButtonOpen(details.url)) return { action: 'deny' }
-      const tab = this.ownerOf(view)
-      if (tab?.kind === 'ai-crms' && isTrustedAiCrmsAuthUrl(details.url)) {
-        queueMicrotask(() => {
-          void this.queueAiCrmsPreparation(tab, { targetUrl: details.url }).catch((err) => {
-            this._state.emitTrace({ kind: 'error', msg: 'AI-CRMS popup: ' + (err as Error).message, ts: Date.now() })
-          })
-        })
-        return { action: 'deny' }
-      }
       if (/^https?:\/\//i.test(details.url)) {
         const url = details.url
         queueMicrotask(() => void this.openTabWithUrl(url))
@@ -1026,7 +857,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   private displayUrl(tab: OperationTab): string {
     if (tab.kind === 'home') return MAESTRO_LOCAL_HOME_DISPLAY_URL
     if (tab.kind === 'onlypreview') return this.compositeTabs.get(tab.id)?.displayUrl ?? ''
-    if (tab.kind === 'ai-crms') return MAESTRO_AI_CRMS_LOGIN_DISPLAY_URL
     return tab.url
   }
 
@@ -1065,9 +895,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       {
         label: 'Reload',
         click: () => {
-          if (tab.kind === 'ai-crms') {
-            void this.queueAiCrmsPreparation(tab, { targetUrl: tab.url, reload: true })
-          } else if (tab.view && !tab.view.webContents.isDestroyed()) {
+          if (tab.view && !tab.view.webContents.isDestroyed()) {
             tab.view.webContents.reload()
           } else {
             void this.warmAndLoad(tab)
@@ -1212,6 +1040,10 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     try {
       const tab = await this.claimSpareTab({})
       await this.activateTab({ id: tab.id })
+      // 必须排在 activateTab 之后:抢焦点的不是某个 view 主动 focus,而是 activateTab 里
+      // `previous.view.setVisible(false)` 把焦点丢掉 —— 先聚焦就会被那一行抹掉。空白 tab 的
+      // `needsLoad` 恒为 false,所以 activateTab 返回之后不再有导航把焦点带走(契约 #3.3)。
+      focusAddressBarForBlankTab(this._state.browserWindow)
     } catch (err) {
       this._state.emitTrace({ kind: 'error', msg: 'new tab: ' + (err as Error).message, ts: Date.now() })
     } finally {
@@ -1245,20 +1077,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
   }
 
-  async openAiCrmsLoginTab(): Promise<void> {
-    // Reuse the single trusted auth tab. It stays closable/non-pinned, never receives a preload,
-    // and is deliberately absent from browser persistence, capture, replay, and Workbench domains.
-    let tab = this.tabs.find((item) => item.kind === 'ai-crms')
-    if (!tab) tab = await this.addAiCrmsLoginTab()
-    try {
-      await this.queueAiCrmsPreparation(tab, { targetUrl: AI_CRMS_LOGIN_URL, reload: true })
-      await this.activateTab({ id: tab.id })
-    } catch (err) {
-      await this.closeTab({ id: tab.id })
-      throw err
-    }
-  }
-
   drainNewTabsNote(): string {
     if (this._state.tabsOpenedThisTurn.length === 0) return ''
     const opened = this._state.tabsOpenedThisTurn.splice(0)
@@ -1284,7 +1102,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       if (previous && previous.id !== tab.id) this.hideTabContent(previous)
       this.activeTabId = tab.id
       tab.lastActive = Date.now()
-      this._state.operationView = null
+      this.setOperationView(null)
       this._state.capture = null
       this._state.replayEngine = null
       composite.setActive(true)
@@ -1299,13 +1117,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     if (leaving && leaving.id !== tab.id) this.compositeTabs.get(leaving.id)?.setActive(false)
     if (this.activeTabId === tab.id && tab.view && !tab.view.webContents.isDestroyed()) {
       if (this.isPinnedHomeTab(tab)) this.openPinnedHomeDevTools(tab, tab.view)
-      if (tab.kind === 'ai-crms') {
-        try {
-          await this.queueAiCrmsPreparation(tab, { targetUrl: tab.url })
-        } catch (err) {
-          this._state.emitTrace({ kind: 'error', msg: 'activate AI-CRMS: ' + (err as Error).message, ts: Date.now() })
-        }
-      }
       tab.lastActive = Date.now()
       this.broadcastTabs()
       return
@@ -1323,23 +1134,13 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       }
       needsLoad = Boolean(tab.url) && tab.view.webContents.getURL() !== tab.url
     }
-    if (tab.kind === 'ai-crms') {
-      try {
-        await this.queueAiCrmsPreparation(tab, { targetUrl: tab.url })
-        needsLoad = false
-      } catch (err) {
-        this._state.emitTrace({ kind: 'error', msg: 'activate AI-CRMS: ' + (err as Error).message, ts: Date.now() })
-        this.broadcastTabs()
-        return
-      }
-    }
     const previous = this.tabs.find((item) => item.id === this.activeTabId)
     if (previous && previous.id !== tab.id && previous.view && !previous.view.webContents.isDestroyed()) {
       previous.view.setVisible(false)
     }
     this.activeTabId = tab.id
     tab.lastActive = Date.now()
-    this._state.operationView = tab.view
+    this.setOperationView(tab.view)
     await this._state.switchCaptureTarget(tab)
     this._state.capture = tab.kind === 'browser' ? tab.capture : null
     this._state.replayEngine = tab.kind === 'browser' ? tab.replay : null
@@ -1597,10 +1398,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   }
 
   reset(): void {
-    // Controller shutdown awaits this path before reset. The fire-and-track fallback also makes a
-    // direct reset invalidate the singleton bridge synchronously before any WebContents closes.
     this.lifecycleEpoch += 1
-    void this.detachAuthBridge()
     for (const tab of this.tabs) {
       if (tab.loadWatchdog) {
         clearTimeout(tab.loadWatchdog)
@@ -1608,7 +1406,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       }
       try {
         tab.capture?.detach()
-        tab.bridgeCapture?.detach()
       } catch {
         // Already detached or destroyed.
       }
@@ -1641,7 +1438,6 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     this.creatingTab = false
     this.startupTabOpened = false
     this.tabSeq = 0
-    this.shuttingDown = false
   }
 }
 

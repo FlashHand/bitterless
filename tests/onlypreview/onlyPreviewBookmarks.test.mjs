@@ -344,7 +344,12 @@ test('bar/Shell compile, native bounds remain measured, scoped highlights and na
   assert.match(css, /onlypreview-shell--focused \.onlypreview-shell__tree-row--selected\s*\{\s*background: #a9c9ff/);
   assert.match(css, /onlypreview-shell__tree-row--selected\s*\{\s*background: #d6e4ff/);
   const bookmarksCss = (await less.render(read(shell + 'components/Bookmarks/BookmarkBar.less'))).css;
-  assert.match(bookmarksCss, /max-height: 30%/);
+  // 最高 320px,超出就滚(Ral 2026-09-09;原来是 `30%`)。下面两条是让"超出就滚"真的成立的部分:
+  // 标题行 `flex: 0 0` 所以它不参与滚动,列表 `min-height: 0` 所以这个 flex 子项肯滚 ——
+  // 少了 min-height,列表会把容器顶开而不是出现滚动条,而 `overflow-y: auto` 看起来仍然在。
+  assert.match(bookmarksCss, /max-height: 320px/);
+  assert.match(bookmarksCss, /onlypreview-bookmarks__header\s*\{[^}]*flex: 0 0 22px/);
+  assert.match(bookmarksCss, /onlypreview-bookmarks__list\s*\{[^}]*min-height: 0/);
   assert.match(bookmarksCss, /overflow-y: auto/);
   const bar = read(shell + 'components/Bookmarks/BookmarkBar.vue');
   assert.doesNotMatch(bar, /IconBookmark|IconFolder|IconFile/);
@@ -356,4 +361,52 @@ test('bar/Shell compile, native bounds remain measured, scoped highlights and na
   assert.doesNotMatch(read('src/main/xpc/onlyPreview.handler.ts'), /onlyPreviewBookmarksService.configureStorage/);
   const startup = read('src/main/app.main.ts') + read('src/main/xpc/onlyPreview.handler.ts');
   assert.match(startup, /onlyPreviewBookmarksService.markStorageReady/);
+});
+
+/**
+ * **本树里每一个 `IconBtn` 都必须自己写全 `border: 0` ＋ `background`。**
+ *
+ * Ral 2026-09-09:「不要用这种设计,用 iconbtn 无边框的设计」。他截到的那个带框的 `?` 不是哪个
+ * IconBtn 的样式,而是**根本没有样式**:micromeet-cowork 的 IconBtn 是一个 Tailwind `<button>`,
+ * 而 `renderer/onlypreview/shell/src/main.ts` 只引 Arco、**不引 Tailwind 那份 css** —— 于是
+ * `h-8 w-8 rounded-md …` 全是无意义的类名,按钮退回 Chromium 的 UA 默认样式:灰底 ＋ 1px 边框。
+ *
+ * 所以「底下那个组件是无边框的」在本树里**不成立**,外观只能由本树的 Less 负责。这条缺陷
+ * typecheck 看不见、逐字节漂移检查看不见(两仓的 Less 一模一样,只是渲染结果不同),
+ * 也不会在 bitterless 上复现(那边 IconBtn 是 Arco `type="text"`,本来就无框)——
+ * **只有跑编译后的 CSS 才抓得到**,这就是这一条守卫。
+ */
+test('every OnlyPreview IconBtn is borderless in compiled CSS, not by inheritance', async () => {
+  const root = 'src/renderer/onlypreview/shell/src/components/';
+  // 每一处 `<IconBtn` 的承载类 —— 新增一个 IconBtn 就要在这里登记,否则下一条断言会红。
+  const buttons = [
+    ['PreviewToolbar/PreviewToolbar', 'onlypreview-preview-toolbar__navigation-button'],
+    ['FileActions/FileActions', 'onlypreview-file-actions__button'],
+    ['Bookmarks/BookmarkBar', 'onlypreview-bookmarks__hint'],
+    ['Bookmarks/BookmarkBar', 'onlypreview-bookmarks__remove']
+  ];
+  // 登记表必须覆盖全 —— 漏登记一个,它就会带着 UA 默认边框发出去而没人知道。
+  // 比的是**类名集合**而不是个数:多个 IconBtn 共用一个类是合法的(PreviewToolbar 的三个导航键
+  // 就是同一个 `__navigation-button`),按个数比会把那种正确写法判成漏登记。
+  const iconBtnFiles = ['PreviewToolbar/PreviewToolbar', 'FileActions/FileActions', 'Bookmarks/BookmarkBar'];
+  for (const file of iconBtnFiles) {
+    const vue = read(root + file + '.vue');
+    const carried = new Set();
+    for (const tag of vue.match(/<IconBtn[\s\S]*?>/g) || []) {
+      const cls = tag.match(/class="(onlypreview-[a-z-]+__[a-z-]+)"/);
+      assert.ok(cls, file + '.vue 里有一个 IconBtn 没带 onlypreview BEM 类,外观就没法在本树里定住');
+      carried.add(cls[1]);
+    }
+    const registered = new Set(buttons.filter(([owner]) => owner === file).map(([, cls]) => cls));
+    assert.deepEqual([...carried].sort(), [...registered].sort(), file + '.vue 的 IconBtn 类与登记表不一致');
+  }
+  for (const [file, cls] of buttons) {
+    const css = (await less.render(read(root + file + '.less'), { filename: file })).css;
+    const rules = [...css.matchAll(new RegExp('([^{}]*\\.' + cls + '(?![-\\w])[^{}]*)\\{([^}]*)\\}', 'g'))]
+      .filter((match) => !/:(hover|focus|active|disabled)|\[disabled\]/.test(match[1]));
+    assert.ok(rules.length > 0, cls + ' 在编译后的 CSS 里没有任何基础规则');
+    const body = rules.map((match) => match[2]).join('\n');
+    assert.match(body, /border:\s*(?:0|none)/, cls + ' 没有显式去掉边框 —— cowork 上它会是一个带框的 UA 默认按钮');
+    assert.match(body, /background:\s*\S/, cls + ' 没有显式背景 —— cowork 上它会带 UA 默认灰底');
+  }
 });

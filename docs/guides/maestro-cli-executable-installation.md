@@ -2,17 +2,21 @@
 
 Status: implemented; owner initialization and packaged-app verification pending
 
-本方案管理 Maestro 随桌面应用分发的 CLI、独立可执行程序和原生模块。目标不是把工具安装到
+2026-09-10 更新：随 AI-CRMS 退役（[maestro-crms-retirement](../features/maestro-crms-retirement.md)），
+vendored 的 Micromeet CLI 与 `scripts/prepare-maestro-cli.cjs` 已整体移除。本文其余部分描述的
+external-tools 安装链**不变** —— `maestro-tools` 仍然装着 Bun / ripgrep / fd / Ouch / AnyDoc，
+只是不再多一个 `micromeet` 二进制。文件名保留是为了不打断既有链接。
+
+本方案管理 Maestro 随桌面应用分发的独立可执行程序和原生模块。目标不是把工具安装到
 开发机或用户的全局 `PATH`，而是形成一个可复现、可校验且不进入 `app.asar` 的应用资源目录。
 
 适用范围：
 
-- Micromeet CLI；
 - Bun、ripgrep (`rg`)、fd、Ouch；
 - AnyDoc JavaScript bundle 和平台原生模块；
 - macOS ARM64、macOS x64 和 Windows x64。
 
-Linux 暂不使用新的三平台外部工具仓库，继续走既有 Micromeet CLI、AnyDoc 和 Ouch 准备流程。
+Linux 暂不使用新的三平台外部工具仓库，继续走既有 AnyDoc 和 Ouch 准备流程。
 
 ## 安装模型
 
@@ -25,7 +29,7 @@ Linux 暂不使用新的三平台外部工具仓库，继续走既有 Micromeet 
         v
 external_tools/{mac_arm,mac_intel,win}
         |
-        | 先构建 Micromeet CLI，再离线校验并复制一个目标平台
+        | 离线校验并复制一个目标平台
         v
 build/maestro-tools
         |
@@ -37,7 +41,7 @@ build/maestro-tools
 | 层级 | 目录 | 生命周期 | Git / ASAR 规则 |
 |---|---|---|---|
 | 本地工具仓库 | `external_tools/{mac_arm,mac_intel,win}` | 初始化一次，版本升级时重建 | 只提交目录、`.gitignore` 和 `.gitkeep`；二进制与 manifest 全部忽略，并排除出 `app.asar` |
-| 打包暂存区 | `build/maestro-tools` | 每次打包重新生成 | 生成目录；先放 Micromeet CLI，再合入当前目标平台外部工具 |
+| 打包暂存区 | `build/maestro-tools` | 每次打包重新生成 | 生成目录；由当前目标平台的外部工具 stage 步骤自建并填充 |
 | 应用安装目录 | `<process.resourcesPath>/maestro-tools` | 随安装包部署 | Electron `extraResources`；不在 `app.asar` 内 |
 
 macOS 安装包中的实际路径为：
@@ -59,7 +63,6 @@ Windows 使用 Electron 的同一运行时约定：
 
 | 工具 | 固定版本 | 安装来源 | 当前用途 |
 |---|---:|---|---|
-| Micromeet CLI | 跟随 `packages/micromeet-cli` 源码 | 每次打包从 workspace 构建 | Maestro integration 调用和凭证同步 |
 | Bun | `1.3.14` | `external-tools:init` | 为后续迁移能力预置；当前没有启用 Bun skill runner |
 | ripgrep (`rg`) | `14.1.1` | `external-tools:init` | 为本地检索能力预置 |
 | fd | `10.5.0` | `external-tools:init` | 为本地文件发现能力预置 |
@@ -71,11 +74,11 @@ Bun、`rg` 和 `fd` 目前只是被可靠地放入应用资源；本方案不会
 
 ## 平台映射与安装结果
 
-| 本地仓库目录 | 打包 target | Micromeet CLI | 外部可执行文件 |
-|---|---|---|---|
-| `external_tools/mac_arm` | `mac_arm` | `micromeet` | `bun`, `rg`, `fd`, `ouch` |
-| `external_tools/mac_intel` | `mac_intel` | `micromeet` | `bun`, `rg`, `fd`, `ouch` |
-| `external_tools/win` | `win64` | `micromeet.exe` | `bun.exe`, `rg.exe`, `fd.exe`, `ouch.exe` |
+| 本地仓库目录 | 打包 target | 外部可执行文件 |
+|---|---|---|
+| `external_tools/mac_arm` | `mac_arm` | `bun`, `rg`, `fd`, `ouch` |
+| `external_tools/mac_intel` | `mac_intel` | `bun`, `rg`, `fd`, `ouch` |
+| `external_tools/win` | `win64` | `bun.exe`, `rg.exe`, `fd.exe`, `ouch.exe` |
 
 每个平台还包含：
 
@@ -131,18 +134,17 @@ yarn external-tools:init --force
 macOS 和 Windows 的标准 package 脚本已经包含完整顺序：
 
 1. 构建 Bitterless release renderer/Main；
-2. 从 `packages/micromeet-cli` 构建目标平台 CLI；
-3. `prepare-maestro-cli.cjs` 清空并重建 `build/maestro-tools`，写入 CLI 和
-   `manifest.json`；
-4. `externalTools.cjs stage <target>` 离线校验本地工具仓库，只复制当前 target；
-5. `externalTools.cjs verify-stage <target>` 再次验证 CLI target、精确目录树、版本、大小
-   和哈希；
-6. Electron Builder 把整个 `build/maestro-tools` 安装到
+2. `externalTools.cjs stage <target>` 离线校验本地工具仓库，按需自建 `build/maestro-tools`，
+   只复制当前 target；
+3. `externalTools.cjs verify-stage <target>` 再次验证精确目录树、版本、大小和哈希；
+4. Electron Builder 把整个 `build/maestro-tools` 安装到
    `Resources/maestro-tools`；
-7. macOS 对列入 `mac.binaries` 的可执行文件和 AnyDoc 原生模块签名。
+5. macOS 对列入 `mac.binaries` 的可执行文件和 AnyDoc 原生模块签名。
 
-顺序不能交换。`prepare-maestro-cli.cjs` 会清空暂存区，因此如果先 stage 外部工具，再准备
-Micromeet CLI，外部工具会被删除。
+CLI 退役前有一个「先建 CLI、再 stage 外部工具」的顺序约束——那一步会清空暂存区。现在没有任何
+步骤整目录清空 `build/maestro-tools`：stage 只按名移除旧 payload。所以**存量开发机上留下来的
+`build/maestro-tools/{micromeet,manifest.json}` 必须手工删掉一次**，否则 `verify-stage` 的精确
+树校验会因为「多出两个文件」失败。干净检出与 CI 不受影响。
 
 标准命令示例：
 
@@ -163,7 +165,6 @@ Preview、Dev 和 Stable 的 macOS/Windows package 脚本最终共用上述安�
 标准打包不需要手工执行以下命令。只有在排查目标映射或暂存内容时，才按相同顺序执行：
 
 ```bash
-node scripts/prepare-maestro-cli.cjs mac_arm
 node scripts/maestro/externalTools.cjs stage mac_arm
 node scripts/maestro/externalTools.cjs verify-stage mac_arm
 ```
@@ -172,9 +173,8 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 `external_tools/win`。省略 target 时，脚本只在 macOS ARM64/x64 或 Windows x64 主机上
 根据当前平台自动判断。
 
-开发模式下，AnyDoc、Ouch 和 Micromeet CLI 从 `build/maestro-tools` 解析；打包后统一从
-`process.resourcesPath/maestro-tools` 解析。Micromeet CLI 启动时会把该资源目录放到它的
-`PATH` 前部，使同目录预置工具可被子进程发现。
+开发模式下，AnyDoc 和 Ouch 从 `build/maestro-tools` 解析；打包后统一从
+`process.resourcesPath/maestro-tools` 解析。
 
 ## 完整性与失败策略
 
@@ -184,7 +184,6 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 - 解压后再次验证最终可执行文件、JavaScript bundle 和原生模块的 SHA-256；
 - 只接受固定目录、固定文件名和 regular file；不接受符号链接；
 - manifest 必须与 `package.json` 的版本 pin 和脚本 inventory 一致；
-- stage 前必须存在目标匹配的 Micromeet CLI 与 `manifest.json`；
 - stage 会移除另一平台残留的外部工具，再复制当前平台；
 - 任一验证失败都会中止打包，并提示先运行 `yarn external-tools:init`。
 
@@ -206,10 +205,6 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 禁止使用 `latest`、运行时版本解析或未经来源核对就修改哈希。初始化目录和 manifest 仍然
 不得提交。
 
-Micromeet CLI 不走上述下载升级流程；它跟随 `packages/micromeet-cli` 源码和 package target
-构建。若 CLI 的输出文件名或 target 名变化，必须同步更新 `prepare-maestro-cli.cjs`、运行时
-路径解析、打包测试与本文平台映射。
-
 ## 故障恢复
 
 | 症状 | 处理方式 |
@@ -217,10 +212,10 @@ Micromeet CLI 不走上述下载升级流程；它跟随 `packages/micromeet-cli
 | 提示 external tools 未初始化或无效 | 重新执行 `yarn external-tools:init`；脚本只重建未通过校验的平台 |
 | 下载 archive 哈希不一致 | 停止打包，核对上游 release 是否被替换；不要绕过校验或直接采用新哈希 |
 | `curl`、`tar` 或 `unzip` 找不到 | 安装/恢复对应系统工具后重新初始化 |
-| staged Micromeet CLI target 不匹配 | 先执行正确 target 的 `prepare-maestro-cli.cjs`，再 stage 同一 target |
+| 暂存区多出 `micromeet` / `manifest.json` | CLI 退役前的存量产物；`rm -rf build/maestro-tools` 后重新 stage |
 | 平台目录存在额外文件、符号链接或损坏文件 | 执行 `yarn external-tools:init --force` 原子重建，不要手工修 manifest |
 | `app.asar` 再次异常增大 | 检查 `electron-builder.tmp.yml` 仍排除 `external_tools/**` 和 `prebuilt/**`，并运行 desktop package audit |
-| macOS 签名遗漏 | 检查 `mac.binaries` 包含 `micromeet`、`bun`、`rg`、`fd`、`ouch` 和 `anydoc/anydoc.node` |
+| macOS 签名遗漏 | 检查 `mac.binaries` 包含 `bun`、`rg`、`fd`、`ouch` 和 `anydoc/anydoc.node` |
 
 ## Owner 验收清单
 
@@ -236,7 +231,6 @@ Micromeet CLI 不走上述下载升级流程；它跟随 `packages/micromeet-cli
 
 - 固定版本：`package.json`
 - 下载、哈希、manifest、初始化与 stage：`scripts/maestro/externalTools.cjs`
-- Micromeet CLI 构建与暂存：`scripts/prepare-maestro-cli.cjs`
 - host unpack 分派：`scripts/prepare-maestro-package-tools.cjs`
 - Electron 资源复制、ASAR 排除和 macOS 签名清单：`electron-builder.tmp.yml`
 - 回归测试：`scripts/maestro/externalTools.test.mjs`、

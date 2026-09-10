@@ -13,8 +13,9 @@ test('Maestro delegates only Codex credential operations to the host service', (
   assert.match(source, /codexCredentialService\.disconnect\(\)/);
   assert.doesNotMatch(source, /ensureCodexIpv6Server|codexCaptureResolve/);
 
-  assert.match(source, /provider === 'ai-crms'/);
-  assert.match(source, /openAiCrmsLoginTab/);
+  // AI-CRMS 于 2026-09 整条退役。原来这里钉的是 LLM service 里那两条 crms 登录分支;
+  // 现在钉的是它们不许回来 —— 退役的判据是「没有」,不是「有别的」。
+  assert.doesNotMatch(source, /ai-crms|AiCrms/);
   assert.match(source, /ensureAnthropicIpv6Server/);
   assert.match(source, /writeStoredLlmTarget/);
   assert.match(source, /resetLlmAgentSessions/);

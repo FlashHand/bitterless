@@ -78,7 +78,7 @@ export interface AgentRuntimeSessionOptions {
    * every host tool name, because pi's allowlist filters builtin AND custom tools. */
   builtinTools?: string[]
   /**
-   * 一个助手回合内工具循环的轮次上限。省略 → 环境变量 `COACH_AI_CRMS_TOOL_ROUNDS` → 默认。
+   * 一个助手回合内工具循环的轮次上限。省略 → 运行时自己的默认值。
    * 探站是【一个回合里循环几十次 explore_visit】,默认 12 会把它砍断;它真正的边界是自己的
    * 120 分钟时间预算 + 无进展检测,所以走这条 per-session 覆盖把上限抬高,而不是全局放松。
    */
@@ -93,9 +93,9 @@ export type AgentRuntimeEvent =
   | { type: 'thinking_end' }
   | { type: 'assistant_done'; text?: string; stopReason?: string; errorMessage?: string }
   | { type: 'assistant_message_end'; text?: string; stopReason?: string; errorMessage?: string }
-  // **独立事件,不挂在 assistant_message_end 上** —— AI-CRMS 那条 runtime 的工具循环只在整轮
-  // 结束时发一次 assistant_message_end(aiCrmsRuntimeAdapter `runToolLoop`),挂上去就等于
-  // 回合结束才报一次用量,钻探的 token 预算永远来不及触发。每次模型往返各发一条。
+  // **独立事件,不挂在 assistant_message_end 上** —— 一条自己跑工具循环的 runtime 可能整轮只发
+  // 一次 assistant_message_end(2026-09 退役的 AI-CRMS 运行时就是这样),挂上去就等于回合结束才
+  // 报一次用量,钻探的 token 预算永远来不及触发。每次模型往返各发一条。
   | { type: 'usage'; usage: AgentRuntimeUsage }
   | { type: 'tool_start'; toolName?: string; args?: unknown }
   | { type: 'tool_end'; toolName?: string; args?: unknown; isError?: boolean }
@@ -122,8 +122,8 @@ export interface AgentRuntimeSession {
    *
    * **可选**:只有支持「把消息带进正在跑的那个回合」的运行时才实现它。不实现 = 这条运行时上
    * 没有可插进去的活跃流,steering 会如实报 `failed` 而不是投出去 —— 这正是我们要的:
-   * AI-CRMS 那条运行时的 `prompt()` 是自己跑一整轮工具循环,第二次调用等于并发再跑一轮,
-   * 比「没投出去」坏得多。
+   * 一条自己跑整轮工具循环的运行时(2026-09 退役的 AI-CRMS 那条就是),第二次调用 `prompt()`
+   * 等于并发再跑一轮,比「没投出去」坏得多。
    */
   readonly isStreaming?: boolean
 }

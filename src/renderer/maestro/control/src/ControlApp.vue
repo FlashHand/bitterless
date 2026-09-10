@@ -18,8 +18,6 @@ import type {
   LlmTarget,
   TabInfo
 } from '@maestro-shared/coach.api'
-import { AUTH_BROADCAST } from '@maestro-shared/session.api'
-import type { AuthBroadcast } from '@maestro-shared/session.api'
 import ChatPanel from './ChatPanel.vue'
 import ResponseStatus from './ResponseStatus.vue'
 import ChatConfirmSheet from './task/ChatConfirmSheet.vue'
@@ -62,7 +60,19 @@ const syncLlmContextWindow = (cfg: LlmConfig): void => {
 
 const firstEffort = (model: LlmTarget): LlmEffort => model.efforts[0]?.id || model.effort
 
-const isControlProviderAllowed = (provider: string): boolean => provider !== 'ai-crms'
+/**
+ * Control 面板**不展示**的 provider。crms 退役后这张表是空的 —— 空是有意的,不是忘了填。
+ *
+ * 为什么不写成"允许清单":`LlmProviderId` 是 `'openai-codex' | 'anthropic' | string`,**故意开放**
+ * (config 报什么 provider 就展示什么,pi 侧新增一个不需要改这里),测试里的 fixture 也用任意 id。
+ * 白名单会把这条开放性反转成"没登记就不显示",那是另一个产品决定,不该由一次退役顺手做掉。
+ *
+ * 所以这里保留闸门与它的四个调用点、把被排除者收进一个具名常量:今天为空(谓词恒真,与退役前
+ * 对 crms 之外的 provider 行为一致),将来要藏谁,加一行即可,而不必再去四个调用点里找条件。
+ */
+const CONTROL_HIDDEN_PROVIDERS = new Set<string>()
+
+const isControlProviderAllowed = (provider: string): boolean => !CONTROL_HIDDEN_PROVIDERS.has(provider)
 
 const getLlmProviderGroups = (cfg: LlmConfig | null): ControlLlmProviderGroup[] => {
   if (!cfg) return []
@@ -364,21 +374,6 @@ onMounted(async () => {
   xpcRenderer.subscribe('coach/llm-login-state', (payload) => {
     const state = payload.params as LlmLoginState
     llmLoginProvider.value = state?.loading ? state.provider : ''
-  })
-  xpcRenderer.subscribe(AUTH_BROADCAST, (payload) => {
-    const auth = payload.params as AuthBroadcast
-    console.log('[coach control] auth broadcast', {
-      loggedIn: Boolean(auth?.loggedIn),
-      hasSession: Boolean(auth?.session?.jwt_token),
-      region: auth?.session?.region || ''
-    })
-    void coach
-      .getLlmConfig()
-      .then((cfg) => {
-        console.log('[coach control] refreshed llm after auth', { provider: cfg.provider, model: cfg.model, ready: cfg.ready })
-        return applyLlmConfig(cfg)
-      })
-      .catch((err) => console.error('[coach control] refresh llm after auth failed:', err))
   })
   xpcRenderer.subscribe('coach/agent-activity', (payload) => {
     messageStore.pushActivity(payload.params as AgentActivityStep)

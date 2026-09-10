@@ -6,7 +6,17 @@
   gap: 7px;
 }
 
-.onlypreview-file-actions__button.icon-btn.arco-btn {
+/* 用父级提高优先级,而不是键在 `.icon-btn.arco-btn` 上。
+ *
+ * 原选择器要求 Arco 的 `arco-btn` 类 —— bitterless 的 `IconBtn` 包 Arco `Button` 所以有,
+ * 而 **micromeet-cowork 的 `IconBtn` 是 Tailwind 原生 `<button>`,一个 arco 类都没有**。
+ * 于是这几条规则在那边**永不匹配**:按钮丢掉 27px、`--onlypreview-muted`、`royal-soft` 悬停、
+ * 焦点环与禁用透明度,改用那仓 IconBtn 的 32px ＋ 灰色 ＋ 黑色调悬停,在这条工具栏里显得外来。
+ *
+ * 这类漂移的特征是**diff 干净但行为不同** —— 比字节的漂移检查看不见,typecheck 看不见,
+ * 测试也看不见。改成 `.onlypreview-file-actions .onlypreview-file-actions__button`(两级)
+ * 之后在两仓都确定性生效,也不需要 `!important`。 */
+.onlypreview-file-actions .onlypreview-file-actions__button {
   width: 27px;
   min-width: 27px;
   height: 27px;
@@ -20,17 +30,17 @@
   cursor: pointer;
 }
 
-.onlypreview-file-actions__button.icon-btn.arco-btn:hover:not(:disabled) {
+.onlypreview-file-actions .onlypreview-file-actions__button:hover:not(:disabled) {
   color: var(--onlypreview-royal);
   background: var(--onlypreview-royal-soft);
 }
 
-.onlypreview-file-actions__button.icon-btn.arco-btn:focus-visible {
+.onlypreview-file-actions .onlypreview-file-actions__button:focus-visible {
   outline: 2px solid var(--onlypreview-focus);
   outline-offset: -2px;
 }
 
-.onlypreview-file-actions__button.icon-btn.arco-btn[disabled] {
+.onlypreview-file-actions .onlypreview-file-actions__button[disabled] {
   opacity: 0.4;
   cursor: default;
 }

@@ -73,12 +73,7 @@ const stubSources = {
     export const iocHelper = { bind: ({ controller }) => controller };
   `,
   '../window.helper': 'export class WindowHelper { browserWindow = null; }',
-  './maestroControlLinkPolicy': 'export const installControlLinkPolicy = () => {};',
-  '@maestro-main/auth/authBridge': `
-    export const AI_CRMS_AUTH_HOST = 'auth.example.invalid';
-    export const authBridge = { detach: async () => {} };
-    export const isTrustedAiCrmsAuthUrl = () => false;
-  `
+  './maestroControlLinkPolicy': 'export const installControlLinkPolicy = () => {};'
 };
 
 const bundle = await build({

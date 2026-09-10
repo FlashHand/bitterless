@@ -31,8 +31,6 @@ files:
   - '!external_resources/*'
   - '!external_tools/**'
   - '!prebuilt/**'
-  - '!packages/micromeet-cli/**'
-  - '!node_modules/@micromeet/cli{,/**}'
   - '!node_modules/**/*.map'
   - '!electron-builder.tmp.yml'
   - '!dump/*'
@@ -58,8 +56,10 @@ extraResources:
     to: agent-skills/bitterless-trench
   - from: build/maestro-tools
     to: maestro-tools
-  - from: build/tray-mac@2x.png
-    to: app.asar.unpacked/icons/tray-mac@2x.png
+  - from: doc/bitterless-tray-mac-24.png
+    to: app.asar.unpacked/icons/bitterless-tray-mac-24.png
+  - from: doc/bitterless-tray-mac-24@2x.png
+    to: app.asar.unpacked/icons/bitterless-tray-mac-24@2x.png
   - from: build/tray-win.ico
     to: app.asar.unpacked/icons/tray-win.ico
   - from: build/sounds
@@ -163,7 +163,6 @@ nsis:
 mac:
   icon: build/icon.icns
   binaries:
-    - Contents/Resources/maestro-tools/micromeet
     - Contents/Resources/maestro-tools/bun
     - Contents/Resources/maestro-tools/rg
     - Contents/Resources/maestro-tools/fd

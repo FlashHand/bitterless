@@ -67,47 +67,11 @@ const loadTsModule = (specifier, parentDir = root) => {
 }
 
 const received = []
-const coreReceived = []
 const server = createServer((req, res) => {
   const chunks = []
   req.on('data', (chunk) => chunks.push(chunk))
   req.on('end', () => {
     const body = Buffer.concat(chunks)
-    if (req.method === 'POST' && req.url === '/share/file/get-upload-url') {
-      coreReceived.push({ step: 'ticket', auth: req.headers.authorization || '', region: req.headers['x-region'] || '', workspace: req.headers['x-workspace-id'] || '', body })
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'application/json')
-      res.end(
-        JSON.stringify({
-          code: 0,
-          data: {
-            file_id: 'core-file-1',
-            upload_url: `http://${req.headers.host}/oss/core-file-1?signature=put-secret`
-          }
-        })
-      )
-      return
-    }
-    if (req.method === 'PUT' && String(req.url).startsWith('/oss/core-file-1')) {
-      coreReceived.push({ step: 'put', contentType: req.headers['content-type'] || '', body })
-      res.statusCode = 200
-      res.end('')
-      return
-    }
-    if (req.method === 'POST' && req.url === '/share/file/complete-upload') {
-      coreReceived.push({ step: 'complete', auth: req.headers.authorization || '', region: req.headers['x-region'] || '', workspace: req.headers['x-workspace-id'] || '', body })
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ code: 0, data: { file_id: 'core-file-1', upload_status: 'finished' } }))
-      return
-    }
-    if (req.method === 'POST' && req.url === '/share/file/file-url') {
-      coreReceived.push({ step: 'file-url', auth: req.headers.authorization || '', region: req.headers['x-region'] || '', workspace: req.headers['x-workspace-id'] || '', body })
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ code: 0, data: { file_id: 'core-file-1', url: 'https://cdn.example.test/private/voice.wav?signature=get-secret' } }))
-      return
-    }
     received.push({
       method: req.method,
       url: req.url,
@@ -138,16 +102,16 @@ const { resolveRuntimeMediaRefs, isDownloadableMediaUrl } = loadTsModule('@main/
 assert(isDownloadableMediaUrl('https://cdn.example.test/clip.png'), 'http(s) media URLs should be accepted')
 assert(!isDownloadableMediaUrl('data:image/png;base64,abc'), 'inline data URLs should not be treated as downloadable media URLs')
 const inlineOnly = resolveRuntimeMediaRefs({
-  providerId: 'ai-crms',
-  modelId: 'qwen-vl',
+  providerId: 'remote-fixture',
+  modelId: 'remote-vl',
   media: [{ kind: 'image', url: 'data:image/png;base64,abc', mimeType: 'image/png', name: 'inline.png' }],
   maxImages: 4
 })
 assert(inlineOnly.media.length === 0 && inlineOnly.images.length === 0, 'inline-only base64 image refs should be dropped')
 assert(inlineOnly.warnings.some((item) => item.includes('inline/unsupported')), 'inline-only image refs should emit a warning')
 const inlineWithPath = resolveRuntimeMediaRefs({
-  providerId: 'ai-crms',
-  modelId: 'qwen-vl',
+  providerId: 'remote-fixture',
+  modelId: 'remote-vl',
   media: [{ kind: 'image', path: '/tmp/clip.png', url: 'data:image/png;base64,abc', mimeType: 'image/png', name: 'clip.png' }],
   maxImages: 4
 })
@@ -165,14 +129,11 @@ try {
   const file = join(dir, 'sample.png')
   writeFileSync(file, Buffer.from('hello-media-binary'))
   const { uploadMediaRefsForProvider } = loadTsModule('@maestro-main/networking/api/mediaUpload.api')
-  const { uploadFileThroughAiCrmsCore } = loadTsModule('@maestro-main/networking/api/aiCrmsCoreFileUpload.api')
 
   delete process.env.COACH_MEDIA_UPLOAD_URL
-  delete process.env.COACH_AI_CRMS_MEDIA_UPLOAD_URL
   const noEndpoint = await uploadMediaRefsForProvider({
-    providerId: 'ai-crms',
-    refs: [{ kind: 'image', path: file, url: 'data:image/png;base64,aWdub3JlZA==', mimeType: 'image/png', name: 'sample.png', size: 18 }],
-    session: { jwt_token: 'jwt-token', tenant_id: 'workspace-1', region: 'ID', ts: Date.now() }
+    providerId: 'remote-fixture',
+    refs: [{ kind: 'image', path: file, url: 'data:image/png;base64,aWdub3JlZA==', mimeType: 'image/png', name: 'sample.png', size: 18 }]
   })
   assert(noEndpoint.uploaded === 0, 'unconfigured upload should not upload')
   assert(!noEndpoint.refs[0]?.url, 'unconfigured upload should still strip inline media URLs')
@@ -181,9 +142,8 @@ try {
 
   process.env.COACH_MEDIA_UPLOAD_URL = `http://127.0.0.1:${listen.port}/upload`
   const uploaded = await uploadMediaRefsForProvider({
-    providerId: 'ai-crms',
-    refs: [{ kind: 'image', path: file, url: 'data:image/png;base64,aWdub3JlZA==', mimeType: 'image/png', name: 'sample.png', size: 18 }],
-    session: { jwt_token: 'jwt-token', tenant_id: 'workspace-1', region: 'ID', ts: Date.now() }
+    providerId: 'remote-fixture',
+    refs: [{ kind: 'image', path: file, url: 'data:image/png;base64,aWdub3JlZA==', mimeType: 'image/png', name: 'sample.png', size: 18 }]
   })
   assert(uploaded.uploaded === 1, 'configured upload should upload one media ref')
   assert(uploaded.refs[0]?.url === 'https://cdn.example.test/media/sample.png', 'upload should attach returned URL')
@@ -191,36 +151,14 @@ try {
   assert(received.length === 1, 'server should receive one upload request')
   assert(received[0].method === 'POST' && received[0].url === '/upload', 'upload should POST to configured endpoint')
   assert(String(received[0].contentType).includes('multipart/form-data'), 'upload should use multipart form data')
-  assert(String(received[0].auth) === 'Bearer jwt-token', 'AI-CRMS upload should use session bearer token')
-  assert(received[0].region === 'ID' && received[0].workspace === 'workspace-1', 'AI-CRMS upload should pass region/workspace headers')
+  assert(!received[0].auth && !received[0].region && !received[0].workspace, 'generic media upload should not send provider-specific auth/region/workspace headers')
   const bodyText = received[0].body.toString('latin1')
   assert(bodyText.includes('hello-media-binary'), 'multipart body should contain raw binary content')
   assert(!bodyText.includes('aGVsbG8tbWVkaWEtYmluYXJ5'), 'multipart body should not contain base64 content')
 
-  const audioFile = join(dir, 'voice.wav')
-  writeFileSync(audioFile, Buffer.from('hello-audio-binary'))
-  process.env.COACH_AI_CRMS_CORE_BASE_URL = `http://127.0.0.1:${listen.port}`
-  const coreUploaded = await uploadFileThroughAiCrmsCore({
-    session: { jwt_token: 'jwt-token', tenant_id: 'workspace-1', region: 'ID', ts: Date.now() },
-    path: audioFile,
-    name: 'voice.wav',
-    mimeType: 'audio/wav',
-    size: 18,
-    purpose: 'coach_voice_scribe'
-  })
-  assert(coreUploaded.fileId === 'core-file-1', 'core upload should return the registered file id')
-  assert(coreUploaded.fileUrl === 'https://cdn.example.test/private/voice.wav?signature=get-secret', 'core upload should return the signed/downloadable file URL')
-  assert(coreReceived.map((item) => item.step).join(',') === 'ticket,put,complete,file-url', 'core upload should run ticket -> PUT -> complete -> file-url')
-  assert(coreReceived[0].auth === 'Bearer jwt-token' && coreReceived[2].auth === 'Bearer jwt-token', 'core upload API calls should use the AI-CRMS session token')
-  assert(coreReceived[0].region === 'ID' && coreReceived[0].workspace === 'workspace-1', 'core upload should pass region/workspace headers')
-  assert(String(coreReceived[1].contentType) === 'audio/wav', 'core OSS PUT should preserve the audio content type')
-  assert(coreReceived[1].body.toString('latin1').includes('hello-audio-binary'), 'core OSS PUT should send raw audio bytes')
-  assert(!coreReceived[1].body.toString('latin1').includes('aGVsbG8tYXVkaW8tYmluYXJ5'), 'core OSS PUT should not send base64 audio')
   console.log('[check-media-upload] ok')
 } finally {
   server.close()
   rmSync(dir, { recursive: true, force: true })
   delete process.env.COACH_MEDIA_UPLOAD_URL
-  delete process.env.COACH_AI_CRMS_MEDIA_UPLOAD_URL
-  delete process.env.COACH_AI_CRMS_CORE_BASE_URL
 }

@@ -592,25 +592,64 @@ select {
   line-height: 1.55;
 }
 
+/* 面包屑:从项目目录本身开始,指到选中的文件或文件夹(Ral 2026-09-09)。 */
+.onlypreview-shell__breadcrumb {
+  display: flex;
+  align-items: center;
+  /* 承重:没有它,深路径会把右侧状态簇顶出去,而不是自己省略。 */
+  min-width: 0;
+  /* 路径不吃状态栏那 0.07em 的字距 —— 宽字距让路径很难读。 */
+  letter-spacing: 0.02em;
+  color: var(--onlypreview-muted);
+}
+.onlypreview-shell__breadcrumb-lead {
+  display: flex;
+  align-items: center;
+  /* 只有这一截会被切,`tail` 在它外面。 */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.onlypreview-shell__breadcrumb-segment {
+  white-space: nowrap;
+}
+.onlypreview-shell__breadcrumb-separator {
+  padding: 0 3px;
+  opacity: 0.55;
+}
+.onlypreview-shell__breadcrumb-tail {
+  /* 选中的那个东西永不收缩、永不省略 —— 面包屑的全部意义在这一段。 */
+  flex-shrink: 0;
+  color: var(--onlypreview-ink);
+}
+
 .onlypreview-shell__status-rail {
   position: relative;
   height: 25px;
   flex: 0 0 25px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  /* 左面包屑 ＋ 右状态簇。原来是 flex-end,因为那时只有右边一簇。 */
+  justify-content: space-between;
   gap: 12px;
   padding: 0 9px;
   overflow: hidden;
-  border-top: 1px solid var(--onlypreview-divider);
+  /* 不画顶部线(Ral 2026-09-09)。这一条同时是「previewRegion 底部的线」—— 两个元素相邻,
+     那是同一条边框,不是两条。 */
   color: var(--onlypreview-muted);
   background: #f0f1f6;
-  font-size: 9px;
+  /* 13px(Ral 2026-09-09,先说 14px 后改 13px —— 后者为准)。原来是 9px,那是一个"微标签"
+     字号,配 650 字重与 0.07em 字距还读得过去;放大之后这两项会显得偏重,但那是两个独立的
+     取舍,没被要求就不动。 */
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.07em;
 }
 
 .onlypreview-shell__file-state {
+  /* 面包屑再长也不该把它压扁 —— 它是定宽内容,该省略的是路径。 */
+  flex-shrink: 0;
   min-width: 0;
   display: flex;
   align-items: center;

@@ -89,6 +89,9 @@ const COMPACT_SUMMARY_HARD_MAX_CHARS = 500_000
 // but once the user scrolls up more than this many px from the bottom we stop — until they scroll
 // back down near the bottom, or send a new message. ~120px ≈ a couple of lines of breathing room.
 const STICK_TO_BOTTOM_THRESHOLD_PX = 120
+// 跳转后那条消息闪光的存活时长。**与 `MessageItem.less` 里 `message-item--jumped` 的动画时长是同一个数**
+// —— 改一处必须改另一处:CSS 更短会留下一个静止不动的光环挂在行上,CSS 更长则会被这里提前掐断。
+const MESSAGE_JUMP_HIGHLIGHT_MS = 1600
 
 const uid = (): string => Math.random().toString(36).slice(2) + Date.now().toString(36)
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -219,6 +222,7 @@ export class MessageStoreState {
   private agentTurnRevision = 0
   private pendingAgentTurnFinishes = markRaw(new Map<string, AgentTurnFinished>())
   private agentTurnFinishReplays = markRaw(new Map<string, Promise<void>>())
+  private highlightTimer: ReturnType<typeof setTimeout> | null = null
 
   sessions: MessageSession[] = []
   historySessions: MessageSessionSummary[] = []
@@ -243,6 +247,14 @@ export class MessageStoreState {
   // the user scrolls up past STICK_TO_BOTTOM_THRESHOLD_PX (see onListScroll), back on when they
   // return near the bottom or send a new message. This is the bool that gates the auto-scroll.
   stickToBottom = true
+  /**
+   * 刚跳过去的那条消息 —— `MessageItem` 只读它、自己不留副本
+   * (留副本就会有两份状态,而"哪条在闪"只有一个真相)。
+   *
+   * 存 id 而不是 DOM 节点:行归 `MessageList` 的 `v-for` 所有,换会话时 `<ChatPanel :key>`
+   * 整棵重挂,存下来的节点当场变野指针。`MESSAGE_JUMP_HIGHLIGHT_MS` 后自清。
+   */
+  highlightMessageId: string | null = null
   private listEl: HTMLElement | null = null
 
   async init(): Promise<void> {
@@ -947,6 +959,65 @@ export class MessageStoreState {
         if (node) node.scrollTop = node.scrollHeight
       })
     })
+  }
+
+  /**
+   * 滚到某条消息并让它闪一下 —— `/view_context_graph` 弹窗里点一个块的落点。
+   *
+   * **第一件事必须是松开黏底**,而且要在写闪光、在任何测量之前:本文件里有 5 处无条件的
+   * `scrollToBottom(true)`,`setListEl` 每次挂载还会把 `stickToBottom` 重新武装成 true。
+   * 晚松一步,流式回合就会在下一帧把人从跳转落点拽回底部 —— 现场表现是「点了没反应」,
+   * 而不是「跳过去又回来」,因果极难对上。
+   *
+   * **返回值来自第一次同步测量。** 调用方(弹窗)要当场知道跳到没跳到才能决定关不关自己,
+   * 等不到 `nextTick`。后两次测量只补偿行高变化,不会改变这个结论。
+   *
+   * 找不到时**不把 `stickToBottom` 还原**:弹窗里认领不到消息的块本身就是不可点的,
+   * 这条 `false` 只是防御性的死路;为它加一条还原分支等于给一个走不到的分支写状态回滚。
+   */
+  scrollToMessage(messageId: string): boolean {
+    this.stickToBottom = false
+    this.highlightMessageId = messageId
+    if (this.highlightTimer) clearTimeout(this.highlightTimer)
+    this.highlightTimer = setTimeout(() => {
+      this.highlightTimer = null
+      // 这 1.6s 内又跳去了别的消息 —— 那次闪光归它自己的定时器管,这里不能顺手抹掉。
+      if (this.highlightMessageId === messageId) this.highlightMessageId = null
+    }, MESSAGE_JUMP_HIGHLIGHT_MS)
+
+    if (!this.parkMessageRow(messageId)) return false
+    // 与 `scrollToBottom` 同一套三次测量:同步一次定结论,`nextTick` + `requestAnimationFrame`
+    // 两次跟住流式 markdown 改出来的行高(代码块与表格落地时行高会跳,一次测量会停偏)。
+    nextTick(() => {
+      this.parkMessageRow(messageId)
+      requestAnimationFrame(() => {
+        this.parkMessageRow(messageId)
+      })
+    })
+    return true
+  }
+
+  /**
+   * 把某条消息停在视口**上四分之一处**,不贴顶 —— 跳过去的目的是**读它**,贴顶会把
+   * 它上面的来龙去脉全推出屏幕。
+   *
+   * 遍历比对 `data-message-id` 而不是拼一个属性选择器:消息 id 来自 `uid()` 与库里的历史数据,
+   * 拼进选择器就得先做 CSS 转义,漏一次是运行期 `SyntaxError`,而不是一次落空的跳转。
+   *
+   * `offsetTop` 的 offsetParent 是 `.message-list`(它 `position: relative`),而滚动容器
+   * `.message-list__scroll` 正好铺在它原点上 —— 于是这个值就是内容坐标系里的位置,只差滚动容器
+   * 那 8px padding,落点上无所谓。关键是 **`offsetTop` 与 `scrollTop` 无关**,所以连续三次
+   * 测量不会自我叠加着把列表越滚越远。
+   */
+  private parkMessageRow(messageId: string): boolean {
+    const el = this.listEl
+    if (!el) return false
+    for (const node of Array.from(el.querySelectorAll('[data-message-id]'))) {
+      if (node.getAttribute('data-message-id') !== messageId) continue
+      el.scrollTop = Math.max(0, (node as HTMLElement).offsetTop - el.clientHeight / 4)
+      return true
+    }
+    return false
   }
 
   private createEmptySession(options: SessionOptions): MessageSession {

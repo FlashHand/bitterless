@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -639,4 +639,76 @@ test('the remembered file record is strict and is scoped to its own Project dire
       `${JSON.stringify(invalid)} must be refused`
     );
   }
+});
+
+/**
+ * 「别恢复上次目录」那道闸门必须只对**会自己绑项目**的 explicit 目标成立。
+ *
+ * 一个 explicit **文件** 目标根本不碰 `projectWorkspaceByHost`(外部预览住在另一个 map),却同样
+ * 把恢复挡掉了 —— 于是在新窗口里 shell 挂载时问到 `null`,顶栏落成「No project open」,而文件那支
+ * 结束时广播的是 `SELECTION_CHANGED` 不是 `WORKSPACE_CHANGED`,shell 再也不会问第二次。
+ * `docs/issues/onlypreview-external-file-open-drops-the-project.md`
+ *
+ * 注:抑制在服务里写了**两处** —— `restoreWorkspace` 开头的快路径,与 `canRestore` 里的那一条。
+ * 实测(变异)只拆快路径**行为不变**(`canRestore` 仍在挡),两处都拆才会让下面第一条断言变红。
+ * 所以这条断言钉的是行为,不是某一行;别把快路径当成"没被测到"而删掉。
+ */
+test('an explicit FILE target must not suppress restoring the last project', async () => {
+  await withTempDirectory('onlypreview-recent-claim-', async (root) => {
+    const canonicalRoot = realpathSync(root);
+    const storage = new MemorySettingStorage({ version: 1, directoryPath: canonicalRoot });
+    const { hosts, service } = createService(storage);
+    service.markStorageReady();
+    const host = hosts.issue('standalone', 'content');
+
+    // 闸门占着时:恢复被抑制 —— 这是**目录**目标要的行为,先钉住它还在
+    const generation = service.beginExplicitTarget();
+    assert.equal(await service.restoreWorkspace(host.hostToken), null);
+    assert.equal(storage.getCount, 0, '被抑制时不该去读存储');
+
+    // 文件目标放开闸门之后:上次的项目必须恢复得出来
+    service.releaseProjectRestoreClaim(generation);
+    const workspace = await service.restoreWorkspace(host.hostToken);
+    assert.equal(workspace?.displayPath, canonicalRoot);
+  });
+});
+
+test('releasing with a stale generation must not steal a newer claim', async () => {
+  await withTempDirectory('onlypreview-recent-claim-stale-', async (root) => {
+    const canonicalRoot = realpathSync(root);
+    const storage = new MemorySettingStorage({ version: 1, directoryPath: canonicalRoot });
+    const { hosts, service } = createService(storage);
+    service.markStorageReady();
+    const host = hosts.issue('standalone', 'content');
+
+    const first = service.beginExplicitTarget();
+    const second = service.beginExplicitTarget();
+    // 旧 generation 来放闸门 —— 不许生效,否则后来那个目录打开会被恢复抢在前面
+    service.releaseProjectRestoreClaim(first);
+    assert.equal(await service.restoreWorkspace(host.hostToken), null);
+
+    service.releaseProjectRestoreClaim(second);
+    assert.equal((await service.restoreWorkspace(host.hostToken))?.displayPath, canonicalRoot);
+  });
+});
+
+/** explicit-open 那一侧的接线 —— 三条都是「不这么写就静默退化」的地方。 */
+test('the explicit FILE branch releases the claim and re-asks for the project', () => {
+  const source = readFileSync(
+    resolve(projectRoot, 'src/main/miniapps/onlypreview/onlyPreviewExplicitOpen.service.ts'),
+    'utf8'
+  );
+  const fileBranch = source.slice(source.indexOf('trace.mark({ phase: \'inspect\''));
+  assert.match(
+    fileBranch,
+    /releaseProjectRestoreClaim\(recentGeneration\)/,
+    '文件那支没有放开闸门 —— 新窗口里会是 No project open'
+  );
+  // 不 await:项目索引可能是几万个文件,预览不该等在它后面
+  assert.match(fileBranch, /void onlyPreviewRecentDirectoryService[\s\S]{0,80}\.restoreWorkspace\(/);
+  // 只有真恢复出项目时才广播 —— 否则 shell 会为一件没发生的事再走一遍置空
+  assert.match(
+    fileBranch,
+    /if \(!workspace[\s\S]{0,90}\) return;[\s\S]{0,140}broadcast\(ONLY_PREVIEW_WORKSPACE_CHANGED_EVENT/
+  );
 });

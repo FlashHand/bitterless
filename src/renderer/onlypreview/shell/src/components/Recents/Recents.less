@@ -63,8 +63,10 @@
   min-width: 0;
   display: flex;
   align-items: flex-start;
-  gap: 7px;
-  padding: 7px 8px;
+  /* 无左右 padding、无 icon —— 一行能显示的内容比对齐留白更重要(Ral 2026-09-09)。
+     容器 `__list` 自己有 4px padding,所以文字不会贴到面板边缘。
+     `gap` 一并去掉:去掉 icon 之后这一行只剩一个子元素,留着是死属性。 */
+  padding: 7px 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -81,11 +83,6 @@
 }
 .onlypreview-recents__row--selected:hover {
   background: #cce2ff;
-}
-.onlypreview-recents__icon {
-  flex: 0 0 14px;
-  margin-top: 2px;
-  color: var(--onlypreview-royal);
 }
 .onlypreview-recents__identity {
   min-width: 0;

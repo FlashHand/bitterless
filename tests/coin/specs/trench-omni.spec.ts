@@ -531,7 +531,7 @@ test('embeds live sandboxed Trench cells and coordinates standalone updates', as
 }) => {
   const { app, hostPage, userDataDir, mockOrigin } = bitterless;
   const now = Date.now();
-  const preservedBrowserUrl = `${mockOrigin}/ai-crms`;
+  const preservedBrowserUrl = `${mockOrigin}/sample-site`;
   await callLocalRpc(userDataDir, 'trench.analysis.put', {
     record: makeAnalysis('omni-analysis-a', CA_A, new Date(now - 2_000).toISOString())
   });
@@ -735,13 +735,13 @@ test('embeds live sandboxed Trench cells and coordinates standalone updates', as
           for (const contents of electron.webContents.getAllWebContents()) {
             if (contents.getURL() !== expectedUrl || contents.isDestroyed()) continue;
             return await contents.executeJavaScript(
-              `document.querySelector('#ai-crms-e2e')?.textContent || null`
+              `document.querySelector('#sample-site-e2e')?.textContent || null`
             );
           }
           return null;
         }, preservedBrowserUrl)
     )
-    .toBe('AI-CRMS local E2E mock');
+    .toBe('Sample local E2E mock');
   await expect
     .poll(
       async () =>

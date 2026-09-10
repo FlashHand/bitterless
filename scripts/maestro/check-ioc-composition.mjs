@@ -33,12 +33,6 @@ const services = [
     source: readMaestro('main/windows/main/workspaceFile.service.ts')
   },
   {
-    className: 'IntegrationService',
-    property: 'integrationService',
-    stateName: 'IntegrationServiceState',
-    source: readMaestro('main/integration/integration.service.ts')
-  },
-  {
     className: 'CaptureService',
     property: 'captureService',
     stateName: 'CaptureServiceState',

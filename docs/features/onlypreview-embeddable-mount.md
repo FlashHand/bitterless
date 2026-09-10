@@ -78,7 +78,8 @@ measures from placeholder elements:
   underneath the chrome — and start `setVisible(false)`; `activateTab` hides the outgoing view and
   shows the incoming one.
 - `kind` already discriminates first-party tabs from web pages: the pinned local Home tab
-  (`buildPinnedHomeView`, a bundled renderer with its own preload) and `ai-crms`.
+  (`buildPinnedHomeView`, a bundled renderer with its own preload). It also carried `ai-crms` until
+  that provider was retired in 2026-09.
 - The Mini Apps grid inside Maestro is the same component as the Bitterless Home grid, and its
   OnlyPreview entry calls `onlyPreviewEmitter.openOnlyPreviewWindow()` today
   (`src/renderer/maestro/workbench/src/views/WorkbenchAppsView.vue:35`).

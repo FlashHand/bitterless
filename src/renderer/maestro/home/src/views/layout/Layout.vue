@@ -63,7 +63,7 @@ onBeforeUnmount(() => {
     <!-- Body: geometry anchors for the native views (covered once they paint). -->
     <div class="maestro-layout__body">
       <div ref="operationPlaceholder" class="maestro-layout__operation">
-        <!-- Boot splash: the operation view stays hidden until AI-CRMS finishes loading
+        <!-- Boot splash: the operation view stays hidden until the first tab finishes loading
              (coachWindow.helper defers setVisible), so this centered loader shows in the meantime
              and is covered the instant the page paints — no blank/black area, no about:blank hop. -->
         <div class="maestro-layout__splash">

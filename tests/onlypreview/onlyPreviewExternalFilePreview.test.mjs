@@ -162,7 +162,7 @@ test('external Preview wiring keeps Project state separate and revokes exact rea
   );
   assert.match(
     explicitOpenBody,
-    /registerExternalPreview[\s\S]*clearProjectSelection[\s\S]*onlyPreviewPreviewRegionService\.present\(host\.hostToken, fileRef, trace\?\.tag\)[\s\S]*ONLY_PREVIEW_SELECTION_CHANGED_EVENT/
+    /registerExternalPreview[\s\S]*resolveOnlyPreviewPreviewRegion\(host\.hostToken\)\.present\(host\.hostToken, fileRef, trace\?\.tag[\s\S]*ONLY_PREVIEW_SELECTION_CHANGED_EVENT/
   );
   // Now a cross-function ordering: the caller inspects, then hands the validated target to the
   // extracted presenter. Comparing indexes across two slices would compare unrelated offsets.
@@ -171,12 +171,14 @@ test('external Preview wiring keeps Project state separate and revokes exact rea
       openBody.indexOf('presentOnlyPreviewExplicitFile('),
     'target inspection must precede Project/external authority selection'
   );
-  // The clear must be GUARDED, not unconditional: an 'unsettled' classification means containment
-  // is not decidable yet, and clearing on it is what dropped the selection for a file that was
-  // inside the open project (docs/issues/onlypreview-external-preview-clears-project-selection.md).
-  assert.match(
+  // 契约又往前走了一步:**外部预览一句 `clearProjectSelection` 都不再调**。
+  //
+  // 原来是「只在 `'outside'` 时清」(那一版修的是"项目内的文件被误判成外部"),后来连 `'outside'`
+  // 也不清了 —— 一个外部文件的预览与"项目里选中了哪一项"是两件独立的事,住在两个不同的 map 里。
+  // 守卫因此反过来写:出现 `clearProjectSelection` 就是回归。
+  assert.doesNotMatch(
     explicitOpenBody,
-    /if \(classification\.kind === 'outside'\) \{[\s\S]*clearProjectSelection/
+    /clearProjectSelection/
   );
   assert.ok(
     explicitOpenBody.indexOf('classifyProjectTarget') <

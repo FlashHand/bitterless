@@ -470,7 +470,9 @@ test('environment diagnostics expose status and safe origins, never configured s
     HTTPS_PROXY: 'http://proxy-user:proxy-secret@127.0.0.1:7890',
     https_proxy: 'http://lower-secret@127.0.0.1:7891',
     APPLE_APP_SPECIFIC_PASSWORD: 'apple-secret',
-    MICROMEET_CRMS_CREDENTIAL_FILE: '/private/credential-secret.json'
+    // 一个不在 allowlist 里的键:它的值绝不能出现在输出里。
+    // (原来用 MICROMEET_CRMS_CREDENTIAL_FILE,那个键随 AI-CRMS 于 2026-09 退役。)
+    UNLISTED_CREDENTIAL_FILE: '/private/credential-secret.json'
   });
   assert.equal(entries.find((entry) => entry.key === 'VITE_ENV')?.safeValue, 'prod');
   assert.equal(entries.find((entry) => entry.key === 'VITE_MODE')?.safeValue, 'debug');

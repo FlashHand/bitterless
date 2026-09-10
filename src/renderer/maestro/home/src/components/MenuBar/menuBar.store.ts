@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import { createXpcRendererEmitter, xpcRenderer } from 'electron-xpc/renderer'
 import type { CoachXpcContract, TabInfo } from '@maestro-shared/coach.api'
 
@@ -28,6 +28,13 @@ class MenuBarState {
   /** History availability of the active tab → enables/disables the back/forward buttons. */
   canGoBack = false
   canGoForward = false
+  /**
+   * The address `<input>` itself — MenuBar.vue hands it over on mount.
+   *
+   * Storing a DOM node in a `reactive()` store is safe: Vue 3 only proxies Object/Array/Map/Set,
+   * and `HTMLInputElement` lands in `TargetType.INVALID`, so it is kept as-is (no `markRaw`).
+   */
+  private addressInput: HTMLInputElement | null = null
 
   async init(): Promise<void> {
     xpcRenderer.subscribe('coach/nav', (payload) => {
@@ -46,11 +53,27 @@ class MenuBarState {
       this.canGoBack = Boolean(s?.canGoBack)
       this.canGoForward = Boolean(s?.canGoForward)
     })
+    // The main process only sends this after the operator opened a BLANK tab (`newTab()`); the
+    // criterion lives there, not here (contract #3.1) — this end never inspects the tab.
+    xpcRenderer.subscribe('coach/focus-address', () => void this.focusAddress())
     // Seed the bar from the active tab's URL — we no longer persist/restore a URL here
     // (also covers a coach/nav broadcast that may have fired before we subscribed).
     const tabs = await coach.getTabs()
     const active = tabs.find((t) => t.active)
     this.url = stripScheme(active?.displayUrl || active?.url || '')
+  }
+
+  bindAddressInput(el: HTMLInputElement | null): void {
+    this.addressInput = el
+  }
+
+  async focusAddress(): Promise<void> {
+    // Wait one tick: `coach/tabs` arrived in the same burst (activateTab's last line), so Vue has
+    // not applied the new tab's `:disabled` to the DOM yet — if the previous tab was a composite /
+    // fixed one the input still carries `disabled`, and the browser silently ignores focus().
+    await nextTick()
+    this.addressInput?.focus()
+    this.addressInput?.select()
   }
 
   async go(): Promise<void> {

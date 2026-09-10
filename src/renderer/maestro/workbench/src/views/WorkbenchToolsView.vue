@@ -51,7 +51,6 @@ const setPolicy = (tool: HostToolCatalogEntry, value: unknown): void => {
 const categoryClass = (tool: HostToolCatalogEntry): string => {
   if (tool.category === 'api') return 'workbench-tools__category--api'
   if (tool.category === 'skill') return 'workbench-tools__category--skill'
-  if (tool.category === 'integration') return 'workbench-tools__category--integration'
   if (tool.category === 'training') return 'workbench-tools__category--training'
   if (tool.category === 'workspace' || tool.category === 'file') return 'workbench-tools__category--workspace'
   if (tool.category === 'act') return 'workbench-tools__category--act'

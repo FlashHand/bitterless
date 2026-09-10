@@ -21,18 +21,10 @@ The backend environment and release channel are independent. Preview is not a ba
 - Runtime application/data identity: `Bitterless_PREVIEW`.
 - Preview owns its userData/sessionData, SQLite, cookies, Web Storage, logs, Codex/Claude auth,
   models, plugins, MCP endpoint, hook outboxes, window state, and installation identity.
-- Preview's bundled Maestro CLI owns its shim, encrypted CRMS and Sys credentials, shared local
-  credential key, and legacy-session compatibility file below
-  `${app.getPath('userData')}/cowork/cli`. It ignores inherited `MICROMEET_CLI_PATH`, uses only its
-  bundled executable, and must neither inspect nor mutate Stable's external `~/.micromeet` tree.
-  Every Preview-owned CLI child receives forced `MICROMEET_CRMS_CREDENTIAL_FILE`,
-  `MICROMEET_SYS_CREDENTIAL_FILE`, `MICROMEET_CREDENTIAL_FILE`, `MICROMEET_SESSION_FILE`, and
-  `MICROMEET_CLI_PATH` values from the Preview boundary, even when the parent shell exported global
-  overrides. Stable keeps the existing external `~/.micromeet` contract and honors its executable,
-  realm-specific, and generic credential overrides.
-- Preview establishes those environment paths before fallible directory, shim, permission, or
-  cleanup work. Initialization failure propagates to startup, leaves the forced local environment
-  in place, and remains retryable; Maestro must not continue with inherited global paths.
+- Maestro shipped a bundled Micromeet CLI with a per-channel shim and encrypted credential tree
+  until the AI-CRMS retirement (2026-09) removed it. Neither channel now installs, invokes, probes,
+  or writes an external CLI, so no channel reads or mutates `~/.micromeet`. Preview's remaining
+  per-channel isolation is the userData/sessionData boundary above.
 - Preview must never register or remove the Stable-only Windows Explorer `OnlyPreview` action.
 - The Preview package uses dedicated app icons with a visible `PREVIEW` mark.
 

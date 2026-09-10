@@ -268,6 +268,12 @@
               />
             </span>
             <span v-else class="onlypreview-shell__tree-spacer" aria-hidden="true"></span>
+            <!-- 图标这一条 v-if 链:目录(展开/收起)→ 符号链接 → 按类型的文件图标。
+                 **中间不能插 HTML 注释** —— 注释是一个节点,会把 v-if 链打断,于是 `v-else` 那一支
+                 编译成一个注释节点,表现是「文件图标根本不出现」。这条是实测踩到的
+                 (`onlyPreviewTreeDensity` 那条断言抓的就是它)。
+                 文件那一支:判定在 `onlyPreviewTreeIcon.service`,key → 组件 的映射在
+                 `TREE_FILE_ICONS`(下方 script),加一种类型是加一行。 -->
             <IconFolderOpen
               v-if="row.entry.nodeKind === 'directory' && row.expanded"
               class="onlypreview-shell__tree-icon"
@@ -292,7 +298,13 @@
               :size="14"
               aria-hidden="true"
             />
-            <IconFile v-else class="onlypreview-shell__tree-icon" :size="14" aria-hidden="true" />
+            <component
+              :is="TREE_FILE_ICONS[resolveOnlyPreviewFileIconKey(row.entry.relativePath)]"
+              v-else
+              class="onlypreview-shell__tree-icon"
+              :size="14"
+              aria-hidden="true"
+            />
             <input
               v-if="onlyPreviewProjectAuthoring.editing?.relativePath === row.entry.relativePath"
               :ref="(element) => registerEditInput(element)"
@@ -395,6 +407,25 @@
       role="status"
       aria-live="polite"
     >
+      <!-- 面包屑:从项目目录本身开始,一直指到选中的文件或文件夹(Ral 2026-09-09)。
+           最后一段单独渲染在截断容器**外面** —— 路径太深时被切掉的是中间,而选中的那个东西
+           始终可见。只做显示不做导航:要求是「显示」,加跳转是没要求的范围。 -->
+      <span
+        v-if="statusBreadcrumb"
+        name="onlypreview__statusBreadcrumb"
+        class="onlypreview-shell__breadcrumb"
+        :title="statusBreadcrumb.title"
+      >
+        <span class="onlypreview-shell__breadcrumb-lead">
+          <template v-for="(segment, index) in statusBreadcrumb.lead" :key="index">
+            <span class="onlypreview-shell__breadcrumb-segment">{{ segment }}</span>
+            <span class="onlypreview-shell__breadcrumb-separator" aria-hidden="true">/</span>
+          </template>
+        </span>
+        <span class="onlypreview-shell__breadcrumb-segment onlypreview-shell__breadcrumb-tail">{{
+          statusBreadcrumb.tail
+        }}</span>
+      </span>
       <span v-if="onlyPreviewShellStore.selectedEntry" class="onlypreview-shell__file-state">
         <template
           v-if="
@@ -421,20 +452,32 @@ import {
   IconChevronRight,
   IconCrosshair,
   IconExternalLink,
-  IconFile,
+  IconFileText,
+  IconFileTypeDoc,
+  IconFileTypePdf,
+  IconFileTypePpt,
+  IconFileTypeXls,
+  IconFileTypeZip,
   IconFiles,
   IconFold,
   IconFolder,
   IconFolderOpen,
   IconFolderPlus,
   IconLink,
+  IconMarkdown,
   IconMaximize,
   IconMinus,
+  IconPhotoAlt,
   IconRobot,
   IconSettings,
   IconX
 } from '@tabler/icons-vue';
+import {
+  resolveOnlyPreviewFileIconKey,
+  type OnlyPreviewFileIconKey
+} from '../../common/onlyPreviewTreeIcon.service';
 import { formatOnlyPreviewBytes, interpolateOnlyPreview } from '../../common/onlyPreviewFormat';
+import { resolveOnlyPreviewBreadcrumb } from './onlyPreviewTree.service';
 import { onlyPreviewEnv } from '../../common/contextBridge/onlyPreviewEnv.bridge';
 import { onlyPreviewI18n } from '../../common/onlyPreviewI18n';
 import PreviewToolbar from './components/PreviewToolbar/PreviewToolbar.vue';
@@ -456,6 +499,44 @@ import {
   onlyPreviewProjectAuthoring,
   subscribeOnlyPreviewProjectIntents
 } from './onlyPreviewProjectAuthoring.store';
+
+/**
+ * 树行的文件图标:key → tabler 组件(Ral 2026-09-09「风格要统一」)。
+ *
+ * **刻意没用 `IconFileType*` 那一家**(`IconFileTypeDocx` / `IconFileTypeXls` / `IconFileTypePpt`)——
+ * 那一家的辨识信息是画在纸面里的 "DOCX"/"XLS" 字样,而这里是 **14px**,那几个字在这个尺寸下读不出来,
+ * 四种类型会长成同一张纸,等于没分。所以取的是**轮廓本身就不同**的一组:
+ * 一张写着文字行的纸 / 一张带网格的纸 / 一块投影屏 / markdown 徽标。
+ *
+ * 风格一致由三件事保证:同一个图标库、同一套 outline(描边宽度一致)、同一个 `:size="14"` 与
+ * 同一个 `.onlypreview-shell__tree-icon` 类。
+ *
+ * tabler 没有 `IconFileTypeMd`,markdown 只有 `IconMarkdown` 这一个;它的外形与其它三个不同族,
+ * 但 markdown 是唯一一个**靠徽标就能认出来**的类型,这个不对称是划算的。
+ */
+/**
+ * 树行的文件图标:key → tabler 组件。
+ *
+ * Ral 2026-09-09 点名的这一套:默认 `file-text`,office 三种用 `file-type-doc/xls/ppt`,
+ * `file-type-pdf`、`file-type-zip`,图片统一 `photo-alt`。`.md` 他没提,保留 `IconMarkdown`。
+ *
+ * 风格一致由三件事保证:同一个图标库、同一套 outline(描边宽度一致)、同一个 `:size="14"` 与
+ * 同一个 `.onlypreview-shell__tree-icon` 类。
+ *
+ * 记一条已知取舍:`file-type-*` 的辨识信息是画在纸面里的 "DOC"/"PDF"/"XLS" 字样,而这里是 14px,
+ * 那几个字在这个尺寸下偏小。这是 Ral 明确要的一套,不是漏想 —— 要换成轮廓可辨的一组(例如
+ * `file-description` / `file-spreadsheet` / `presentation`)只需改这张表。
+ */
+const TREE_FILE_ICONS: Record<OnlyPreviewFileIconKey, unknown> = {
+  document: IconFileTypeDoc,
+  spreadsheet: IconFileTypeXls,
+  presentation: IconFileTypePpt,
+  markdown: IconMarkdown,
+  pdf: IconFileTypePdf,
+  archive: IconFileTypeZip,
+  image: IconPhotoAlt,
+  file: IconFileText
+};
 
 const previewHostRef = ref<HTMLElement | null>(null);
 const shellFocused = ref(false);
@@ -489,6 +570,27 @@ const indexProgressStyle = computed(() =>
     ? { transform: `scaleX(${onlyPreviewShellStore.indexProgressRatio})` }
     : undefined
 );
+
+/**
+ * 状态栏左侧的面包屑,拆成 `lead` ＋ `tail` 两截。
+ *
+ * 拆开是为了截断的位置:`lead` 在一个会溢出省略的容器里,`tail`(选中的那个文件或文件夹)
+ * 在容器外且不收缩 —— 于是路径太深时被切掉的是**中间**,而用户选中的东西始终看得见。
+ * 整条塞进一个省略容器的话,深路径会把最重要的一段先切掉。
+ */
+const statusBreadcrumb = computed(() => {
+  const crumb = resolveOnlyPreviewBreadcrumb(
+    onlyPreviewShellStore.workspace,
+    onlyPreviewShellStore.treeSelectedRelativePath,
+    onlyPreviewShellStore.selectedRelativePath
+  );
+  if (!crumb) return null;
+  return {
+    lead: crumb.segments.slice(0, -1),
+    tail: crumb.segments.at(-1) ?? '',
+    title: crumb.title
+  };
+});
 
 const selectedCharacterStatus = computed(() =>
   interpolateOnlyPreview(onlyPreviewI18n.project.selectedCharacters, {

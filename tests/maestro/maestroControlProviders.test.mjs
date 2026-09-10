@@ -127,7 +127,6 @@ const stubs = {
   '@renderer/common/i18n/i18n.helper': `export const i18nHelper = { menuBar: { maestro: {
     resizePanel: 'Resize', hidePanel: 'Hide', providerUnavailable: ${JSON.stringify(unavailable)}
   } } };`,
-  '@maestro-shared/session.api': "export const AUTH_BROADCAST = 'auth';",
   './store/channel.store':
     'export const channelStore = globalThis.__controlProviderFixture.channelStore;',
   './store/message.store':
@@ -174,10 +173,9 @@ const makeConfig = (provider = 'codex', ready = true) => ({
   ready,
   providers: [
     { provider: 'codex', label: 'Codex provider', ready: true },
-    { provider: 'ai-crms', label: 'Saved Micromeet provider', ready },
     { provider: 'local', label: 'Saved Local provider', ready }
   ],
-  presets: ['codex', 'ai-crms', 'local', 'claude'].map((id) => ({
+  presets: ['codex', 'local', 'claude'].map((id) => ({
     provider: id,
     providerLabel: `${id} preset provider`,
     model: `${id}-model`,
@@ -278,7 +276,7 @@ test('Control SFC compiles; both provider sources exclude removed keys without c
   }
 });
 
-for (const provider of ['ai-crms', 'local']) {
+for (const provider of ['local']) {
   test(`restored ${provider} remains truthfully labelled and inert through startup and config broadcasts`, async (t) => {
     const config = makeConfig(provider);
     const ui = await harness(t, config);
@@ -335,7 +333,7 @@ for (const provider of ['ai-crms', 'local']) {
 
 test('forbidden direct model, provider, effort, login and injected-skill handlers cannot escape the disabled UI', async (t) => {
   const ui = await harness(t, makeConfig('local'));
-  for (const provider of ['local', 'ai-crms']) {
+  for (const provider of ['local']) {
     await ui.onSwitchLlmProvider(provider);
     await ui.onSwitchLlmTarget({ provider, model: `${provider}-model`, effort: 'high' });
     await ui.onSwitchLlmModel(fixture.config.presets.find((item) => item.provider === provider));
@@ -351,7 +349,7 @@ test('forbidden direct model, provider, effort, login and injected-skill handler
 });
 
 test('an explicit Codex provider choice restores model, effort and send availability without changing normal skill behavior', async (t) => {
-  const ui = await harness(t, makeConfig('ai-crms'));
+  const ui = await harness(t, makeConfig('local'));
   ui.providerPickerVisible.value = true;
   const codexOption = tree(ui).find(
     ({ node }) =>

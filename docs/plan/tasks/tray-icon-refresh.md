@@ -7,6 +7,11 @@ depends-on: [app-icon-refresh]
 
 # System tray icon refresh
 
+> The macOS runtime-source portion of this historical task was superseded on 2026-09-09 by
+> [tray-mac-document-master-runtime-171](tray-mac-document-master-runtime-171.md). The runtime now
+> uses 24px / Retina 48px derivatives of `doc/bitterless-tray-mac.png` and no longer uses
+> `build/tray-mac@2x.png`.
+
 ## Objective
 
 Replace the legacy macOS tray image with a simple bored-cat head and give Windows its own cat-head

@@ -628,22 +628,6 @@ const initializeAll = (root = DEFAULT_ROOT, force = false, inventory = INVENTORY
   console.log('[external-tools] all platforms are initialized and verified')
 }
 
-const cliFilenameForTarget = (packageTarget) => (packageTarget === 'win64' ? 'micromeet.exe' : 'micromeet')
-
-const validateCliStage = (stageDirectory, packageTarget) => {
-  const cliFilename = cliFilenameForTarget(packageTarget)
-  assertRegularFile(path.join(stageDirectory, cliFilename), `staged ${cliFilename}`)
-  const manifestPath = path.join(stageDirectory, 'manifest.json')
-  assertRegularFile(manifestPath, 'staged Micromeet CLI manifest.json')
-  const manifest = readJson(manifestPath, 'staged Micromeet CLI manifest.json')
-  if (manifest.platform !== packageTarget || manifest.staged !== cliFilename) {
-    throw new Error(
-      `staged Micromeet CLI does not match ${packageTarget}; run prepare-maestro-cli.cjs ${packageTarget} first`
-    )
-  }
-  return cliFilename
-}
-
 const externalRootArtifactNames = (inventory = INVENTORY) => {
   const names = new Set([MANIFEST_FILENAME, 'anydoc'])
   for (const toolName of BINARY_TOOL_NAMES) {
@@ -681,11 +665,7 @@ const verifyStagedExternalTools = (
   validatePackagePins(root, inventory)
   const normalized = normalizePackageTarget(packageTarget)
   const stageDirectory = path.join(root, STAGE_RELATIVE_PATH)
-  const cliFilename = validateCliStage(stageDirectory, normalized.packageTarget)
-  validateManifestAndPayload(stageDirectory, normalized.storePlatform, {
-    extraFiles: ['manifest.json', cliFilename],
-    inventory
-  })
+  validateManifestAndPayload(stageDirectory, normalized.storePlatform, { inventory })
   console.log(`[external-tools] staged tools verified for ${normalized.packageTarget}`)
   return stageDirectory
 }
@@ -699,7 +679,6 @@ const stageExternalTools = (
   const normalized = normalizePackageTarget(packageTarget)
   const sourceDirectory = validateExternalStore(root, normalized.storePlatform, inventory)
   const stageDirectory = path.join(root, STAGE_RELATIVE_PATH)
-  validateCliStage(stageDirectory, normalized.packageTarget)
   removeStaleExternalArtifacts(stageDirectory, inventory)
   copyPayload(sourceDirectory, stageDirectory, normalized.storePlatform, inventory)
   verifyStagedExternalTools(root, normalized.packageTarget, inventory)

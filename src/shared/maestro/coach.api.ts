@@ -9,7 +9,6 @@ export const MAESTRO_HOME_READY_TOKEN_QUERY = 'maestroReadyToken'
 export const MAESTRO_FORCE_PINNED_HOME_QUERY = 'maestroForcePinnedHome'
 export const MAESTRO_FORCE_PINNED_HOME_QUERY_VALUE = '1'
 export const MAESTRO_LOCAL_HOME_DISPLAY_URL = 'bitterless://home'
-export const MAESTRO_AI_CRMS_LOGIN_DISPLAY_URL = 'bitterless://ai-crms-login'
 export const MAESTRO_WORKBENCH_DISPLAY_URL = 'bitterless://workbench'
 
 export interface WorkbenchTabState {
@@ -60,21 +59,6 @@ export interface CoachXpcContract {
   getHostApprovalEvents(): Promise<HostApprovalHistoryResult>
   exportHostApprovalEvents(): Promise<HostApprovalExportResult>
   clearHostApprovalEvents(): Promise<HostApprovalHistoryResult>
-  listIntegrationTargets(): Promise<IntegrationTargetSummary[]>
-  getIntegrationTarget(params: { targetId: string }): Promise<IntegrationTarget | null>
-  createIntegrationTargetFromCapture(params?: { name?: string; domain?: string }): Promise<IntegrationTargetCreateResult>
-  createAiCrmsMigrationTarget(params: IntegrationMigrationTargetRequest): Promise<IntegrationTargetCreateResult>
-  deleteIntegrationTarget(params: { targetId: string }): Promise<IntegrationTargetDeleteResult>
-  runIntegrationTargetDryRun(params: { targetId: string }): Promise<IntegrationTargetRunResult>
-  runIntegrationRecordedSiteDryRun(params: IntegrationRecordedSiteSyncRequest): Promise<IntegrationTargetRunResult>
-  runIntegrationRecordedSitePlan(params: IntegrationRecordedSiteSyncRequest): Promise<IntegrationTargetRunResult>
-  runIntegrationRecordedSiteApply(params: IntegrationRecordedSiteApplyRequest): Promise<IntegrationTargetRunResult>
-  runIntegrationMigration(params: IntegrationMigrationRunRequest): Promise<IntegrationTargetRunResult>
-  runIntegrationReportReadiness(params: IntegrationReportReadinessRequest): Promise<IntegrationTargetRunResult>
-  setIntegrationTargetSchedule(params: IntegrationTargetScheduleRequest): Promise<IntegrationTargetScheduleResult>
-  listIntegrationMappings(params: IntegrationMappingListRequest): Promise<IntegrationMappingListResult>
-  upsertIntegrationMapping(params: IntegrationMappingUpsertRequest): Promise<IntegrationMappingWriteResult>
-  deleteIntegrationMapping(params: IntegrationMappingDeleteRequest): Promise<IntegrationMappingWriteResult>
   listInjectedButtons(): Promise<InjectedButtonDomain[]>
   removeInjectedButtonDomain(params: { domain: string }): Promise<InjectedButtonRemoveResult>
   getCaptureOptions(): Promise<CaptureOptions>
@@ -95,6 +79,17 @@ export interface CoachXpcContract {
   ackAgentTurnFinished(params: { sessionId: string; turnId: string }): Promise<void>
   sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply>
   copyNextTurnContext(params: ContextExportRequest): Promise<ContextExportSummary>
+  /**
+   * `/view_context_graph` —— 同一份组装的**结构投影**:类型、体量、上下文回合、压缩边界。
+   *
+   * 与 `copyNextTurnContext` 的分工:那条出的是**正文**(逐字、不截断,所以原则上无界 ⇒ 它去剪贴板,
+   * 不过 xpc);这条出的是**结构**,每块只带一小段 preview(≤160),而且被压缩吸收的条目
+   * **只汇总不逐条列** —— 它们模型已经看不到,逐条列出来就是把结构画错(契约
+   * `docs/features/maestro-context-graph.md` #1 / #4)。**因此这条的载荷有界,可以安全地过 xpc。**
+   *
+   * 组装在 main(`main/agent/contextGraph.service.ts`),与 `/view_context` 共用同一份展平映射。
+   */
+  readContextGraph(params: ContextGraphRequest): Promise<ContextGraphResult>
   /**
    * 这个聊天会话的**模型 I/O jsonl 目录绝对路径** —— 写进剪贴板并回给渲染端
    * (`/copy_session_path`,契约 `docs/features/maestro-slash-commands.md`)。
@@ -138,9 +133,6 @@ export interface CoachXpcContract {
   // Materialize the current system clipboard image into userData and register that file path.
   // Used for pasted screenshots: no image bytes cross renderer↔main or model boundaries.
   attachClipboardImage(params?: { sessionId?: string }): Promise<AttachFileResult>
-  // Transcribe a local audio file through the AI-CRMS Bailian relay. The renderer records audio
-  // and passes only a temp file path; main reads the file and owns the shared session token.
-  scribeAudio(params: AudioScribeRequest): Promise<AudioScribeResult>
   chooseWorkspaceDirectory(params?: { sessionId?: string }): Promise<WorkspaceRefResult>
   setWorkspaceDirectory(params: { sessionId?: string; path?: string }): Promise<WorkspaceRefResult>
   getWorkspaceDirectory(params?: { sessionId?: string }): Promise<WorkspaceRefResult>
@@ -276,11 +268,10 @@ export interface BrowserRequestReplayResult {
   auth?: { header: string; source: string; key?: string; applied: boolean }[]
 }
 
-export type TabKind = 'home' | 'ai-crms' | 'browser' | 'onlypreview' | 'trench'
+export type TabKind = 'home' | 'browser' | 'onlypreview' | 'trench'
 export type WorkbenchPane =
   | 'recording'
   | 'skills'
-  | 'integrations'
   | 'injections'
   | 'tools'
   | 'models'
@@ -291,270 +282,9 @@ export type WorkbenchPane =
   | 'log'
 // Approval history persists the original scope id; the user-facing label is Maestro.
 export type HostToolScope = 'cowork' | 'trainer'
-export type HostToolCategory = 'observe' | 'act' | 'api' | 'capture' | 'skill' | 'integration' | 'workspace' | 'file' | 'tab' | 'training'
+export type HostToolCategory = 'observe' | 'act' | 'api' | 'capture' | 'skill' | 'workspace' | 'file' | 'tab' | 'training'
 export type HostToolRisk = 'read' | 'write' | 'destructive'
 export type HostToolPolicyMode = 'bypass' | 'confirm' | 'disabled'
-
-export type IntegrationTargetSourceKind = 'recorded-site' | 'ai-crms-migration'
-export type IntegrationTargetDestinationKind = 'ai-crms'
-export type IntegrationEntity = 'patient' | 'corporate' | 'project' | 'data_mapping' | 'mcu_record' | 'mcu_report'
-export type IntegrationEndpointRole = 'read' | 'write' | 'unknown'
-export type IntegrationEndpointSafety = 'safe' | 'confirm' | 'unsafe'
-export type IntegrationTargetStatus = 'draft' | 'ready' | 'dry-run-ok' | 'error'
-export type IntegrationRunMode = 'dry-run' | 'readiness' | 'apply'
-export type IntegrationRunStatus = 'success' | 'warning' | 'failed'
-export type IntegrationScheduleRunKind = 'safe-default' | 'migration-dry-run' | 'report-readiness' | 'recorded-site-dry-run'
-export type IntegrationMappingStatus = 'pending' | 'linked' | 'conflict' | 'ignored'
-
-export interface IntegrationEndpointContract {
-  id: string
-  method: string
-  host: string
-  path: string
-  urlTemplate: string
-  role: IntegrationEndpointRole
-  safety: IntegrationEndpointSafety
-  count: number
-  lastSeenAt: number
-  sampleStatus?: number
-  resourceType?: string
-  requestBodyKind?: 'none' | 'json' | 'form' | 'raw'
-  responseMime?: string
-}
-
-export interface IntegrationTargetSchedule {
-  enabled: boolean
-  intervalMinutes?: number
-  cron?: string
-  runKind?: IntegrationScheduleRunKind
-  nextRunAt?: number
-  lastScheduledRunAt?: number
-}
-
-export interface IntegrationRunSummary {
-  id: string
-  mode: IntegrationRunMode
-  status: IntegrationRunStatus
-  startedAt: number
-  finishedAt: number
-  endpointCount: number
-  readCount: number
-  writeCount: number
-  entityCount: number
-  commandCount?: number
-  notes: string[]
-  missing: string[]
-  outputs?: IntegrationRunOutput[]
-}
-
-export interface IntegrationRunOutput {
-  name: string
-  ok: boolean
-  command: string
-  exitCode?: number
-  durationMs?: number
-  summary?: string
-  error?: string
-}
-
-export interface IntegrationReportReadinessRequest {
-  targetId: string
-  mcuRecordIds?: string[]
-  keyword?: string
-  corporateId?: string
-  projectId?: string
-  pageSize?: number
-  /** false/default = read-only status check; true = enqueue validate/conclusion/report/queue via CLI. */
-  generate?: boolean
-  /** Only meaningful when generate=true; enqueue email sending after report generation. */
-  send?: boolean
-}
-
-export interface IntegrationRecordedSiteSyncRequest {
-  targetId: string
-  endpointIds?: string[]
-  maxEndpoints?: number
-  maxRowsPerEndpoint?: number
-}
-
-export interface IntegrationRecordedSiteApplyRequest extends IntegrationRecordedSiteSyncRequest {
-  /** Must be true; recorded-site writes are never implicit. */
-  apply?: boolean
-  /** Optional entity allow-list. Currently supports patient/corporate/project/data_mapping/mcu_record. */
-  entities?: IntegrationEntity[]
-  /** Maximum number of AI-CRMS create/update commands in one run. Default 10, max 50. */
-  maxWrites?: number
-  /** Default false: linked rows with changed sourceHash are reported but not updated. */
-  allowUpdates?: boolean
-}
-
-export interface IntegrationMigrationConfig {
-  source: string
-  target: string
-  domains: string[]
-}
-
-export interface IntegrationMigrationTargetRequest {
-  name?: string
-  source: string
-  target: string
-  domains?: string[]
-}
-
-export interface IntegrationMigrationRunRequest {
-  targetId: string
-  /** false/default = backend dryRun; true = write migrated rows. */
-  apply?: boolean
-  /** Optional backend migration step labels; defaults to target source.migration.domains. */
-  domains?: string[]
-  timeoutMs?: number
-}
-
-export interface IntegrationTargetScheduleRequest {
-  targetId: string
-  enabled: boolean
-  intervalMinutes?: number
-  runKind?: IntegrationScheduleRunKind
-}
-
-export interface IntegrationMappingEntry {
-  id: string
-  targetId: string
-  entity: IntegrationEntity
-  sourceKey: string
-  sourceLabel?: string
-  aiCrmsId?: string
-  aiCrmsLabel?: string
-  status: IntegrationMappingStatus
-  sourceHash?: string
-  lastSyncedAt?: number
-  metadata?: Record<string, unknown>
-  createdAt: number
-  updatedAt: number
-}
-
-export interface IntegrationMappingSummary {
-  total: number
-  byEntity: Partial<Record<IntegrationEntity, number>>
-  byStatus: Partial<Record<IntegrationMappingStatus, number>>
-}
-
-export interface IntegrationMappingListRequest {
-  targetId: string
-  entity?: IntegrationEntity
-  limit?: number
-}
-
-export interface IntegrationMappingListResult {
-  ok: boolean
-  targetId: string
-  mappings: IntegrationMappingEntry[]
-  summary: IntegrationMappingSummary
-  message?: string
-  error?: string
-}
-
-export interface IntegrationMappingUpsertRequest {
-  targetId: string
-  entity: IntegrationEntity
-  sourceKey: string
-  sourceLabel?: string
-  aiCrmsId?: string
-  aiCrmsLabel?: string
-  status?: IntegrationMappingStatus
-  sourceHash?: string
-  lastSyncedAt?: number
-  metadata?: Record<string, unknown>
-}
-
-export interface IntegrationMappingDeleteRequest {
-  targetId: string
-  entity: IntegrationEntity
-  sourceKey: string
-}
-
-export interface IntegrationMappingWriteResult {
-  ok: boolean
-  targetId: string
-  mapping?: IntegrationMappingEntry
-  message: string
-  error?: string
-}
-
-export interface IntegrationTarget {
-  id: string
-  name: string
-  source: {
-    kind: IntegrationTargetSourceKind
-    domain: string
-    startUrl?: string
-    migration?: IntegrationMigrationConfig
-  }
-  destination: {
-    kind: IntegrationTargetDestinationKind
-    region?: string
-    workspaceId?: string
-  }
-  entities: IntegrationEntity[]
-  schedule: IntegrationTargetSchedule
-  state: {
-    status: IntegrationTargetStatus
-    cursor?: Record<string, string>
-    lastRun?: IntegrationRunSummary
-  }
-  endpoints: IntegrationEndpointContract[]
-  createdAt: number
-  updatedAt: number
-}
-
-export interface IntegrationTargetSummary {
-  id: string
-  name: string
-  domain: string
-  sourceKind: IntegrationTargetSourceKind
-  destinationKind: IntegrationTargetDestinationKind
-  entities: IntegrationEntity[]
-  endpointCount: number
-  readCount: number
-  writeCount: number
-  scheduleEnabled: boolean
-  scheduleIntervalMinutes?: number
-  scheduleRunKind?: IntegrationScheduleRunKind
-  scheduleNextRunAt?: number
-  status: IntegrationTargetStatus
-  lastRunStatus?: IntegrationRunStatus
-  updatedAt: number
-}
-
-export interface IntegrationTargetCreateResult {
-  ok: boolean
-  target?: IntegrationTarget
-  message: string
-  error?: string
-}
-
-export interface IntegrationTargetRunResult {
-  ok: boolean
-  targetId: string
-  run?: IntegrationRunSummary
-  message: string
-  error?: string
-}
-
-export interface IntegrationTargetScheduleResult {
-  ok: boolean
-  targetId: string
-  target?: IntegrationTarget
-  message: string
-  error?: string
-}
-
-export interface IntegrationTargetDeleteResult {
-  ok: boolean
-  targetId: string
-  message: string
-  error?: string
-}
 
 export interface HostToolPolicy {
   toolName: string
@@ -664,7 +394,7 @@ export interface CoachSettings {
   llmEffort: LlmEffort
 }
 
-export type LlmProviderId = 'ai-crms' | 'openai-codex' | 'anthropic' | string
+export type LlmProviderId = 'openai-codex' | 'anthropic' | string
 export type LlmEffort = 'default' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface LlmEffortOption {
@@ -889,30 +619,6 @@ export interface AttachFileResult {
   error?: string
 }
 
-export interface AudioScribeRequest {
-  path: string
-  mime?: string
-  format?: string
-  sampleRate?: number
-}
-
-export type AudioScribeErrorCode =
-  | 'ai-crms-login-required'
-  | 'audio-not-found'
-  | 'audio-too-large'
-  | 'invalid-audio'
-  | 'media-upload-unavailable'
-  | 'relay-error'
-
-export interface AudioScribeResult {
-  ok: boolean
-  text: string
-  model: string
-  durationMs: number
-  code?: AudioScribeErrorCode
-  error?: string
-}
-
 export interface CodexDebugEvent {
   scope: 'summarize' | 'agent' | 'codex'
   phase: string
@@ -1016,6 +722,88 @@ export type SessionIoPathResult = { ok: true; path: string } | { ok: false; erro
 export type ContextExportSummary =
   | { ok: true; chars: number; entries: number }
   | { ok: false; error: string }
+
+/**
+ * `/view_context_graph` 的入参。与 `ContextExportRequest` 的差别只有一个 `messages` ——
+ * 两条命令读的是同一批真源,只是出口不同。
+ */
+export interface ContextGraphRequest {
+  sessionId: string
+  draft: string
+  context?: AgentConversationContext
+  /**
+   * 渲染层的消息摘要(id + role + 正文前 `CONTEXT_GRAPH_MATCH_HEAD_CHARS` 个字符),按时间顺序。
+   *
+   * **join 在 main 做** —— `user` 条目的正文是整块拼装后的 turn prompt,不是用户那句话,
+   * 只有持有完整正文的一侧才能认领归属。缺省 = 所有块都不可点。
+   */
+  messages?: { id: string; role: 'human' | 'ai'; head: string }[]
+}
+
+/**
+ * `/view_context_graph` 的回执 —— **有界**:每块只有类型 / 体量 / 回合 / 一小段 preview。
+ * 正文不走这条路(去 `/view_context` 的剪贴板),所以一个钻探会话的几十万字符不会被搬进渲染层。
+ * 结构生成在 `main/agent/contextGraph.service.ts`。
+ */
+export interface ContextGraphBlockView {
+  /** 在**存活**块里的序号,从 1 开始。 */
+  i: number
+  /** 界面上承载这一块的消息 —— **没有就是不可点**。认领不到也留空(绝不错链)。 */
+  messageId?: string
+  /** 来自哪个 pi 条目;同一条 assistant 条目展平出的多块共享它。 */
+  entryId: string
+  parentId: string | null
+  /** `user` · `assistant` · `tool_call` · `tool_result` · `compaction` · `custom_message:<t>` · … */
+  type: string
+  tool?: string
+  chars: number
+  /** 上下文回合序号(从 1);第一条 user 条目之前的块为 0。**不是**渲染层那个 `Turn`。 */
+  turn: number
+  preview: string
+}
+
+export interface ContextGraphTypeTotalView {
+  type: string
+  blocks: number
+  chars: number
+}
+
+export interface ContextGraphView {
+  sessionId: string
+  provider?: string
+  model?: string
+  /**
+   * **刻意没有 token 窗口,也没有 jsonl 目录。**
+   *
+   * 窗口:这份投影的单位是**字符**(结构与体量),而窗口的单位是 token —— 写成一个比值
+   * (`113k / 210k`)看着精确,实际是两个单位相除。预算账已经有自己的展示位(控制面板那条上下文条)。
+   * jsonl:本仓 `setModelIoRoot()` 没有任何调用点 ⇒ `dirForSession()` 永远回 `null`,给一个永远空的
+   * 页脚就是"读起来像我们有这个信息"(契约 #2.5)。
+   */
+  systemChars: number
+  systemPreview: string
+  blocks: ContextGraphBlockView[]
+  /** 被 summary 吸收的那一段,只有合计 —— 它已经不在上下文里。 */
+  absorbed?: { blocks: number; chars: number; byType: ContextGraphTypeTotalView[] }
+  turns: number
+  /** system + 存活块 + pending 的字符合计 —— 与 `absorbed` 刻意分开,后者已不在上下文里。 */
+  totalChars: number
+  byType: ContextGraphTypeTotalView[]
+  pending: { workspace?: string; attachments?: string[]; draft?: string; chars: number }
+  /** 模型侧还没有历史(这个会话一轮都没发过)—— 与"历史是空的"是两件事,如实带出。 */
+  noHistory: boolean
+}
+
+export type ContextGraphResult = { ok: true; graph: ContextGraphView } | { ok: false; error: string }
+
+/**
+ * 认领消息归属时比对的头部长度 —— **两侧必须是同一个数**,所以它在 shared,不在任何一侧。
+ *
+ * 渲染层按它截 `head`,main 按 `entryText.includes(head)` 认领(`main/agent/contextGraph.service.ts`)。
+ * 渲染层截 120、main 期望 200 的话,长消息会全部认领失败,而症状是「块莫名不可点」——
+ * 一个不会报错、只会让人以为功能没做的偏差。
+ */
+export const CONTEXT_GRAPH_MATCH_HEAD_CHARS = 200
 
 export type AgentMessageIntent = 'root' | 'steering'
 

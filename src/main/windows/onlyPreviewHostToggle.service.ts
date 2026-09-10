@@ -19,6 +19,7 @@ import type { OnlyPreviewMountKind } from '@main/miniapps/onlypreview/onlyPrevie
 import type { OnlyPreviewHostCapability } from '@main/miniapps/onlypreview/onlyPreviewHost.registry';
 import { onlyPreviewWorkspaceRegistry } from '@main/miniapps/onlypreview/onlyPreviewWorkspace.registry';
 import { onlyPreviewRecentDirectoryService } from '@main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
+import { rememberOnlyPreviewHostMount } from '@main/miniapps/onlypreview/onlyPreviewHostMount.service';
 import { onlyPreviewPreviewRegionService } from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
 import {
   onlyPreviewTargetMutations,
@@ -291,6 +292,10 @@ class OnlyPreviewHostToggleService {
         `[onlypreview] event=host-toggle phase=settled destination=${destinationKind}` +
           ` actual=${settledKind}`
       );
+      // 记下**结算之后的**那一种,而不是 `destinationKind` —— 切换可能落在别处(`buildHost` 失败后
+      // 的回退),而"下次开哪种"要跟着实际结果,不是跟着意图。
+      // 不 await:一次写不进去只该影响下次的默认,不该把一次成功的切换报成失败。
+      rememberOnlyPreviewHostMount(settledKind === 'standalone' ? 'window' : 'tab');
       onlyPreviewWindowHelper.show();
     } finally {
       onlyPreviewWindowHelper.endHostTransition();

@@ -80,7 +80,9 @@ const handlerHarness = () => {
       assert.equal(token, 'host');
       return state.window;
     } },
+    // 预览区**按 host 解析**(不再是进程级单例)。这个用例只有一个 host,两者指向同一个假实例。
     onlyPreviewPreviewRegionService: { snapshot: () => state.current },
+    resolveOnlyPreviewPreviewRegion: () => ({ snapshot: () => state.current }),
     showOnlyPreviewFileMenu: async () => { state.menus++; return state.result.promise; }
   }).Handler;
   state.handler = new Handler();

@@ -54,8 +54,12 @@ import { showOnlyPreviewBookmarkMenu } from '@main/miniapps/onlypreview/onlyPrev
 import { openOnlyPreviewRecent, navigateOnlyPreviewRecent, reloadOnlyPreview, openOnlyPreviewMarkdownLink } from '@main/miniapps/onlypreview/onlyPreviewRecentNavigation.service';
 import { presentOnlyPreviewRestoredSelection } from '@main/miniapps/onlypreview/onlyPreviewRestoreSelection.service';
 import * as projectIndex from '@main/miniapps/onlypreview/onlyPreviewProjectIndexState.service';
-import { onlyPreviewPreviewRegionService } from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
+import {
+  onlyPreviewPreviewRegionService,
+  resolveOnlyPreviewPreviewRegion
+} from '@main/miniapps/onlypreview/views/onlyPreviewPreviewRegion.service';
 import { onlyPreviewGlobalSearchXpcService } from '@main/miniapps/onlypreview/views/onlyPreviewGlobalSearchXpc.service';
+import { onlyPreviewAlertWindowService } from '@main/miniapps/onlypreview/views/onlyPreviewAlertWindow.service';
 import { onlyPreviewWindowHelper } from '@main/windows/onlyPreviewWindow.helper';
 import { onlyPreviewHostToggleService } from '@main/windows/onlyPreviewHostToggle.service';
 import { chooseOnlyPreviewFolder } from '@main/windows/onlyPreviewChooseFolder.service';
@@ -92,8 +96,12 @@ const runOperation = async <T>(
   }
 };
 
-const readBroker = (): ReturnType<typeof onlyPreviewPreviewRegionService.getReadBroker> =>
-  onlyPreviewPreviewRegionService.getReadBroker();
+// 预览区**按 host 解析**(`onlyPreviewPreviewRegion.service.ts` 尾部的注释说明了为什么它不再是
+// 一个进程级单例)。这里每一个调用点本来就有 `hostToken` 在手 —— 缺的只是"用它去挑实例"。
+const readBroker = (
+  hostToken: unknown
+): ReturnType<typeof onlyPreviewPreviewRegionService.getReadBroker> =>
+  resolveOnlyPreviewPreviewRegion(hostToken).getReadBroker();
 
 const recentDirectoryStorage =
   createXpcMainEmitter<OnlyPreviewRecentDirectoryStorage>('SettingDao');
@@ -133,7 +141,7 @@ onlyPreviewHostRegistry.onRevoke((host) => {
 
 onlyPreviewWorkspaceRegistry.onRevoke((workspace) => {
   try {
-    onlyPreviewPreviewRegionService.handleWorkspaceRevoked(
+    resolveOnlyPreviewPreviewRegion(workspace.hostToken).handleWorkspaceRevoked(
       workspace.hostToken,
       workspace.workspaceId
     );
@@ -266,7 +274,7 @@ class OnlyPreviewHandler
     return await runOperation('restoreWorkspace', async () => {
       const host = onlyPreviewHostRegistry.require(params?.hostToken, ['content']);
       const generation = onlyPreviewSelectionCoordinator.advance(host.hostToken);
-      const current = onlyPreviewPreviewRegionService.snapshot(host.hostToken);
+      const current = resolveOnlyPreviewPreviewRegion(host.hostToken).snapshot(host.hostToken);
       const hasLiveExternalPresentation = Boolean(
         current.fileRef &&
         onlyPreviewWorkspaceRegistry.isExternalPreviewFileRef(host.hostToken, current.fileRef)
@@ -280,7 +288,7 @@ class OnlyPreviewHandler
           current.fileRef?.workspaceId !== workspace.workspaceId ||
           current.fileRef.relativePath !== workspace.selectedRelativePath
         ) {
-          await onlyPreviewPreviewRegionService.present(host.hostToken, {
+          await resolveOnlyPreviewPreviewRegion(host.hostToken).present(host.hostToken, {
             workspaceId: workspace.workspaceId,
             relativePath: workspace.selectedRelativePath
           });
@@ -289,7 +297,7 @@ class OnlyPreviewHandler
         !hasLiveExternalPresentation &&
         (current.fileRef || current.workspaceId !== (workspace?.workspaceId ?? null))
       ) {
-        onlyPreviewPreviewRegionService.clearWorkspace(
+        resolveOnlyPreviewPreviewRegion(host.hostToken).clearWorkspace(
           host.hostToken,
           workspace?.workspaceId ?? null
         );
@@ -308,7 +316,7 @@ class OnlyPreviewHandler
 
   async openCurrentOfficeRead(request: OnlyPreviewOfficeReadBrokerRequest) {
     return await runOperation('openCurrentOfficeRead', async () => {
-      return await readBroker().openCurrentOfficeRead(
+      return await readBroker(request.hostToken).openCurrentOfficeRead(
         request.hostToken,
         request.brokerCapability,
         request.previewRuntimeToken,
@@ -319,7 +327,7 @@ class OnlyPreviewHandler
 
   async readCurrentOfficeChunk(request: OnlyPreviewOfficeReadChunkBrokerRequest) {
     return await runOperation('readCurrentOfficeChunk', async () => {
-      return await readBroker().readCurrentOfficeChunk(
+      return await readBroker(request.hostToken).readCurrentOfficeChunk(
         request.hostToken,
         request.brokerCapability,
         request.previewRuntimeToken,
@@ -332,7 +340,7 @@ class OnlyPreviewHandler
 
   async cancelCurrentOfficeRead(request: OnlyPreviewOfficeReadCancelBrokerRequest) {
     return await runOperation('cancelCurrentOfficeRead', async () => {
-      await readBroker().cancelCurrentOfficeRead(
+      await readBroker(request.hostToken).cancelCurrentOfficeRead(
         request.hostToken,
         request.brokerCapability,
         request.previewRuntimeToken,
@@ -344,7 +352,7 @@ class OnlyPreviewHandler
 
   async openCurrentPreviewText(request: OnlyPreviewPreviewTextBrokerRequest) {
     return await runOperation('openCurrentPreviewText', async () => {
-      return await readBroker().openCurrentPreviewText(
+      return await readBroker(request.hostToken).openCurrentPreviewText(
         request.hostToken,
         request.brokerCapability,
         request.previewRuntimeToken,
@@ -355,7 +363,7 @@ class OnlyPreviewHandler
 
   async readCurrentPreviewTextChunk(request: OnlyPreviewPreviewTextChunkBrokerRequest) {
     return await runOperation('readCurrentPreviewTextChunk', async () => {
-      return await readBroker().readCurrentPreviewTextChunk(
+      return await readBroker(request.hostToken).readCurrentPreviewTextChunk(
         request.hostToken,
         request.brokerCapability,
         request.previewRuntimeToken,
@@ -369,7 +377,7 @@ class OnlyPreviewHandler
 
   async cancelCurrentPreviewText(request: OnlyPreviewPreviewTextCancelBrokerRequest) {
     return await runOperation('cancelCurrentPreviewText', async () => {
-      await readBroker().cancelCurrentPreviewText(
+      await readBroker(request.hostToken).cancelCurrentPreviewText(
         request.hostToken,
         request.brokerCapability,
         request.previewRuntimeToken,
@@ -395,7 +403,7 @@ class OnlyPreviewHandler
     params: ApiParams<'getPreviewPresentation'>
   ): ReturnType<OnlyPreviewApi['getPreviewPresentation']> {
     return await runOperation('getPreviewPresentation', async () =>
-      onlyPreviewPreviewRegionService.snapshot(params?.hostToken)
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).snapshot(params?.hostToken)
     );
   }
 
@@ -404,7 +412,7 @@ class OnlyPreviewHandler
   ): ReturnType<OnlyPreviewApi['getVuePreviewPresentation']> {
     return await runOperation('getVuePreviewPresentation', async () => {
       const request = parseOnlyPreviewPreviewRuntimeRequest(params);
-      return onlyPreviewPreviewRegionService.snapshotForVue(
+      return resolveOnlyPreviewPreviewRegion(params?.hostToken).snapshotForVue(
         request.hostToken,
         request.previewRuntimeToken
       );
@@ -416,7 +424,7 @@ class OnlyPreviewHandler
   ): ReturnType<OnlyPreviewApi['reportPreviewReady']> {
     return await runOperation('reportPreviewReady', async () => {
       const request = parseOnlyPreviewPreviewReadyRequest(params);
-      onlyPreviewPreviewRegionService.reportVueReady(
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).reportVueReady(
         request.hostToken,
         request.selectionRevision,
         request.previewRuntimeToken,
@@ -431,7 +439,7 @@ class OnlyPreviewHandler
   ): ReturnType<OnlyPreviewApi['reportPreviewReset']> {
     return await runOperation('reportPreviewReset', async () => {
       const request = parseOnlyPreviewPreviewRevisionRequest(params);
-      onlyPreviewPreviewRegionService.reportVueReset(
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).reportVueReset(
         request.hostToken,
         request.selectionRevision,
         request.previewRuntimeToken
@@ -444,7 +452,7 @@ class OnlyPreviewHandler
   ): ReturnType<OnlyPreviewApi['reportPreviewError']> {
     return await runOperation('reportPreviewError', async () => {
       const request = parseOnlyPreviewPreviewErrorRequest(params);
-      onlyPreviewPreviewRegionService.reportVueError(
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).reportVueError(
         request.hostToken,
         request.selectionRevision,
         request.previewRuntimeToken,
@@ -457,7 +465,7 @@ class OnlyPreviewHandler
     params: ApiParams<'getPreviewFindSnapshot'>
   ): ReturnType<OnlyPreviewApi['getPreviewFindSnapshot']> {
     return await runOperation('getPreviewFindSnapshot', async () =>
-      onlyPreviewPreviewRegionService.findSnapshot(params?.hostToken)
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).findSnapshot(params?.hostToken)
     );
   }
 
@@ -466,7 +474,7 @@ class OnlyPreviewHandler
   ): ReturnType<OnlyPreviewApi['submitPreviewFind']> {
     return await runOperation('submitPreviewFind', async () => {
       const request = parseOnlyPreviewFindIntent(params);
-      onlyPreviewPreviewRegionService.submitFind(request.hostToken, {
+      resolveOnlyPreviewPreviewRegion(request.hostToken).submitFind(request.hostToken, {
         selectionRevision: request.selectionRevision,
         surface: request.surface,
         query: request.query,
@@ -481,8 +489,8 @@ class OnlyPreviewHandler
     params: ApiParams<'closePreviewFind'>
   ): ReturnType<OnlyPreviewApi['closePreviewFind']> {
     return await runOperation('closePreviewFind', async () => {
-      onlyPreviewPreviewRegionService.closeFind(params?.hostToken);
-      onlyPreviewPreviewRegionService.focusActiveContent(params?.hostToken);
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).closeFind(params?.hostToken);
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).focusActiveContent(params?.hostToken);
     });
   }
 
@@ -532,7 +540,7 @@ class OnlyPreviewHandler
   ): ReturnType<OnlyPreviewApi['reportPreviewFindResult']> {
     return await runOperation('reportPreviewFindResult', async () => {
       const request = parseOnlyPreviewFindResultRequest(params);
-      onlyPreviewPreviewRegionService.reportVueFindResult(
+      resolveOnlyPreviewPreviewRegion(params?.hostToken).reportVueFindResult(
         request.hostToken,
         request.previewRuntimeToken,
         request.result
@@ -568,11 +576,11 @@ class OnlyPreviewHandler
     return await runOperation('showPreviewFileMenu', async () => {
       const window = onlyPreviewWindowHelper.getStandaloneWindow(params?.hostToken);
       const revision = parseOnlyPreviewSelectionRevision(params?.selectionRevision);
-      const presentation = onlyPreviewPreviewRegionService.snapshot(params.hostToken);
+      const presentation = resolveOnlyPreviewPreviewRegion(params.hostToken).snapshot(params.hostToken);
       if (!presentation.fileRef || presentation.selectionRevision !== revision) return null;
       const action = await showOnlyPreviewFileMenu(window);
       if (!action || window.isDestroyed()) return null;
-      const current = onlyPreviewPreviewRegionService.snapshot(params.hostToken);
+      const current = resolveOnlyPreviewPreviewRegion(params.hostToken).snapshot(params.hostToken);
       return current.fileRef && current.selectionRevision === revision ? action : null;
     });
   }
@@ -745,6 +753,22 @@ class OnlyPreviewHandler
     });
   }
 
+  async showNotice(
+    params: ApiParams<'showNotice'>
+  ): ReturnType<OnlyPreviewApi['showNotice']> {
+    return await runOperation('showNotice', async () => {
+      onlyPreviewHostRegistry.require(params?.hostToken, ['content']);
+      // 走 `showError` 那条路,只是语气是 `notice` —— 那一层的键盘规则与焦点管理正是提示要的。
+      // 文案不在这里兜底:提示语属于发起它的界面,main 编不出一句有意义的默认提示。
+      await onlyPreviewAlertWindowService.showError(params.hostToken, {
+        title: params.title,
+        message: params.message,
+        confirmLabel: params.confirmLabel,
+        tone: 'notice'
+      });
+    });
+  }
+
   async openSettings(
     params: ApiParams<'openSettings'>
   ): ReturnType<OnlyPreviewApi['openSettings']> {
@@ -802,7 +826,7 @@ onlyPreviewWindowHelper.setCommandHandler(({ hostToken, command }) => {
   if (command === 'refresh') {
     try {
       const host = onlyPreviewHostRegistry.require(hostToken, ['content']);
-      void onlyPreviewPreviewRegionService.refresh(host.hostToken).catch(() => undefined);
+      void resolveOnlyPreviewPreviewRegion(host.hostToken).refresh(host.hostToken).catch(() => undefined);
       xpcMain.broadcast(ONLY_PREVIEW_REFRESH_EVENT, { hostId: host.hostId });
     } catch {
       // A closing view can deliver its final input after the host has been revoked.

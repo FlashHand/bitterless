@@ -64,7 +64,7 @@ class CompactionHandler extends XpcMainHandler implements MaestroCompactionApi {
    *
    * 凭据的取法**照抄 pi 自己的 compaction 路径**(`modelRegistry.getApiKeyAndHeaders(model)`)——
    * pi 内部的 streamFn 也只是拿这一对再交给 `streamSimple`,所以 OAuth(codex / anthropic)与
-   * API-key(ai-crms)两类都走同一个出口。
+   * API-key 两类都走同一个出口。
    *
    * pi 0.85.1:凭据编排归 `ModelRuntime`,`AuthStorage` / `ModelRegistry.create()` 都没了 ——
    * 本仓的 `maestroLlm.service` 早就是 `ModelRuntime` 形态(那也是四条裁决里唯一以 bitterless

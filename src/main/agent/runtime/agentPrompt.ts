@@ -16,8 +16,6 @@ import type {
  * catalog is not behavior-compatible with the current Maestro prompt contract.
  */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-export const AI_CRMS_ASR_MODEL = 'fun-asr-flash-2026-06-15'
-export const MAX_ASR_AUDIO_BYTES = 16 * 1024 * 1024
 export const MAX_AGENT_IMAGE_BYTES = 8 * 1024 * 1024
 export const MAX_AGENT_IMAGES = 8
 export const MAX_AGENT_MEDIA_REFS = 16
@@ -39,52 +37,6 @@ export const safeUrlForDebug = (value: string): string => {
   } catch {
     return value ? '[invalid-url]' : ''
   }
-}
-
-export const bailianMultimodalGenerationUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '')
-  if (/\/multimodal-generation\/generation$/i.test(trimmed)) return trimmed
-  return `${trimmed}/multimodal-generation/generation`
-}
-
-export const normalizeAsrFormat = (format?: string, mime?: string): string => {
-  const raw = String(format || '')
-    .trim()
-    .toLowerCase()
-  if (raw === 'wav' || raw === 'mp3' || raw === 'mpeg' || raw === 'opus') {
-    return raw === 'mpeg' ? 'mp3' : raw
-  }
-  const normalizedMime = String(mime || '')
-    .trim()
-    .toLowerCase()
-  if (normalizedMime.includes('mpeg') || normalizedMime.includes('mp3')) return 'mp3'
-  if (normalizedMime.includes('opus')) return 'opus'
-  return 'wav'
-}
-
-export const readAssistantContent = (content: unknown): string => {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((part) => {
-      if (!part || typeof part !== 'object') return ''
-      const record = part as Record<string, unknown>
-      return typeof record.text === 'string' ? record.text : ''
-    })
-    .filter(Boolean)
-    .join('')
-}
-
-export const readScribeText = (body: unknown): string => {
-  if (!body || typeof body !== 'object') return ''
-  const record = body as Record<string, any>
-  const nativeText =
-    record.output?.text || record.output?.sentence?.text || record.text || record.sentence?.text
-  if (typeof nativeText === 'string') return nativeText.trim()
-  const dashscopeText = readAssistantContent(record.output?.choices?.[0]?.message?.content)
-  if (dashscopeText) return dashscopeText.trim()
-  const choiceText = readAssistantContent(record.choices?.[0]?.message?.content)
-  return choiceText.trim()
 }
 
 export const AGENT_IMAGE_MIME_BY_EXT: Record<string, string> = {

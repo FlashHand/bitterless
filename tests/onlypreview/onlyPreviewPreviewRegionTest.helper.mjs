@@ -306,10 +306,23 @@ const host = {
   roles: ['content']
 };
 
+/**
+ * 第二个 host —— 「一个 host 一个预览区」那条泛化要两个 host 才测得到
+ * (`onlyPreviewPreviewRegion.service.ts` 尾部)。纯追加:`require` 从"只认一个"变成"认这张表",
+ * 认不出来仍然抛同一个错,所以现有用例一条都不受影响。
+ */
+const secondHost = {
+  hostId: 'host-id-2',
+  hostToken: 'host-token-2',
+  kind: 'standalone',
+  roles: ['content']
+};
+
 const hostRegistry = {
   require: (hostToken) => {
-    if (hostToken !== host.hostToken) throw new ContractError('HOST_NOT_FOUND', 'missing host');
-    return host;
+    const found = [host, secondHost].find((candidate) => candidate.hostToken === hostToken);
+    if (!found) throw new ContractError('HOST_NOT_FOUND', 'missing host');
+    return found;
   }
 };
 
@@ -800,7 +813,7 @@ const presentationModule = loadTypeScriptModule(
   {}
 );
 
-const createHarness = () => {
+const createHarness = (forHost = host) => {
   state = createState();
   const children = new Set();
   const additions = [];
@@ -823,7 +836,7 @@ const createHarness = () => {
   const runtime = {
     isHostLive: () => true,
     container,
-    host,
+    host: forHost,
     createVuePreviewView: (previewRuntimeToken, officeBrokerCapability) => {
       const view = new FakeView('vue');
       view.previewRuntimeToken = previewRuntimeToken;
@@ -871,6 +884,8 @@ export {
   fileRef,
   host,
   presentationModule,
+  regionModule,
+  secondHost,
   source,
   state,
   tick,

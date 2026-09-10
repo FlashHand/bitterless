@@ -42,7 +42,7 @@ test.describe('Bitterless embedded Maestro baseline', () => {
     const sqlitePage = await bitterless.waitForRenderer('maestroSqlite')
     const operationPage = await bitterless.waitForOperation()
 
-    await expect(homePage.locator('[title="AI-CRMS"]')).toBeVisible()
+    await expect(homePage.locator('[title="Home"]')).toBeVisible()
     await expect(homePage.locator('.maestro-menu-bar')).toHaveCSS('height', '96px')
     await expectNoHorizontalOverflow(homePage)
     await expect(homePage.getByRole('button', { name: 'New tab' })).toBeVisible()
@@ -140,7 +140,7 @@ test.describe('Bitterless embedded Maestro baseline', () => {
       'sqlite-bootstrap-token'
     )
     expect(existsSync(sqliteBootstrapFile), 'SQLite bootstrap token must be consumed once').toBe(false)
-    await expect(operationPage.locator('#ai-crms-e2e')).toHaveText('AI-CRMS local E2E mock')
+    // 固定首 tab 现在是本地 Home renderer,不再是被 mock 的远端页面(AI-CRMS 2026-09 退役)。
     expect(bitterless.operationCount()).toBe(1)
     const firstMaestroWebContentsIds = await app.evaluate(({ session, webContents }) => {
       const maestroSession = session.fromPartition('persist:bitterless-cowork')
@@ -281,7 +281,6 @@ test.describe('Bitterless embedded Maestro baseline', () => {
     expect(reopenedWindow.id).not.toBe(firstWindow.id)
 
     expect(bitterless.mockRequests).toContain('GET /auth/me')
-    expect(bitterless.mockRequests).toContain('GET /ai-crms')
     expect(bitterless.unexpectedMockRequests).toEqual([])
     const denied = await app.evaluate(async ({ session }) => {
       const probes = [

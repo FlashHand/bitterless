@@ -19,14 +19,6 @@ import type {
   HostToolScope,
   InjectedButtonDomain,
   InjectedButtonRemoveResult,
-  IntegrationMappingEntry,
-  IntegrationMappingSummary,
-  IntegrationTarget,
-  IntegrationTargetCreateResult,
-  IntegrationTargetDeleteResult,
-  IntegrationTargetRunResult,
-  IntegrationTargetScheduleResult,
-  IntegrationTargetSummary,
   IngestRecord,
   LlmConfig,
   LlmEffort,
@@ -137,7 +129,6 @@ const requestIdOf = (row: Row | undefined): string => {
 export const workbenchPanes: WorkbenchPane[] = [
   'recording',
   'skills',
-  'integrations',
   'injections',
   'tools',
   'models',
@@ -238,17 +229,6 @@ class WorkbenchStoreState {
   hostToolCategory = ''
   hostToolQuery = ''
   hostApprovalEvents: HostApprovalEvent[] = []
-  integrationTargets: IntegrationTargetSummary[] = []
-  integrationTargetDetail: IntegrationTarget | null = null
-  integrationMappings: IntegrationMappingEntry[] = []
-  integrationMappingSummary: IntegrationMappingSummary | null = null
-  integrationLoading = false
-  integrationMappingLoading = false
-  integrationCreating = false
-  integrationRunningTargetId = ''
-  integrationSchedulingTargetId = ''
-  integrationDeletingTargetId = ''
-  selectedIntegrationTargetId = ''
   injectedButtons: InjectedButtonDomain[] = []
   injectedButtonLoading = false
   injectedButtonRemovingDomain = ''
@@ -285,7 +265,6 @@ class WorkbenchStoreState {
     { key: 'api', label: 'API' },
     { key: 'capture', label: 'Capture' },
     { key: 'skill', label: 'Skill' },
-    { key: 'integration', label: 'Integration' },
     { key: 'workspace', label: 'Workspace' },
     { key: 'file', label: 'File' },
     { key: 'tab', label: 'Tab' },
@@ -401,10 +380,6 @@ class WorkbenchStoreState {
     return this.hostApprovalEvents.slice(0, 30)
   }
 
-  get selectedIntegrationTarget(): IntegrationTargetSummary | undefined {
-    return this.integrationTargets.find((target) => target.id === this.selectedIntegrationTargetId)
-  }
-
   async init(): Promise<void> {
     if (this.initialized) return
     this.initialized = true
@@ -438,9 +413,6 @@ class WorkbenchStoreState {
     xpcRenderer.subscribe('coach/skills-changed', () => void this.refreshSkills())
     xpcRenderer.subscribe('coach/injected-buttons-changed', () => {
       if (this.activePane === 'injections') void this.refreshInjectedButtons()
-    })
-    xpcRenderer.subscribe('coach/integration-targets-changed', () => {
-      if (this.activePane === 'integrations') void this.refreshIntegrationTargets()
     })
     xpcRenderer.subscribe('coach/llm-config', (payload) => {
       this.llmConfig = payload.params as LlmConfig
@@ -476,7 +448,6 @@ class WorkbenchStoreState {
       await this.refreshHostToolCatalog()
       await this.refreshHostApprovalEvents()
     }
-    if (this.activePane === 'integrations') await this.refreshIntegrationTargets()
     if (this.activePane === 'injections') await this.refreshInjectedButtons()
   }
 
@@ -506,7 +477,6 @@ class WorkbenchStoreState {
     this.activePane = pane
     savePrefs({ activePane: pane })
     if (this.initialized && pane === 'skills') void this.refreshSkills()
-    if (this.initialized && pane === 'integrations') void this.refreshIntegrationTargets()
     if (this.initialized && pane === 'tools') {
       void this.refreshHostToolCatalog()
       void this.refreshHostApprovalEvents()
@@ -632,200 +602,6 @@ class WorkbenchStoreState {
       this.injectedButtons = await coach.listInjectedButtons()
     } finally {
       this.injectedButtonLoading = false
-    }
-  }
-
-  async refreshIntegrationTargets(): Promise<void> {
-    if (this.integrationLoading) return
-    this.integrationLoading = true
-    try {
-      this.integrationTargets = await coach.listIntegrationTargets()
-      if (!this.selectedIntegrationTargetId || !this.integrationTargets.some((item) => item.id === this.selectedIntegrationTargetId)) {
-        this.selectedIntegrationTargetId = this.integrationTargets[0]?.id || ''
-      }
-      await this.loadIntegrationTargetDetail(this.selectedIntegrationTargetId)
-    } finally {
-      this.integrationLoading = false
-    }
-  }
-
-  async selectIntegrationTarget(targetId: string): Promise<void> {
-    this.selectedIntegrationTargetId = targetId
-    await this.loadIntegrationTargetDetail(targetId)
-  }
-
-  async loadIntegrationTargetDetail(targetId: string): Promise<void> {
-    this.integrationTargetDetail = targetId ? await coach.getIntegrationTarget({ targetId }) : null
-    await this.loadIntegrationMappings(targetId)
-  }
-
-  async loadIntegrationMappings(targetId: string): Promise<void> {
-    if (!targetId) {
-      this.integrationMappings = []
-      this.integrationMappingSummary = null
-      return
-    }
-    this.integrationMappingLoading = true
-    try {
-      const result = await coach.listIntegrationMappings({ targetId, limit: 30 })
-      this.integrationMappings = result.mappings || []
-      this.integrationMappingSummary = result.summary || null
-    } finally {
-      this.integrationMappingLoading = false
-    }
-  }
-
-  async createIntegrationTargetFromCapture(): Promise<IntegrationTargetCreateResult> {
-    if (this.integrationCreating) return { ok: false, message: 'Integration target creation already running', error: 'busy' }
-    this.integrationCreating = true
-    try {
-      const result = await coach.createIntegrationTargetFromCapture({})
-      if (result.ok && result.target) {
-        await this.refreshIntegrationTargets()
-        this.selectedIntegrationTargetId = result.target.id
-        this.integrationTargetDetail = result.target
-      }
-      return result
-    } finally {
-      this.integrationCreating = false
-    }
-  }
-
-  async createAiCrmsMigrationTarget(params: { name?: string; source: string; target: string; domains?: string[] }): Promise<IntegrationTargetCreateResult> {
-    if (this.integrationCreating) return { ok: false, message: 'Integration target creation already running', error: 'busy' }
-    this.integrationCreating = true
-    try {
-      const result = await coach.createAiCrmsMigrationTarget(params)
-      if (result.ok && result.target) {
-        await this.refreshIntegrationTargets()
-        this.selectedIntegrationTargetId = result.target.id
-        this.integrationTargetDetail = result.target
-      }
-      return result
-    } finally {
-      this.integrationCreating = false
-    }
-  }
-
-  async runIntegrationTargetDryRun(targetId: string): Promise<IntegrationTargetRunResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationRunningTargetId) return { ok: false, targetId, message: 'Dry-run already running', error: 'busy' }
-    this.integrationRunningTargetId = targetId
-    try {
-      const result = await coach.runIntegrationTargetDryRun({ targetId })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationRunningTargetId = ''
-    }
-  }
-
-  async runIntegrationRecordedSiteDryRun(targetId: string): Promise<IntegrationTargetRunResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationRunningTargetId) return { ok: false, targetId, message: 'Integration run already running', error: 'busy' }
-    this.integrationRunningTargetId = targetId
-    try {
-      const result = await coach.runIntegrationRecordedSiteDryRun({ targetId, maxEndpoints: 5, maxRowsPerEndpoint: 50 })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationRunningTargetId = ''
-    }
-  }
-
-  async runIntegrationRecordedSitePlan(targetId: string): Promise<IntegrationTargetRunResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationRunningTargetId) return { ok: false, targetId, message: 'Integration run already running', error: 'busy' }
-    this.integrationRunningTargetId = targetId
-    try {
-      const result = await coach.runIntegrationRecordedSitePlan({ targetId, maxEndpoints: 5, maxRowsPerEndpoint: 50 })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationRunningTargetId = ''
-    }
-  }
-
-  async runIntegrationRecordedSiteApply(targetId: string, allowUpdates = false): Promise<IntegrationTargetRunResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationRunningTargetId) return { ok: false, targetId, message: 'Integration run already running', error: 'busy' }
-    this.integrationRunningTargetId = targetId
-    try {
-      const result = await coach.runIntegrationRecordedSiteApply({
-        targetId,
-        apply: true,
-        maxEndpoints: 5,
-        maxRowsPerEndpoint: 50,
-        maxWrites: 10,
-        allowUpdates,
-        entities: ['patient', 'corporate', 'project', 'data_mapping', 'mcu_record']
-      })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationRunningTargetId = ''
-    }
-  }
-
-  async runIntegrationMigrationDryRun(targetId: string): Promise<IntegrationTargetRunResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationRunningTargetId) return { ok: false, targetId, message: 'Integration run already running', error: 'busy' }
-    this.integrationRunningTargetId = targetId
-    try {
-      const result = await coach.runIntegrationMigration({ targetId, apply: false })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationRunningTargetId = ''
-    }
-  }
-
-  async runIntegrationReportReadiness(targetId: string): Promise<IntegrationTargetRunResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationRunningTargetId) return { ok: false, targetId, message: 'Integration run already running', error: 'busy' }
-    this.integrationRunningTargetId = targetId
-    try {
-      const result = await coach.runIntegrationReportReadiness({ targetId, pageSize: 20, generate: false })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationRunningTargetId = ''
-    }
-  }
-
-  async setIntegrationTargetSchedule(
-    targetId: string,
-    params: { enabled: boolean; intervalMinutes?: number; runKind?: 'safe-default' | 'migration-dry-run' | 'report-readiness' | 'recorded-site-dry-run' }
-  ): Promise<IntegrationTargetScheduleResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationSchedulingTargetId) return { ok: false, targetId, message: 'Another schedule update is running', error: 'busy' }
-    this.integrationSchedulingTargetId = targetId
-    try {
-      const result = await coach.setIntegrationTargetSchedule({ targetId, ...params })
-      await this.refreshIntegrationTargets()
-      if (this.selectedIntegrationTargetId === targetId) await this.loadIntegrationTargetDetail(targetId)
-      return result
-    } finally {
-      this.integrationSchedulingTargetId = ''
-    }
-  }
-
-  async deleteIntegrationTarget(targetId: string): Promise<IntegrationTargetDeleteResult> {
-    if (!targetId) return { ok: false, targetId: '', message: 'No integration target selected', error: 'missing-target-id' }
-    if (this.integrationDeletingTargetId) return { ok: false, targetId, message: 'Another integration target deletion is running', error: 'busy' }
-    this.integrationDeletingTargetId = targetId
-    try {
-      const result = await coach.deleteIntegrationTarget({ targetId })
-      await this.refreshIntegrationTargets()
-      return result
-    } finally {
-      this.integrationDeletingTargetId = ''
     }
   }
 
@@ -1265,7 +1041,7 @@ class WorkbenchStoreState {
   }
 
   // Expand a display row back into the flat request/response record stream the main-side
-  // exporter / skill generator / integration service pair by requestId. A merged network
+  // exporter / skill generator pair by requestId. A merged network
   // row yields its request AND response records; the exchange's spec/flag ride on both.
   private rowToRecords(row: Row): IngestRecord[] {
     const strip = (event: TraceEvent): TraceEvent =>

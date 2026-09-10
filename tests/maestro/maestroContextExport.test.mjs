@@ -65,13 +65,6 @@ const { PiRuntimeSession } = load(join(sdk, 'runtime/piRuntimeAdapter.ts'), {
   './toolResultFailure': { toolResultLooksFailed: () => false },
   '../steering/steeringPolicy': { decideStreamingBehavior: () => { throw new Error('Must not prompt'); } }
 });
-const { AiCrmsRuntimeSession } = load('src/main/agent/runtime/aiCrmsRuntimeAdapter.ts', {
-  'electron-xpc/main': { createXpcMainEmitter: () => ({}) },
-  '@maestro-shared/networking/coachRegion': {},
-  '@maestro-main/networking/clients/relay.client': {},
-  '@main/agent/runtime/errorSanitizer': { sanitizeRuntimeError: value => value },
-  './mediaRefResolver': {}
-}, '\nexport { AiCrmsRuntimeSession };');
 
 const method = (path, name, bindings = {}) => {
   const source = read(path);
@@ -142,11 +135,12 @@ test('pi context surface reads the live entry tree — tool calls and tool resul
 });
 
 // ③ 反面:拿不到面就是空历史,不拿渲染端消息冒充
-test('AI-CRMS exposes no context surface — export reports empty history instead of faking it', () => {
-  const session = new AiCrmsRuntimeSession({});
-  session.messages.push({ role: 'tool', tool_call_id: '1', content: 'tool result' });
+// (原来拿 AI-CRMS 那条运行时当实例,它 2026-09 退役了;立论不依赖具体 provider。)
+test('a runtime with no context surface exports empty history instead of faking it', () => {
+  const session = { messages: [{ role: 'tool', tool_call_id: '1', content: 'tool result' }] };
   assert.equal(session.context, undefined);
   assert.deepEqual(real.entriesOfSurface(session.context ?? null), []);
+  assert.deepEqual(real.entriesOfSurface(undefined), []);
 });
 
 // ① 导出不建会话、不预热 preamble

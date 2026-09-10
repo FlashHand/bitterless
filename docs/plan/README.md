@@ -14,6 +14,10 @@ no-copy progress rail—remains part of the current feature contract.
 
 ## Active delivery
 
+- [macOS tray documentation master 171](tasks/tray-mac-document-master-runtime-171.md) — implemented; owner testing pending;
+  use the 208px documentation artwork directly in development and packaged runtimes, retiring the
+  former 80px runtime derivative.
+
 - [INDEX incremental import 030](tasks/trench-index-incremental-030.md) - implemented; owner testing pending.
 
 - [Trench host toggle 029](tasks/trench-host-toggle-029.md) - implemented; owner testing pending; ordinary singleton

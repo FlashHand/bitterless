@@ -451,8 +451,8 @@ export class DebuggerCapture {
    * so the page goes back to undetectable. Page stays enabled — it's not a tell, and the stealth
    * override script lives on it. `keepRuntime` is reserved for a trusted first-party debugger
    * client that independently owns Runtime; ordinary recording call sites never couple it to a
-   * tab kind. The dedicated AI-CRMS login tab cannot record and authBridge owns its Runtime
-   * lifecycle directly.
+   * tab kind. (The AI-CRMS login tab was that client until the provider was retired in 2026-09;
+   * the flag stays because the coupling it prevents is a property of this class, not of that tab.)
    */
   async stopRecording(opts: { keepRuntime?: boolean } = {}): Promise<void> {
     if (!this.attached || !this.recording || this.wc.isDestroyed()) return

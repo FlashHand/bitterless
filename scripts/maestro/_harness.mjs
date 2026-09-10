@@ -3,7 +3,6 @@ import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-export const cliRoot = join(projectRoot, 'packages', 'micromeet-cli')
 
 const maestroRoots = new Map([
   ['main', join(projectRoot, 'src', 'main', 'maestro')],

@@ -6,6 +6,42 @@
 .message-item--human { justify-content: flex-end; }
 .message-item--assistant { justify-content: flex-start; }
 
+/*
+ * 从 `/view_context_graph` 弹窗跳过来时,这一行闪 1.6s。
+ *
+ * **刻意不用背景闪** —— home 老聊天里有先例
+ * (`renderer/home/src/views/chat/components/MessageItem/MessageItem.less` 的
+ * `message-highlight-pulse`,背景 `--bl-royalblue-200`),但那边的气泡底色是中性的。
+ * maestro 这边的气泡底色**带语义**:`--connector` 是 #ecfdf5、`--error` 是 #fef2f2,
+ * 背景闪会盖掉「这条是连接器/这条出错了」,一个用来定位的提示不该抹掉行本身的含义。
+ *
+ * 外发光是 `box-shadow`,**不是 border** —— 不占布局、不画分层线,留在无边框规则里面;
+ * 而且外阴影按规范会被 border-box 裁掉,所以光环只在行的外沿铺开,永远压不到正文上。
+ * 时长 1.6s 与 `message.store.ts` 的 `MESSAGE_JUMP_HIGHLIGHT_MS` 是同一个数,必须一起改。
+ */
+.message-item--jumped {
+  border-radius: 10px;
+  animation: message-item-jump-glow 1.6s ease-out forwards;
+}
+
+@keyframes message-item-jump-glow {
+  0% { box-shadow: 0 0 0 0 rgba(var(--primary-6), 0); }
+  18% { box-shadow: 0 0 14px 4px rgba(var(--primary-6), 0.45); }
+  100% { box-shadow: 0 0 14px 4px rgba(var(--primary-6), 0); }
+}
+
+/*
+ * 减少动效时**不是简单 `animation: none`**(本渲染器另两处先例那样做,因为它们的动画是装饰)。
+ * 这里的闪光**就是「跳到了」这件事的唯一反馈**,关掉等于跳完什么都没发生。
+ * 所以换成静态光环 —— 它照样在 1.6s 后消失,因为 class 由 store 的定时器摘掉。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .message-item--jumped {
+    animation: none;
+    box-shadow: 0 0 14px 4px rgba(var(--primary-6), 0.35);
+  }
+}
+
 .message-item__content {
   display: flex;
   max-width: 88%;

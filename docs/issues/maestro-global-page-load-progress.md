@@ -36,8 +36,9 @@ browser chrome
   records a warning; it does not stop or reload the page.
 - Remove the simulated progress DOM, CSS, renderer state/timers, shared `LoadProgress` type, and
   `coach/load-progress` broadcast end to end.
-- Preserve the fixed Home tab, AI-CRMS login tab, Bitterless branding, tab persistence, favicon
-  fallback, navigation, capture, Workbench, and current 36px/48px chrome geometry.
+- Preserve the fixed Home tab, Bitterless branding, tab persistence, favicon fallback, navigation,
+  capture, Workbench, and current 36px/48px chrome geometry. (The AI-CRMS login tab this also named
+  was retired with the provider in 2026-09.)
 
 ## State contract
 

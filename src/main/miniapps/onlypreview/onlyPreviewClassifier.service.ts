@@ -422,6 +422,33 @@ const adapterForClassification = (
   return 'unsupported';
 };
 
+/**
+ * 一个普通 tab 的 WebContents **自己**就能把这个本机文件渲染好吗 —— 也就是「直接
+ * `loadURL('file://…')` 就完事」的判据(Ral 2026-09-09:「new tab 打开一个页面去单独预览」)。
+ *
+ * **这不是 `surface === 'chrome'`。** 那张表回答的是「在 OnlyPreview 里由哪一半渲染」,而
+ * `image` / `audio` / `video` 在那里是 `vue`(因为要接进预览面的状态机与 Find),可放到一个普通
+ * tab 里 Chromium 的内置图片/媒体查看器完全够用。反过来 `.md` 在那里是 `markdown-dom`,
+ * 在普通 tab 里只会变成一坨没渲染的纯文本 —— 比不打开更糟,所以它不在这张表里。
+ *
+ * 所以这是**第二个判据**,和 adapter 表并列而不是从它推导:
+ *
+ * | kind | 普通 tab | 为什么 |
+ * | --- | --- | --- |
+ * | `pdf` | ✓ | Chromium 内置 PDF viewer |
+ * | `image` · `audio` · `video` | ✓ | Chromium 内置查看器 |
+ * | `text` 且扩展名是 `.html` / `.htm` | ✓ | 它本来就是一个网页 |
+ * | `text` 其余(`.md` `.ts` `.json` …) | ✗ | 会退化成无高亮纯文本 / 未渲染的 markdown |
+ * | `sheet` · `document` · `presentation` · `diagram` | ✗ | 普通 WebContents 只会把它下载下来 |
+ */
+export const rendersInPlainWebContents = (relativePath: string): boolean => {
+  const kind = classifyOnlyPreviewExtension(relativePath);
+  if (kind === 'pdf' || kind === 'image' || kind === 'audio' || kind === 'video') return true;
+  if (kind !== 'text') return false;
+  const extension = extensionOf(relativePath);
+  return extension === '.html' || extension === '.htm';
+};
+
 export const getOnlyPreviewTextAdapter = (
   relativePath: string
 ): Extract<OnlyPreviewPreviewAdapterId, 'monaco' | 'markdown-dom'> | null => {

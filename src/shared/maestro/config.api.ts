@@ -56,15 +56,9 @@ export const HOST_TOOL_CONFIG_DOMAIN = 'host-tools'
 export const HOST_TOOL_POLICY_KEY = 'policy'
 export const HOST_APPROVAL_HISTORY_KEY = 'approval-history'
 
-// Durable integration targets compiled from captured website APIs or AI-CRMS migration
-// contracts. Each target is one JSON row keyed by `target:<id>`.
-export const INTEGRATION_TARGET_CONFIG_DOMAIN = 'integration-targets'
-export const INTEGRATION_TARGET_KEY_PREFIX = 'target:'
-
-// Source-to-AI-CRMS id map for integration sync. Kept separate from the target row because it
-// grows with patient/project/corporate data and must be queryable by target/entity/source key.
-export const INTEGRATION_MAPPING_CONFIG_DOMAIN = 'integration-mappings'
-export const INTEGRATION_MAPPING_KEY_PREFIX = 'map:'
+// `integration-targets` / `integration-mappings` 两个 domain 随 Integration 子系统于 2026-09
+// 退役。它们的存量孤儿行由一次性清理删除(见 docs/features/maestro-crms-retirement.md #6.7),
+// domain 名只在那段清理代码里还写着一次,不再是本契约的一部分。
 
 // apidoc 摄取自己的 config 域(drill-001)。与 cowork 同名同值 —— 两边的库虽然各自独立,
 // 但域名对齐能让同一份文档/排查经验在两侧都成立。

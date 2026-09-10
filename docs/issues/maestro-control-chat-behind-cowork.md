@@ -26,8 +26,8 @@ services, and the document-conversion runtime.
 - Add archive and isolated document-reading support without weakening workspace or packaging bounds.
 - Preserve Maestro replay, i18n, Local/Claude provider configuration, Royal Blue Arco/BEM styling,
   fixed local Home, and existing compatibility identifiers.
-- Do not reintroduce Connector, Demo, AI-CRMS fixed-tab/login/profile UI, Cowork's standalone shell,
-  or Tailwind styles.
+- Do not reintroduce Connector, Demo, any provider fixed-tab/login/profile UI (AI-CRMS had one
+  until its 2026-09 retirement), Cowork's standalone shell, or Tailwind styles.
 - Preserve Maestro's currently deferred context-compaction implementation; Cowork's five-segment
   replacement remains outside this migration until its own acceptance contract is complete.
 

@@ -50,9 +50,22 @@ export interface OnlyPreviewAlertConfirmDialog {
   destructive: boolean;
 }
 
+/**
+ * 一条消息 ＋ 一个关闭 —— 不只用于报错。
+ *
+ * `tone` 是 2026-09-09 加的:同一个对话框既要报错,也要做纯提示(书签空态那个问号)。
+ * 之所以**不新开一层**:这一层的键盘规则(「回车 esc 点确定都能关闭」)、store 槽位、焦点管理
+ * 和渲染路径,提示要的和报错要的**逐条相同** —— 唯一的差别是语气。多开一层等于把这些
+ * 全复制一遍,然后有两处可以各自改错。
+ *
+ * 类型名仍叫 `...ErrorDialog` 是**已知的命名债**:重命名要动整条管线(契约、main、store、
+ * 组件、解析器),而那不改变任何行为。
+ */
 export interface OnlyPreviewAlertErrorDialog {
   kind: 'error';
   dialogId: string;
+  /** `notice` = 纯提示,不是错误。渲染层据此换语气,键盘与关闭行为不变。 */
+  tone: 'error' | 'notice';
   title: string;
   message: string;
   confirmLabel: string;
@@ -138,6 +151,8 @@ export interface OnlyPreviewAlertErrorRequest {
   title: string;
   message: string;
   confirmLabel: string;
+  /** 缺省 `error` —— 现有的 main 侧调用方一个都不用改。 */
+  tone?: 'error' | 'notice';
 }
 
 export interface OnlyPreviewAlertApi {

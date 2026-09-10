@@ -403,7 +403,6 @@ export const zh: typeof en = {
     panes: {
       recording: '录制',
       skills: '技能',
-      integrations: '集成',
       injections: '注入按钮',
       tools: '工具',
       models: '模型',
@@ -429,6 +428,7 @@ export const zh: typeof en = {
       newChat: '新建会话',
       slashClear: '新建会话，保留当前会话历史',
       slashViewContext: '复制模型上下文和待发送内容',
+      slashViewContextGraph: '展示下次 send 会给模型的上下文结构',
       slashCopied: '已复制 {chars} 字符 · {entries} 条模型历史记录',
       newChatUnavailable: '当前轮次正在运行或会话未激活，暂时无法新建会话。',
       chooseWorkspace: '选择工作区',
@@ -507,6 +507,25 @@ export const zh: typeof en = {
         running: '运行中',
         completed: '已完成'
       }
+    },
+    // 与 en 表逐键对齐(`export const zh: typeof en` 是本仓唯一的 parity 守卫,少一个键就是 typecheck 红)。
+    contextGraph: {
+      title: '上下文结构',
+      systemPrompt: '系统提示词',
+      turn: '第 {n} 轮',
+      turns: '{n} 轮',
+      blocks: '{n} 块',
+      chars: '{n} 字符',
+      absorbed: '已并入摘要 · {blocks} 块 · {chars} 字符',
+      absorbedNote: '模型已经看不到它们',
+      notShown: '界面上没有它',
+      notLocated: '定位不到这条消息',
+      jump: '跳到这条消息',
+      pending: '待发送 · 这一次',
+      workspace: '工作区',
+      noHistory: '模型侧还没有历史 —— 这个会话一轮都没发过。',
+      readFailed: '读不到上下文',
+      close: '关闭'
     }
   },
   translator: {

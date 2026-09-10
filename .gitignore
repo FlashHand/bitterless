@@ -30,7 +30,6 @@ asar_unpacked
 .upload_checkpoint
 build/installer.nsh
 build/maestro-tools/
-packages/micromeet-cli/release/
 prebuilt/
 
 # Playwright CLI session dumps (page snapshots / screenshots / console logs)

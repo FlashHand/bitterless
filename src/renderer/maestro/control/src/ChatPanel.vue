@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { IconArrowRight, IconFolderOpen, IconFolderSearch, IconListDetails, IconLoader2, IconMicrophone, IconPaperclip, IconPlayerPause, IconPlayerStop, IconPlus, IconSend2, IconX } from '@tabler/icons-vue'
+import { IconArrowRight, IconFolderOpen, IconFolderSearch, IconListDetails, IconPaperclip, IconPlayerStop, IconPlus, IconSend2, IconX } from '@tabler/icons-vue'
 import AttachmentCard from './AttachmentCard.vue'
 import { Button, Drawer, Message, Modal, Tooltip } from '@arco-design/web-vue'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
+import { CONTEXT_GRAPH_MATCH_HEAD_CHARS } from '@maestro-shared/coach.api'
 import type { AgentReply } from '@maestro-shared/coach.api'
 import type { CoachXpcContract } from '@maestro-shared/coach.api'
+import type { ContextGraphView } from '@maestro-shared/coach.api'
+import ContextGraphModal from './ContextGraphModal.vue'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
 import IconBtn from '../../../common/components/IconBtn/IconBtn.vue'
 import MessageList from './MessageList.vue'
@@ -20,8 +23,6 @@ import './ChatPanel.less'
 const coach = createXpcRendererEmitter<CoachXpcContract>('CoachXpcHandler')
 const props = defineProps<{ session: MessageSession; sendDisabled?: boolean }>()
 const emit = defineEmits<{ sent: [reply: AgentReply] }>()
-const VOICE_SCRIBE_SAMPLE_RATE = 16_000
-const VOICE_SCRIBE_MAX_MS = 5 * 60 * 1000
 
 const input = ref('')
 // Composer attachments: picked/dropped files, kept as {name, absolute path}. On send the
@@ -30,13 +31,18 @@ const selectedFiles = ref<ChatAttachment[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerRef = ref<HTMLTextAreaElement | null>(null)
 const composerCaret = ref(0)
+// 数组顺序只是阅读顺序(按加入时间):面板显示时 `ShortcutStore.matches` 按命令名 ASCII 重排,
+// 所以新命令追加在末尾就行,不必为了菜单里的位置去插队。
 const shortcutStore = reactive(new ShortcutStore([
   { name: '/clear', get hint() { return i18nHelper.maestroControl.chat.slashClear } },
   { name: '/view_context', get hint() { return i18nHelper.maestroControl.chat.slashViewContext } },
-  { name: '/copy_session_path', get hint() { return i18nHelper.maestroControl.chat.slashCopySessionPath } }
+  { name: '/copy_session_path', get hint() { return i18nHelper.maestroControl.chat.slashCopySessionPath } },
+  { name: '/view_context_graph', get hint() { return i18nHelper.maestroControl.chat.slashViewContextGraph } }
 ]))
 const slashToken = computed(() => slashTokenAt(input.value, composerCaret.value))
 const slashVisible = computed(() => shortcutStore.open && shortcutStore.matches.length > 0)
+// `/view_context_graph` 读回来的结构图。非空 = 弹窗开着;关闭就是置 null,没有第二个可见性开关。
+const contextGraph = ref<ContextGraphView | null>(null)
 let draftRevision = 0
 let composerDisposed = false
 let newChatPending = false
@@ -52,33 +58,11 @@ const shortcut = (key: string): string => `${navigator.platform.toLowerCase().in
 
 // i18n 文案里的 `{count}` 占位替换。不用 `$t()` / `useI18n()` —— 本项目一律走 i18nHelper。
 const withCount = (copy: string, count: number): string => copy.replace('{count}', String(count))
-const voiceRecording = ref(false)
-const voiceBusy = ref(false)
-
-interface VoiceRecorder {
-  context: AudioContext
-  source: MediaStreamAudioSourceNode
-  processor: ScriptProcessorNode
-  stream: MediaStream
-  chunks: Float32Array[]
-  sampleRate: number
-}
-
-const voiceRecorder = ref<VoiceRecorder | null>(null)
-const voiceRecordingStartedAt = ref(0)
-const voiceRecordingElapsedMs = ref(0)
-let voiceRecordingTimer: ReturnType<typeof setInterval> | undefined
 const turnLocked = computed(() => Boolean(messageStore.turnService.activeTurn()))
 
 const workspace = computed(() => props.session.detail.workspace)
 const workspaceLabel = computed(() => workspace.value?.name || 'Workspace')
 const workspaceTitle = computed(() => workspace.value?.path || 'Set workspace')
-const voiceRecordingLabel = computed(() => {
-  const totalSeconds = Math.floor(voiceRecordingElapsedMs.value / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-})
 
 const formatSessionTime = (ts: number): string => {
   if (!ts) return ''
@@ -98,186 +82,6 @@ function resetComposerHeight(): void {
   if (!el) return
   el.style.height = '44px'
 }
-
-function startVoiceTimer(): void {
-  if (voiceRecordingTimer) clearInterval(voiceRecordingTimer)
-  voiceRecordingStartedAt.value = Date.now()
-  voiceRecordingElapsedMs.value = 0
-  voiceRecordingTimer = setInterval(() => {
-    const elapsedMs = Date.now() - voiceRecordingStartedAt.value
-    voiceRecordingElapsedMs.value = Math.min(elapsedMs, VOICE_SCRIBE_MAX_MS)
-    if (elapsedMs >= VOICE_SCRIBE_MAX_MS) void stopVoiceScribe(true)
-  }, 250)
-}
-
-function stopVoiceTimer(): void {
-  if (!voiceRecordingTimer) return
-  clearInterval(voiceRecordingTimer)
-  voiceRecordingTimer = undefined
-}
-
-function cleanupVoiceRecorder(): void {
-  const recorder = voiceRecorder.value
-  voiceRecording.value = false
-  voiceRecorder.value = null
-  stopVoiceTimer()
-  if (!recorder) return
-  recorder.processor.disconnect()
-  recorder.source.disconnect()
-  recorder.stream.getTracks().forEach((track) => track.stop())
-  void recorder.context.close().catch(() => undefined)
-}
-
-function writeAscii(view: DataView, offset: number, value: string): void {
-  for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i))
-}
-
-function concatPcmChunks(chunks: Float32Array[]): Float32Array {
-  const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-  const samples = new Float32Array(length)
-  let offset = 0
-  for (const chunk of chunks) {
-    samples.set(chunk, offset)
-    offset += chunk.length
-  }
-  return samples
-}
-
-function resamplePcm(samples: Float32Array, sourceSampleRate: number, targetSampleRate: number): Float32Array {
-  if (!samples.length || sourceSampleRate === targetSampleRate) return samples
-  const ratio = sourceSampleRate / targetSampleRate
-  const length = Math.max(1, Math.floor(samples.length / ratio))
-  const out = new Float32Array(length)
-  for (let i = 0; i < length; i += 1) {
-    const sourceIndex = i * ratio
-    const left = Math.floor(sourceIndex)
-    const right = Math.min(samples.length - 1, left + 1)
-    const mix = sourceIndex - left
-    out[i] = samples[left] * (1 - mix) + samples[right] * mix
-  }
-  return out
-}
-
-function encodeWav(chunks: Float32Array[], sourceSampleRate: number): { buffer: ArrayBuffer; sampleRate: number } {
-  const roundedSourceSampleRate = Math.max(1, Math.round(sourceSampleRate))
-  const outputSampleRate = roundedSourceSampleRate > VOICE_SCRIBE_SAMPLE_RATE ? VOICE_SCRIBE_SAMPLE_RATE : roundedSourceSampleRate
-  const samples = resamplePcm(concatPcmChunks(chunks), roundedSourceSampleRate, outputSampleRate)
-  const buffer = new ArrayBuffer(44 + samples.length * 2)
-  const view = new DataView(buffer)
-  writeAscii(view, 0, 'RIFF')
-  view.setUint32(4, 36 + samples.length * 2, true)
-  writeAscii(view, 8, 'WAVE')
-  writeAscii(view, 12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
-  view.setUint32(24, outputSampleRate, true)
-  view.setUint32(28, outputSampleRate * 2, true)
-  view.setUint16(32, 2, true)
-  view.setUint16(34, 16, true)
-  writeAscii(view, 36, 'data')
-  view.setUint32(40, samples.length * 2, true)
-  let offset = 44
-  for (const sample of samples) {
-    const clipped = Math.max(-1, Math.min(1, sample))
-    view.setInt16(offset, clipped < 0 ? clipped * 0x8000 : clipped * 0x7fff, true)
-    offset += 2
-  }
-  return { buffer, sampleRate: outputSampleRate }
-}
-
-async function appendTranscript(text: string): Promise<void> {
-  const transcript = text.trim()
-  if (!transcript) return
-  input.value = input.value.trim() ? `${input.value.trimEnd()}\n${transcript}` : transcript
-  await nextTick()
-  resizeComposer()
-  composerRef.value?.focus()
-}
-
-function promptAiCrmsLogin(): void {
-  Modal.confirm({
-    title: 'AI-CRMS login required',
-    content: 'Voice scribe uses Bailian ASR through AI-CRMS. Log in first, then record again.',
-    okText: 'Login',
-    cancelText: 'Cancel',
-    onOk: () => coach.loginLlm({ provider: 'ai-crms', method: 'browser' }).then(() => undefined)
-  })
-}
-
-async function ensureAiCrmsScribeReady(): Promise<boolean> {
-  const cfg = await coach.getLlmConfig().catch(() => null)
-  if (!cfg) {
-    Message.error('Could not check AI-CRMS login state.')
-    return false
-  }
-  if (cfg.providers.some((provider) => provider.provider === 'ai-crms' && provider.ready)) return true
-  promptAiCrmsLogin()
-  return false
-}
-
-async function startVoiceScribe(): Promise<void> {
-  if (voiceRecording.value || voiceBusy.value || props.session.archivedAt) return
-  if (!(await ensureAiCrmsScribeReady())) return
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const context = new AudioContext()
-    const source = context.createMediaStreamSource(stream)
-    const processor = context.createScriptProcessor(4096, 1, 1)
-    const chunks: Float32Array[] = []
-    processor.onaudioprocess = (event) => {
-      chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)))
-    }
-    source.connect(processor)
-    processor.connect(context.destination)
-    voiceRecorder.value = { context, source, processor, stream, chunks, sampleRate: context.sampleRate }
-    startVoiceTimer()
-    voiceRecording.value = true
-  } catch (err) {
-    Message.error('Microphone unavailable: ' + (err as Error).message)
-  }
-}
-
-async function stopVoiceScribe(autoStopped = false): Promise<void> {
-  const recorder = voiceRecorder.value
-  if (!recorder) return
-  voiceRecording.value = false
-  voiceRecorder.value = null
-  stopVoiceTimer()
-  recorder.processor.disconnect()
-  recorder.source.disconnect()
-  recorder.stream.getTracks().forEach((track) => track.stop())
-  await recorder.context.close().catch(() => undefined)
-  if (!recorder.chunks.length) {
-    Message.warning('No audio recorded.')
-    return
-  }
-  voiceBusy.value = true
-  try {
-    if (autoStopped) Message.info('Voice recording reached 5 minutes; processing now.')
-    const wav = encodeWav(recorder.chunks, recorder.sampleRate)
-    const path = window.audioBridge.writeTempAudio({ bytes: wav.buffer, extension: 'wav' })
-    const result = await coach.scribeAudio({ path, mime: 'audio/wav', format: 'wav', sampleRate: wav.sampleRate })
-    if (result.ok) {
-      await appendTranscript(result.text)
-      Message.success('Voice scribe inserted')
-      return
-    }
-    if (result.code === 'ai-crms-login-required') promptAiCrmsLogin()
-    else Message.error(result.error || 'Voice scribe failed')
-  } catch (err) {
-    Message.error('Voice scribe failed: ' + (err as Error).message)
-  } finally {
-    voiceBusy.value = false
-  }
-}
-
-async function toggleVoiceScribe(): Promise<void> {
-  if (voiceRecording.value) await stopVoiceScribe()
-  else await startVoiceScribe()
-}
-
-onBeforeUnmount(() => cleanupVoiceRecorder())
 
 async function send(): Promise<void> {
   if (shortcutStore.pending) return
@@ -568,6 +372,29 @@ async function commitShortcut(): Promise<void> {
       if (!composerDisposed && props.session.id === sessionId) {
         Message.success(i18nHelper.maestroControl.chat.slashCopied.replace('{chars}', String(summary.chars)).replace('{entries}', String(summary.entries)))
       }
+    },
+    // 结构由 main 算(渲染端的上下文投影是**预算账**,没有工具调用与工具返回的正文,而那是
+    // 窗口里最大的一块)。这里只负责两件 main 拿不到的事:摘要 + 弹窗。
+    openContextGraph: async () => {
+      // 摘要只放**模型真的会看到**的那些消息。`promptExcluded` 是给人看的留痕(路径回显、被
+      // 中断的那半句),`compact` / `task` / `confirm` 在模型侧没有对应条目,空正文认领不了任何东西。
+      // 多给一条的代价不是"多一条不匹配":main 侧的认领游标**只前进**,一次错位会把它后面
+      // 每一块都认领不到。
+      //
+      // 头部一律取**原始 `content`**,不是渲染用的那份:认领是拿这段头部去 `includes` 模型侧
+      // 条目的正文(整块拼装后的 turn prompt),i18n 改写过 / 加过前缀的字符串一个字都对不上,
+      // 而失败是静默的 —— 表现只是"这块点不动",不会报错。
+      // 截取长度是两侧共享的 `CONTEXT_GRAPH_MATCH_HEAD_CHARS`:各写一个数,长消息会静默停止可点。
+      const messages = props.session.messages
+        .filter((message) => !message.promptExcluded && (!message.type || message.type === 'text' || message.type === 'files') && Boolean(message.content.trim()))
+        .map((message) => ({ id: message.id, role: message.role, head: message.content.slice(0, CONTEXT_GRAPH_MATCH_HEAD_CHARS) }))
+      const context = messageStore.buildAgentContext(props.session, undefined, selectedFiles.value.map((file) => file.path))
+      const reply = await coach.readContextGraph({ sessionId, draft, context, messages })
+      if (!reply.ok) throw new Error(`${i18nHelper.maestroControl.contextGraph.readFailed}: ${reply.error}`)
+      // 一次跨进程往返之间会话可能已经换掉(抽屉里点了另一条)—— 那份图属于上一个会话,
+      // 挂上去就是拿旧结构骗人,而弹窗里每一块都还带着"跳到这条消息"。
+      if (composerDisposed || props.session.id !== sessionId) return
+      contextGraph.value = reply.graph
     }
   })
   if (composerDisposed || props.session.id !== sessionId) return
@@ -804,7 +631,6 @@ function setHistoryContainer(el: HTMLElement | null): void {
           :placeholder="session.archivedAt ? i18nHelper.maestroControl.chat.archivedConversation : session.placeholder"
           rows="1"
           class="chat-panel__textarea"
-          :class="{ 'chat-panel__textarea--recording': voiceRecording }"
           aria-autocomplete="list"
           :aria-expanded="slashVisible"
           :aria-controls="slashVisible ? 'maestro-slash-menu' : undefined"
@@ -815,20 +641,6 @@ function setHistoryContainer(el: HTMLElement | null): void {
           @keydown="onComposerKeydown"
           @paste="onComposerPaste"
         ></textarea>
-        <div
-          v-if="voiceRecording"
-          name="maestro__composer__voice_recording"
-          class="chat-panel__voice-recording"
-        >
-          <span class="chat-panel__voice-wave" aria-hidden="true">
-            <span class="chat-panel__voice-wave-bar"></span>
-            <span class="chat-panel__voice-wave-bar"></span>
-            <span class="chat-panel__voice-wave-bar"></span>
-            <span class="chat-panel__voice-wave-bar"></span>
-            <span class="chat-panel__voice-wave-bar"></span>
-          </span>
-          <span class="chat-panel__voice-time">{{ voiceRecordingLabel }}</span>
-        </div>
       </div>
       <div class="chat-panel__composer-footer">
         <div v-if="session.allowFiles" name="maestro__composer__context" class="chat-panel__composer-tools">
@@ -909,21 +721,6 @@ function setHistoryContainer(el: HTMLElement | null): void {
         </div>
         <div class="chat-panel__composer-actions">
           <div class="chat-panel__model-controls"><slot name="before-actions"></slot></div>
-          <IconBtn
-            class="chat-panel__voice-button"
-            :class="{
-              'chat-panel__voice-button--recording': voiceRecording,
-              'chat-panel__voice-button--busy': voiceBusy
-            }"
-            :disabled="Boolean(session.archivedAt) || (!voiceRecording && voiceBusy)"
-            :title="voiceRecording ? 'Stop voice scribe' : voiceBusy ? 'Uploading voice' : 'Voice scribe'"
-            :aria-label="voiceRecording ? 'Stop voice scribe' : 'Voice scribe'"
-            @click="toggleVoiceScribe"
-          >
-            <IconLoader2 v-if="voiceBusy" class="chat-panel__voice-spinner" :size="18" stroke="1.8" />
-            <IconPlayerPause v-else-if="voiceRecording" class="chat-panel__button-icon" :size="18" stroke="1.8" />
-            <IconMicrophone v-else class="chat-panel__button-icon" :size="18" stroke="1.8" />
-          </IconBtn>
           <!-- Stop 与 Send 同形同位、互斥显示 —— 以 cowork 的 `chat-panel__composer-stop` 为准
                (Ral 2026-09-09:两边风格不一致,以 cowork 为准)。要点是**纯图标 + 软色底 + 无边框**:
                原先那版是 Arco `type="outline" status="danger"` 的带框胶囊还带 "Stop" 字样,
@@ -956,5 +753,16 @@ function setHistoryContainer(el: HTMLElement | null): void {
       </div>
       <input ref="fileInput" type="file" accept=".pdf,.doc,.docx,.docm,.ppt,.pps,.pot,.pptx,.pptm,.ppsx,.ppsm,.xls,.xlsx,.xlsm,.xlsb,.odt,.ods,.odp,.rtf,.epub,.csv,.tsv,.md,.markdown,.txt,.json,.html,.htm,.xml,.yaml,.yml,.log,.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.bz2,.bz3,.zst,.lz4,.lzma,.lz,.sz,.br,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" multiple class="chat-panel__file-input" @change="onFilesPicked" />
     </div>
+    <!-- 弹窗挂在**面板根之内**,而且是最后一个子节点 —— 不是 body 级、也不是 Arco 的
+         `a-modal`(它会把内容传送到 body)。两个理由:
+         ① 遮罩只该盖住这一个面板(control 里它是 380–480px 的侧栏),盖住整窗就把旁边的
+            Workbench 一起锁了,而这条命令读的只是这个会话;
+         ② 点一块要滚过去的那条消息**就在这层遮罩底下** —— 落点和遮罩必须同一个定位上下文,
+            body 级遮罩会把落点一起盖掉。
+         既有先例是同在这个根里的 `.chat-panel__drop-overlay`(`position:absolute; inset:0`),
+         所以弹窗的 z-index 必须大于它的 20。
+         面板本身按会话 id 重挂(`ControlApp.vue` 的 `<ChatPanel :key="activeSession.id">`),
+         换会话时这份图随组件一起消失,不需要额外的跨会话清理。 -->
+    <ContextGraphModal v-if="contextGraph" :graph="contextGraph" @close="contextGraph = null" />
   </div>
 </template>

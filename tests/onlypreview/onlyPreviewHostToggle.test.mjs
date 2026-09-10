@@ -15,8 +15,15 @@ const stubs = {
   'maestroWindow.controller': 'export const maestroWindowHelper = globalThis.__toggle.maestro;',
   'compositeTab.registry':
     'export const getMaestroCompositeTab = () => globalThis.__toggle.registered ? {} : null;',
+  // 承载偏好:这个用例测的是切换本身,不是"下次开哪种"。记录那一步必须存在但不该影响断言。
+  'onlyPreviewHostMount.service':
+    'export const rememberOnlyPreviewHostMount = (kind) => { globalThis.__toggle.hostMount = kind; };' +
+    'export const peekOnlyPreviewHostMount = () => globalThis.__toggle.hostMount ?? null;' +
+    'export const readOnlyPreviewHostMount = async () => globalThis.__toggle.hostMount ?? "tab";' +
+    'export const hydrateOnlyPreviewHostMount = async () => undefined;',
   'onlyPreviewPreviewRegion.service':
-    'export const onlyPreviewPreviewRegionService = globalThis.__toggle.preview;',
+    'export const onlyPreviewPreviewRegionService = globalThis.__toggle.preview;' +
+    'export const resolveOnlyPreviewPreviewRegion = () => globalThis.__toggle.preview;',
   'fileSearchWindow.service': 'export const fileSearchWindowService = globalThis.__toggle.files;',
   'onlyPreviewLog.runtime':
     'export const onlyPreviewLogService = { writeOperationFailure: failure => globalThis.__toggle.logs.push(failure) };',

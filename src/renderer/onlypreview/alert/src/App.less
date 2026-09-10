@@ -83,7 +83,14 @@ input {
   transform: translate(-50%, -50%);
 }
 
-.onlypreview-alert-panel--error {
+/* `--error` 与 `--notice` 同一层级(都要盖在别的对话框之上)。
+ *
+ * **今天两者没有视觉差异** —— 这个面板本来就不带告警配色(`--error` 历来只设 z-index,
+ * `AlertError.less` 只设宽度)。所以 `tone` 目前实际改变的只有 ARIA role
+ * (`alertdialog` → `dialog`,一条提示不该被读屏当成警报),外加一个将来要区分配色时的挂钩。
+ * 写清这一点,是因为"加了 modifier 就以为有视觉差异"是下一个人会犯的假设。 */
+.onlypreview-alert-panel--error,
+.onlypreview-alert-panel--notice {
   z-index: 20;
 }
 

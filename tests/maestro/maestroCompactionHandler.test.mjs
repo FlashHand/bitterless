@@ -117,7 +117,7 @@ const loadHandler = (opts = {}) => {
     '@maestro-main/llm/llmPaths': { maestroAuthPath: () => '/tmp/auth', maestroModelsPath: () => '/tmp/models' },
     '@maestro-main/windows/main/maestroWindow.controller': {
       maestroWindowHelper: {
-        getLlmRuntimeTarget: () => ({ provider: 'ai-crms', model: 'qwen3.8-plus' }),
+        getLlmRuntimeTarget: () => ({ provider: 'openai-codex', model: 'gpt-5.6-luna' }),
         agentService: {
           agentSessionKey: (id) => (id || 'default'),
           getExistingMaestroAgent: () => {

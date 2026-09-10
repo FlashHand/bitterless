@@ -35,6 +35,7 @@ export type RendererName =
   | 'maestroControl'
   | 'maestroWorkbench'
   | 'maestroSqlite'
+  | 'maestroLocalHome'
 
 export interface BitterlessE2ESession {
   app: ElectronApplication
@@ -142,11 +143,13 @@ const startMockServer = async (): Promise<MockServer> => {
       )
       return
     }
-    if (url.pathname === '/ai-crms' && method === 'GET') {
+    // 一个与业务无关的「第二个普通网页」。以前叫 /ai-crms,那个 provider 2026-09 退役了;
+    // Trench 的三条用例把它当 preservedBrowserUrl 用,所以改成中性名而不是删路由。
+    if (url.pathname === '/sample-site' && method === 'GET') {
       response.setHeader('content-type', 'text/html; charset=utf-8')
       response.end(
-        '<!doctype html><html><head><meta charset="utf-8"><title>AI-CRMS</title></head>' +
-          '<body><main id="ai-crms-e2e" aria-label="AI-CRMS E2E mock">AI-CRMS local E2E mock</main></body></html>'
+        '<!doctype html><html><head><meta charset="utf-8"><title>Sample site</title></head>' +
+          '<body><main id="sample-site-e2e" aria-label="Sample site E2E mock">Sample local E2E mock</main></body></html>'
       )
       return
     }
@@ -184,7 +187,8 @@ const rendererPaths: Record<RendererName, string> = {
   maestroHome: 'maestro/home',
   maestroControl: 'maestro/control',
   maestroWorkbench: 'maestro/workbench',
-  maestroSqlite: 'maestro/sqlite'
+  maestroSqlite: 'maestro/sqlite',
+  maestroLocalHome: 'maestro/localHome'
 }
 
 const pageMatches = (page: Page, rendererName: RendererName): boolean =>
@@ -373,12 +377,12 @@ export const test = base.extend<MaestroFixtures>({
         waitForRenderer,
         rendererCount: (name) => app!.windows().filter((page) => pageMatches(page, name)).length,
         operationCount: () =>
-          app!.windows().filter((page) => page.url().startsWith('http://crms.micromeet.ai/')).length,
+          app!.windows().filter((page) => pageMatches(page, 'maestroLocalHome')).length,
         waitForOperation: async () =>
           await waitForPage(
             app!,
-            (page) => page.url().startsWith('http://crms.micromeet.ai/'),
-            'mocked AI-CRMS operation view'
+            (page) => pageMatches(page, 'maestroLocalHome'),
+            'pinned local Home operation view'
           )
       })
       await assertVisibleWindowsOnTargetDisplay(app, targetDisplayLabel)

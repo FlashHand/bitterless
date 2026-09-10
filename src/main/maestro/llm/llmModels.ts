@@ -15,11 +15,9 @@ export interface LlmProviderDefinition {
   hint?: string
 }
 
-// LLM backends. AI-CRMS auth is the embedded app session; Codex/Claude use coding-agent
-// subscription OAuth in maestroAuthPath().
+// LLM backends. Codex/Claude use coding-agent subscription OAuth in maestroAuthPath().
 export const DEFAULT_COMPRESSION_REMAINING_PERCENT = 10
 
-const DEFAULT_EFFORT: LlmEffortOption[] = [{ id: 'default', label: 'Default' }]
 const CODEX_EFFORTS: LlmEffortOption[] = [
   { id: 'low', label: 'low' },
   { id: 'medium', label: 'medium' },
@@ -36,11 +34,6 @@ const CLAUDE_EFFORTS: LlmEffortOption[] = [
 
 export const LLM_PROVIDERS: LlmProviderDefinition[] = [
   {
-    provider: 'ai-crms',
-    label: 'Micromeet',
-    authLabel: 'AI-CRMS session'
-  },
-  {
     provider: 'openai-codex',
     label: 'Codex',
     authLabel: 'Coding agent subscription'
@@ -55,19 +48,6 @@ export const LLM_PROVIDERS: LlmProviderDefinition[] = [
 ]
 
 export const LLM_PRESETS: LlmTarget[] = [
-  {
-    provider: 'ai-crms',
-    providerLabel: 'Micromeet',
-    model: 'qwen3.7-plus',
-    label: 'Qwen 3.7 Plus',
-    shortLabel: 'Qwen 3.7 Plus',
-    effort: 'default',
-    efforts: DEFAULT_EFFORT.slice(),
-    contextLengthK: 256,
-    contextLengthLabel: '256K',
-    compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
-    authLabel: 'AI-CRMS session'
-  },
   {
     provider: 'openai-codex',
     providerLabel: 'Codex',
@@ -149,17 +129,11 @@ export const LLM_PRESETS: LlmTarget[] = [
 ]
 
 export const DEFAULT_PRESET_MODEL: Record<string, string> = {
-  'ai-crms': 'qwen3.7-plus',
   'openai-codex': 'gpt-5.6-luna',
   anthropic: 'claude-opus-4-8'
 }
 
 export const LLM_LOGIN_PROVIDERS: LlmLoginProviderOption[] = [
-  {
-    provider: 'ai-crms',
-    label: 'Micromeet',
-    methods: [{ id: 'browser', label: 'Browser Login' }]
-  },
   {
     provider: 'openai-codex',
     label: 'Codex',
@@ -173,7 +147,6 @@ export const LLM_LOGIN_PROVIDERS: LlmLoginProviderOption[] = [
 export const normalizeLlmProvider = (providerId: string): string => {
   const id = providerId.trim().toLowerCase()
   if (id === 'claude' || id === 'cloud' || id === 'claude-code') return 'anthropic'
-  if (id === 'ai-crms' || id === 'aicrms' || id === 'ai crms' || id === 'acms') return 'ai-crms'
   if (id === 'codex' || id === 'openai') return 'openai-codex'
   return id || 'openai-codex'
 }
@@ -288,16 +261,13 @@ export const describeLlmTarget = (
     providerLabel: preset?.providerLabel || providerLabel(provider),
     modelLabel: preset?.label || modelId,
     supplier:
-      provider === 'ai-crms'
-        ? 'supplied by Micromeet through the signed-in AI-CRMS session (not a personal subscription)'
-        : provider === 'anthropic'
-          ? "the user's own Claude subscription, signed in through the in-app browser login"
-          : "the user's own ChatGPT/Codex subscription, signed in through the in-app browser login"
+      provider === 'anthropic'
+        ? "the user's own Claude subscription, signed in through the in-app browser login"
+        : "the user's own ChatGPT/Codex subscription, signed in through the in-app browser login"
   }
 }
 
 export const providerLabel = (providerId: string): string => {
-  if (providerId === 'ai-crms') return 'Micromeet'
   if (providerId.startsWith('openai')) return 'OpenAI Codex (ChatGPT)'
   if (providerId === 'anthropic') return 'Claude'
   return providerId

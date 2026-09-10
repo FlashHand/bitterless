@@ -64,15 +64,6 @@ import {
   WorkspaceFileService,
   type WorkspaceFileServiceState
 } from './workspaceFile.service'
-import { integrationScheduler, type IntegrationSchedulerEvent } from '@maestro-main/integration/integrationScheduler.service'
-import {
-  IntegrationService,
-  type IntegrationServiceState
-} from '@maestro-main/integration/integration.service'
-import {
-  normalizeRecordedSiteHost,
-  recordedSiteHostMatches
-} from '@maestro-main/integration/recordedSite/rowMapping'
 import { iocHelper } from '@maestro-shared/iocHelper/ioc.helper'
 import type { LlmStoredTarget } from '@maestro-main/llm/llmModels'
 import {
@@ -86,6 +77,8 @@ import type {
   CoachXpcContract,
   ContextExportRequest,
   ContextExportSummary,
+  ContextGraphRequest,
+  ContextGraphResult,
   SessionIoPathResult,
   AgentConversationContext,
   AgentActivityStep,
@@ -97,8 +90,6 @@ import type {
   AgentTurnClaimRequest,
   AgentTurnClaimResult,
   AgentTurnRecoverySnapshot,
-  AudioScribeRequest,
-  AudioScribeResult,
   AttachFileResult,
   CaptureExportFormat,
   CaptureOptions,
@@ -117,23 +108,6 @@ import type {
   HostApprovalHistoryResult,
   HomeRendererReadyParams,
   HomeRendererReadyResult,
-  IntegrationMigrationRunRequest,
-  IntegrationMigrationTargetRequest,
-  IntegrationMappingDeleteRequest,
-  IntegrationMappingListRequest,
-  IntegrationMappingListResult,
-  IntegrationMappingUpsertRequest,
-  IntegrationMappingWriteResult,
-  IntegrationRecordedSiteApplyRequest,
-  IntegrationRecordedSiteSyncRequest,
-  IntegrationReportReadinessRequest,
-  IntegrationTarget,
-  IntegrationTargetCreateResult,
-  IntegrationTargetDeleteResult,
-  IntegrationTargetRunResult,
-  IntegrationTargetScheduleRequest,
-  IntegrationTargetScheduleResult,
-  IntegrationTargetSummary,
   HostToolCatalogResult,
   HostToolPolicyMode,
   HostToolPolicyResult,
@@ -169,7 +143,6 @@ import {
   fileThumbnail,
   type ThumbnailResult
 } from '@maestro-main/files/thumbnail.service'
-import { applyTabChrome, insetForControl } from './viewBounds'
 
 // Initial geometry used for the very first frame, before the home renderer reports
 // the real placeholder rects (see setViewBounds). The 36px tab strip plus the compact
@@ -186,7 +159,6 @@ class MaestroWindowController
     MaestroControlViewServiceState,
     MaestroWorkbenchViewServiceState,
     WorkspaceFileServiceState,
-    IntegrationServiceState,
     CaptureServiceState,
     SkillServiceState,
     RequestExecServiceState,
@@ -210,8 +182,6 @@ class MaestroWindowController
     public readonly workbenchView: MaestroWorkbenchViewService,
     @inject(Symbol.for(WorkspaceFileService.name))
     public readonly workspaceFile: WorkspaceFileService,
-    @inject(Symbol.for(IntegrationService.name))
-    public readonly integrationService: IntegrationService,
     @inject(Symbol.for(CaptureService.name))
     public readonly captureService: CaptureService,
     @inject(Symbol.for(SkillService.name))
@@ -227,7 +197,6 @@ class MaestroWindowController
     this.controlView.setState(this)
     this.workbenchView.setState(this)
     this.workspaceFile.setState(this)
-    this.integrationService.setState(this)
     this.captureService.setState(this)
     this.skillService.setState(this)
     this.requestExec.setState(this)
@@ -238,23 +207,8 @@ class MaestroWindowController
   capture: DebuggerCapture | null = null
   replayEngine: ReplayEngine | null = null
   // operationView/capture/replayEngine above always point at the ACTIVE tab.
-  // `opBounds` holds the ALREADY-inset content rect — see setViewBounds().
   opBounds: ViewRect | null = null
-  // `controlBounds` stays exactly what the renderer reported: it is both the panel's own rect and
-  // the source of `controlVisible`, so an inset value here would poison the criterion itself.
   private controlBounds: ViewRect | null = null
-
-  /**
-   * 面板**没有 show/hide API** —— "关掉"就是渲染层把占位宽度动画到 0,主进程只看得见一个宽度为 0
-   * 的矩形(view 一直活着,开关状态只在 home 的 localStorage)。所以判据就是这个宽度,不新增状态、
-   * 不加 XPC、不改渲染层。null = 渲染层还没上报过,与 `layout()` 的首帧回退口径一致(按"面板在"算)。
-   *
-   * public 是因为 `MaestroBrowserViewService` / `MaestroWorkbenchViewService` 在把 view 摆到前台时
-   * 要问它 —— 它们通过各自的状态契约读,不能是 private。
-   */
-  get controlVisible(): boolean {
-    return (this.controlBounds?.width ?? SIDEBAR_W) > 0
-  }
   currentUrl = DEFAULT_COACH_START_URL
   private initialReady: Promise<void> = Promise.resolve()
   private backgroundReady: Promise<void> = Promise.resolve()
@@ -431,10 +385,6 @@ class MaestroWindowController
     this.ensureServices()
     void this.agentService.loadHostToolPolicies()
     void this.agentService.loadHostApprovalHistory()
-    integrationScheduler.start({
-      emit: (event) => this.handleIntegrationSchedulerEvent(event),
-      runRecordedSiteDryRun: (target) => this.runIntegrationRecordedSiteDryRun({ targetId: target.id })
-    })
     this.currentUrl = MAESTRO_LOCAL_HOME_DISPLAY_URL
 
     this.resetWindowScopedViews()
@@ -652,90 +602,6 @@ class MaestroWindowController
     return await this.agentService.clearHostApprovalEvents()
   }
 
-  async listIntegrationTargets(): Promise<IntegrationTargetSummary[]> {
-    return await this.integrationService.listIntegrationTargets()
-  }
-
-  async getIntegrationTarget(params: { targetId: string }): Promise<IntegrationTarget | null> {
-    return await this.integrationService.getIntegrationTarget(params)
-  }
-
-  async createIntegrationTargetFromCapture(params?: { name?: string; domain?: string }): Promise<IntegrationTargetCreateResult> {
-    return await this.integrationService.createIntegrationTargetFromCapture(params)
-  }
-
-  async createAiCrmsMigrationTarget(params: IntegrationMigrationTargetRequest): Promise<IntegrationTargetCreateResult> {
-    return await this.integrationService.createAiCrmsMigrationTarget(params)
-  }
-
-  async deleteIntegrationTarget(params: { targetId: string }): Promise<IntegrationTargetDeleteResult> {
-    return await this.integrationService.deleteIntegrationTarget(params)
-  }
-
-  async runIntegrationTargetDryRun(params: { targetId: string }): Promise<IntegrationTargetRunResult> {
-    return await this.integrationService.runIntegrationTargetDryRun(params)
-  }
-
-  async runIntegrationRecordedSiteDryRun(params: IntegrationRecordedSiteSyncRequest): Promise<IntegrationTargetRunResult> {
-    return await this.integrationService.runIntegrationRecordedSiteDryRun(params)
-  }
-
-  async runIntegrationRecordedSitePlan(params: IntegrationRecordedSiteSyncRequest): Promise<IntegrationTargetRunResult> {
-    return await this.integrationService.runIntegrationRecordedSitePlan(params)
-  }
-
-  async runIntegrationRecordedSiteApply(params: IntegrationRecordedSiteApplyRequest): Promise<IntegrationTargetRunResult> {
-    return await this.integrationService.runIntegrationRecordedSiteApply(params)
-  }
-
-  async findRecordedSiteTab(target: IntegrationTarget): Promise<OperationTab | undefined> {
-    const expected = normalizeRecordedSiteHost(target.source.domain || target.source.startUrl)
-    const current = this.getActiveTab()
-    const active = current?.kind === 'browser' ? current : undefined
-    const activeHost = normalizeRecordedSiteHost(active?.view?.webContents.getURL() || active?.url || this.currentUrl)
-    let tab = active && recordedSiteHostMatches(activeHost, expected) ? active : undefined
-    if (!tab) {
-      tab = this.tabs.find((item) => {
-        if (item.kind !== 'browser') return false
-        const wc = item.view?.webContents
-        const host = normalizeRecordedSiteHost(wc && !wc.isDestroyed() ? wc.getURL() : item.url)
-        return recordedSiteHostMatches(host, expected)
-      })
-    }
-    if (!tab) return undefined
-    if (!tab.view || tab.view.webContents.isDestroyed()) await this.warmAndLoad(tab)
-    await tab.capture?.attach()
-    return tab.replay ? tab : undefined
-  }
-
-  async runIntegrationMigration(params: IntegrationMigrationRunRequest): Promise<IntegrationTargetRunResult> {
-    return await this.integrationService.runIntegrationMigration(params)
-  }
-
-  async runIntegrationReportReadiness(params: IntegrationReportReadinessRequest): Promise<IntegrationTargetRunResult> {
-    return await this.integrationService.runIntegrationReportReadiness(params)
-  }
-
-  async setIntegrationTargetSchedule(params: IntegrationTargetScheduleRequest): Promise<IntegrationTargetScheduleResult> {
-    return await this.integrationService.setIntegrationTargetSchedule(params)
-  }
-
-  async listIntegrationMappings(params: IntegrationMappingListRequest): Promise<IntegrationMappingListResult> {
-    return await this.integrationService.listIntegrationMappings(params)
-  }
-
-  async upsertIntegrationMapping(params: IntegrationMappingUpsertRequest): Promise<IntegrationMappingWriteResult> {
-    return await this.integrationService.upsertIntegrationMapping(params)
-  }
-
-  async deleteIntegrationMapping(params: IntegrationMappingDeleteRequest): Promise<IntegrationMappingWriteResult> {
-    return await this.integrationService.deleteIntegrationMapping(params)
-  }
-
-  private handleIntegrationSchedulerEvent(event: IntegrationSchedulerEvent): void {
-    this.integrationService.handleIntegrationSchedulerEvent(event)
-  }
-
   async listInjectedButtons(): Promise<InjectedButtonDomain[]> {
     return await this.browserView.listInjectedButtons()
   }
@@ -806,58 +672,6 @@ class MaestroWindowController
     return await this.captureService.toolStopRecording()
   }
 
-  private async toolListIntegrationTargets(targetId?: string): Promise<string> {
-    return await this.integrationService.toolListIntegrationTargets(targetId)
-  }
-
-  private async toolCreateIntegrationTargetFromCapture(name?: string, domain?: string): Promise<string> {
-    return await this.integrationService.toolCreateIntegrationTargetFromCapture(name, domain)
-  }
-
-  private async toolCreateAiCrmsMigrationTarget(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolCreateAiCrmsMigrationTarget(paramsJson)
-  }
-
-  private async toolRunIntegrationDryRun(targetId: string): Promise<string> {
-    return await this.integrationService.toolRunIntegrationDryRun(targetId)
-  }
-
-  private async toolRunRecordedSiteSyncDryRun(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolRunRecordedSiteSyncDryRun(paramsJson)
-  }
-
-  private async toolRunRecordedSiteSyncPlan(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolRunRecordedSiteSyncPlan(paramsJson)
-  }
-
-  private async toolRunRecordedSiteSyncApply(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolRunRecordedSiteSyncApply(paramsJson)
-  }
-
-  private async toolRunIntegrationMigration(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolRunIntegrationMigration(paramsJson)
-  }
-
-  private async toolRunIntegrationReportReadiness(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolRunIntegrationReportReadiness(paramsJson)
-  }
-
-  private async toolSetIntegrationSchedule(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolSetIntegrationSchedule(paramsJson)
-  }
-
-  private async toolListIntegrationMappings(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolListIntegrationMappings(paramsJson)
-  }
-
-  private async toolUpsertIntegrationMapping(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolUpsertIntegrationMapping(paramsJson)
-  }
-
-  private async toolDeleteIntegrationMapping(paramsJson: string): Promise<string> {
-    return await this.integrationService.toolDeleteIntegrationMapping(paramsJson)
-  }
-
   async ensurePersistedCaptureRecordsLoaded(): Promise<void> {
     await this.captureService.ensurePersistedCaptureRecordsLoaded()
   }
@@ -923,10 +737,6 @@ class MaestroWindowController
 
   async attachClipboardImage(params?: { sessionId?: string }): Promise<AttachFileResult> {
     return await this.agentService.attachClipboardImage(params)
-  }
-
-  async scribeAudio(params: AudioScribeRequest): Promise<AudioScribeResult> {
-    return await this.agentService.scribeAudio(params)
   }
 
   async chooseWorkspaceDirectory(params?: { sessionId?: string }): Promise<WorkspaceRefResult> {
@@ -1051,6 +861,10 @@ class MaestroWindowController
     return await this.agentService.copyNextTurnContext(params)
   }
 
+  async readContextGraph(params: ContextGraphRequest): Promise<ContextGraphResult> {
+    return await this.agentService.readContextGraph(params)
+  }
+
   async copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult> {
     return await this.agentService.copySessionIoPath(params)
   }
@@ -1123,10 +937,6 @@ class MaestroWindowController
     this.emit(e)
   }
 
-  async openAiCrmsLoginTab(): Promise<void> {
-    await this.browserView.openAiCrmsLoginTab()
-  }
-
   async getLlmConfig(): Promise<LlmConfig> {
     return await this.llmService.getLlmConfig()
   }
@@ -1180,174 +990,6 @@ class MaestroWindowController
       this.agentService.buildHostToolCatalogTool('cowork'),
       ...buildFileTools(this.workspaceFile, sessionKey),
       ...buildArchiveTools(this.workspaceFile, sessionKey),
-      {
-        name: 'list_integration_targets',
-        description:
-          'List saved Integration Targets, or read one target by target_id. Integration Targets are durable sync contracts compiled from captured website APIs or migration flows. Use before planning scheduled sync or AI-CRMS data synchronization.',
-        params: [{ name: 'target_id', required: false, description: 'Optional integration target id to read in full.' }],
-        execute: async (args) => this.toolListIntegrationTargets(args.target_id ? String(args.target_id) : '')
-      },
-      {
-        name: 'create_integration_target_from_capture',
-        description:
-          'Create a durable Integration Target from the CURRENT capture evidence. It extracts API-like endpoint contracts from recorded network requests, stores them locally, and keeps scheduling disabled by default. Use after the user records one customer website API surface and asks to make it a sync target.',
-        params: [
-          { name: 'name', required: false, description: 'Optional target name. Default uses the current domain.' },
-          { name: 'domain', required: false, description: 'Optional source hostname/URL. Default uses the active page or captured endpoints.' }
-        ],
-        execute: async (args) =>
-          this.toolCreateIntegrationTargetFromCapture(args.name ? String(args.name) : '', args.domain ? String(args.domain) : '')
-      },
-      {
-        name: 'create_ai_crms_migration_target',
-        description:
-          'Create an Integration Target for old-MCU to new-MCU AI-CRMS backend migration. ' +
-          'This stores source/target account refs and domain labels only; it does not store MICROMEET_MIGRATION_TOKEN. ' +
-          'Use when the user wants to migrate old MCU patient, corporate/client, record, report, or data-mapping data into new MCU.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"name":"optional","source":"old admin email or tenant id","target":"new admin email or tenant id","domains":["patient","mcu_record","mcu_field_map"]}. Omit domains for the default old-MCU migration domain set.'
-          }
-        ],
-        execute: async (args) => this.toolCreateAiCrmsMigrationTarget(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'run_integration_dry_run',
-        description:
-          'Run a non-network dry-run validation of a saved Integration Target contract. This does not call customer APIs or AI-CRMS; it checks endpoint roles, entity mapping, and readiness before a future apply/schedule runner.',
-        params: [{ name: 'target_id', required: true, description: 'Integration target id from list_integration_targets.' }],
-        execute: async (args) => this.toolRunIntegrationDryRun(String(args.target_id ?? ''))
-      },
-      {
-        name: 'run_recorded_site_sync_dry_run',
-        description:
-          'Run a read-only sync dry-run for a recorded-site Integration Target. It calls captured GET/list APIs through the currently open logged-in browser tab for that source domain, then compares source rows with the saved source-to-AI-CRMS id map. It does not call AI-CRMS writes and does not persist source payloads.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","endpoint_ids":["optional"],"max_endpoints":5,"max_rows_per_endpoint":50}. Open the source website and log in before running.'
-          }
-        ],
-        execute: async (args) => this.toolRunRecordedSiteSyncDryRun(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'plan_recorded_site_sync',
-        description:
-          'Build a read-only sync plan for a recorded-site Integration Target. It calls captured GET/list APIs through the live logged-in browser tab, enriches rows through captured same-entity GET detail templates when available, classifies rows as create/update/conflict/noop against source mappings, and reports missing required fields. It does not call AI-CRMS writes and does not persist source payloads.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","endpoint_ids":["optional"],"max_endpoints":5,"max_rows_per_endpoint":50}. Run this before any future apply flow.'
-          }
-        ],
-        execute: async (args) => this.toolRunRecordedSiteSyncPlan(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'apply_recorded_site_sync',
-        description:
-          'Apply a recorded-site sync into AI-CRMS for patient, corporate, project, data_mapping, and mcu_record rows. It reads captured GET/list APIs through the live logged-in source tab, enriches rows through captured same-entity GET detail templates when available, then writes via the bundled micromeet CLI and updates source mappings. Requires params_json {"apply":true}; not available for schedules. MCU record create is supported; linked record updates can write patient-info, diagnostic-data, and conclusion sections when allow_updates=true.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","apply":true,"entities":["patient","corporate","project","data_mapping","mcu_record"],"max_writes":10,"allow_updates":false,"endpoint_ids":["optional"]}. Run plan_recorded_site_sync first.'
-          }
-        ],
-        execute: async (args) => this.toolRunRecordedSiteSyncApply(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'run_integration_migration',
-        description:
-          'Run an AI-CRMS backend migration target through the bundled micromeet CLI. Default is backend dry-run; only params_json {"apply":true} writes migrated rows. Requires MICROMEET_MIGRATION_TOKEN in the process environment.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","apply":false,"domains":["patient","mcu_record","mcu_field_map"],"timeout_ms":300000}. Omit domains to use the saved target domains.'
-          }
-        ],
-        execute: async (args) => this.toolRunIntegrationMigration(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'run_integration_report_readiness',
-        description:
-          'Check whether AI-CRMS / new MCU records are ready for report generation by calling the bundled micromeet CLI. ' +
-          'Default is read-only: it lists MCU records and summarizes validation/conclusion/report status. ' +
-          'Only when params_json has {"generate":true} will it enqueue validate/conclusion/report/queue commands; add {"send":true} only when the user explicitly asks to send reports.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","mcu_record_ids":["id1"],"keyword":"optional","corporate_id":"optional","project_id":"optional","page_size":20,"generate":false,"send":false}.'
-          }
-        ],
-        execute: async (args) => this.toolRunIntegrationReportReadiness(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'set_integration_schedule',
-        description:
-          'Enable or disable a saved Integration Target schedule. Scheduled runs are safe-only: recorded-site targets run read-only source dry-run, migration targets run backend dry-run, and report-readiness targets run read-only checks. This tool never enables apply=true production writes.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","enabled":true,"interval_minutes":60,"run_kind":"safe-default"}. run_kind may be safe-default, recorded-site-dry-run, migration-dry-run, or report-readiness.'
-          }
-        ],
-        execute: async (args) => this.toolSetIntegrationSchedule(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'list_integration_mappings',
-        description:
-          'List source-to-AI-CRMS id mappings for an Integration Target. Use before applying patient/project/corporate sync so the agent can avoid duplicate creates and detect conflicts.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","entity":"patient|corporate|project|data_mapping|mcu_record|mcu_report","limit":100}. entity is optional.'
-          }
-        ],
-        execute: async (args) => this.toolListIntegrationMappings(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'upsert_integration_mapping',
-        description:
-          'Create or update one source-to-AI-CRMS id mapping after a dry-run or successful sync step. Store only stable ids/checksums and optional short labels; avoid storing full PII payloads.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description:
-              'JSON object: {"target_id":"...","entity":"patient","source_key":"source-id","ai_crms_id":"target-id","status":"linked|pending|conflict|ignored","source_hash":"optional","source_label":"optional","ai_crms_label":"optional","metadata":{}}.'
-          }
-        ],
-        execute: async (args) => this.toolUpsertIntegrationMapping(String(args.params_json ?? '{}'))
-      },
-      {
-        name: 'delete_integration_mapping',
-        description:
-          'Delete one source-to-AI-CRMS id mapping for a target/entity/source_key. Use only to correct a bad mapping before rerunning sync.',
-        params: [
-          {
-            name: 'params_json',
-            required: true,
-            description: 'JSON object: {"target_id":"...","entity":"patient|corporate|project|data_mapping|mcu_record|mcu_report","source_key":"source-id"}.'
-          }
-        ],
-        execute: async (args) => this.toolDeleteIntegrationMapping(String(args.params_json ?? '{}'))
-      },
       {
         name: 'inject_button',
         description:
@@ -1634,8 +1276,8 @@ class MaestroWindowController
     // Deferred views and native resize reuse the last complete renderer measurement. The next
     // Shell report supplies updated dimensions; the first-frame fallback must not reopen Chat.
     //
-    // 这里**不能**回灌 `setViewBounds` —— `opBounds` 存的已经是内缩后的矩形,再过一次入口就是
-    // 第二次内缩(每拖一下窗口再窄 8px)。摆位本身与那条路共用 `applyContentBounds`。
+    // 摆位与渲染层上报那条路共用 `applyContentBounds`,所以这里直接复用缓存矩形,不回灌
+    // `setViewBounds`(那会把同一份矩形再走一遍入口,白跑一次分发)。
     if (this.opBounds && this.controlBounds) {
       this.applyContentBounds(this.opBounds, this.controlBounds)
       return
@@ -1643,11 +1285,9 @@ class MaestroWindowController
     const [w, h] = this.browserWindow.getContentSize()
     const viewH = Math.max(0, h - TOOLBAR_H)
     const webW = Math.max(0, w - SIDEBAR_W)
-    // 首帧回退也必须过**同一个**内缩,否则症状是"渲染层报上来之前那一瞬间没有空隙"。
-    const content = insetForControl({ x: 0, y: TOOLBAR_H, width: webW, height: viewH }, this.controlVisible)
+    const content = { x: 0, y: TOOLBAR_H, width: webW, height: viewH }
     this.browserView.layout(content)
     this.workbenchView.layout(content)
-    // 面板自己不内缩 —— 让出来的那 8px 就在它左边。
     this.controlView.layout({ x: webW, y: TOOLBAR_H, width: SIDEBAR_W, height: viewH })
     this.browserView.refreshCompositeTabs()
   }
@@ -1659,17 +1299,12 @@ class MaestroWindowController
    */
   setViewBounds(params: { operation: ViewRect; control: ViewRect }): void {
     // Retain both rects so late-created views and activated tabs use the same measured layout.
-    // 原值,**不含内缩** —— 它同时是判据的来源与面板自己的矩形,污染了两处一起错。
     this.controlBounds = params.control
-    // 内缩在这里做完,而且只做这一次:`opBounds` 存的就是内缩后的矩形,四个消费者
-    // (workbench 复活、composite host contentRect、warm 补 bounds、`layout()` 的缓存分支)因此
-    // 自动跟随,三份互相独立的去重备忘录收到的也是同一个值。下游谁再缩一次就会变成 16px。
-    const content = insetForControl(params.operation, this.controlVisible)
-    this.opBounds = content
-    this.applyContentBounds(content, params.control)
+    this.opBounds = params.operation
+    this.applyContentBounds(params.operation, params.control)
   }
 
-  /** 两条布局路径共用的摆位。内缩已经在调用方做完,这里只负责分发。 */
+  /** 两条布局路径共用的摆位分发。 */
   private applyContentBounds(content: ViewRect, control: ViewRect): void {
     this.browserView.setBounds(content)
     this.workbenchView.setBounds(content)
@@ -1677,12 +1312,6 @@ class MaestroWindowController
     // A composite mini-app tab is positioned by its own mount, not by a `WebContentsView` bounds
     // applier, so it has to be told separately or it keeps a stale rect through every resize.
     this.browserView.refreshCompositeTabs()
-    // 圆角**跟着 bounds 走**,不跟"翻转"走。放在这里(两条布局路径共用的出口)而不是 setViewBounds
-    // 里判翻转,是因为翻转判据漏掉了另一半:新建 / 冷复活的 view 成为前台内容时还是 0×0,那一刻
-    // 设的圆角会被原生实现静默丢掉,必须等它拿到够大的矩形再补一次。每帧调没有代价 ——
-    // `applyTabChrome` 按 view 记忆(见 viewBounds.ts)。
-    applyTabChrome(this.operationView, this.controlVisible)
-    this.workbenchView.applyChrome(this.controlVisible)
   }
 
   private getActiveTab(): OperationTab | undefined {
@@ -1794,11 +1423,9 @@ class MaestroWindowController
   }
 
   async shutdown(): Promise<void> {
-    await integrationScheduler.stop()
     await this.agentService.shutdown()
 
     this.demo?.stop()
-    await this.browserView.quiesceAuthBridge()
     await this.captureService.shutdown()
     this.resetWindowScopedViews()
     this.invalidateHomeRendererReadyFence()
@@ -1827,7 +1454,6 @@ export const maestroWindowHelper = iocHelper.bind({
     MaestroControlViewService,
     MaestroWorkbenchViewService,
     WorkspaceFileService,
-    IntegrationService,
     CaptureService,
     SkillService,
     RequestExecService,

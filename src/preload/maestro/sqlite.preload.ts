@@ -63,7 +63,10 @@ const bootSqlite = async (): Promise<void> => {
     await import('./sqlite/config.dao')
     await import('./sqlite/capture_filter.dao')
     await import('./sqlite/tabs.dao')
-    await import('./sqlite/session.dao')
+    // 这里原来 import 的是 session.dao(随 AI-CRMS 退役删除)。它写的四个 localStorage 键落在
+    // 这个隐藏窗口的 partition 里,只有这个 preload 够得着 —— 换成一次性清理,不注册任何通道。
+    const { clearCrmsSessionResidue } = await import('./sqlite/crmsSessionResidue')
+    clearCrmsSessionResidue()
     await import('./sqlite/maestroChat.dao')
     await import('./sqlite/inject_btn.dao')
     // apidoc 台账(drill-001)。注册是**构造副作用** —— 不 import 就等于没注册,

@@ -32,6 +32,26 @@ test('compiled Project row marks only the synthetic root and retains selection/e
     ...Vue,
     resolveComponent: (name) => ({ name })
   });
+  // 按类型换图标(Ral 2026-09-09)。用**真的**判定函数 ＋ 一张打标记的组件表,所以这一条顺带验了
+  // 「`.md` 那一行拿到的是 markdown 图标」—— 只补一个空对象进作用域的话,渲染能过但什么都没验到。
+  const iconModule = { exports: {} };
+  new Function('exports', 'module', ts.transpileModule(
+    readFileSync(
+      resolve(projectRoot, 'src/renderer/onlypreview/common/onlyPreviewTreeIcon.service.ts'),
+      'utf8'
+    ),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }
+  ).outputText)(iconModule.exports, iconModule);
+  const TREE_FILE_ICONS = {
+    document: { name: 'icon-document' },
+    spreadsheet: { name: 'icon-spreadsheet' },
+    presentation: { name: 'icon-presentation' },
+    markdown: { name: 'icon-markdown' },
+    pdf: { name: 'icon-pdf' },
+    archive: { name: 'icon-archive' },
+    image: { name: 'icon-image' },
+    file: { name: 'icon-file' }
+  };
   const rows = [
     {
       entry: { relativePath: '', name: 'project', nodeKind: 'directory' },
@@ -55,9 +75,27 @@ test('compiled Project row marks only the synthetic root and retains selection/e
     treeFocusRelativePath: '',
     handleTreeRowClick: noop,
     handleTreeRowDoubleClick: noop,
-    showOnlyPreviewTreeContextMenu: noop
+    showOnlyPreviewTreeContextMenu: noop,
+    TREE_FILE_ICONS,
+    resolveOnlyPreviewFileIconKey: iconModule.exports.resolveOnlyPreviewFileIconKey
   });
   const rendered = fragment.children;
+  // `.md` 那一行必须拿到 markdown 图标 —— 这一条是「按类型换图标」在渲染层唯一的行为证据。
+  // 目录行仍然是文件夹图标(不走这张表),所以顺带钉住"这张表只管文件那一支"。
+  const iconNamesOf = (index) =>
+    (rendered[index].children || [])
+      .map((child) => child?.type?.name)
+      .filter((name) => typeof name === 'string');
+  console.log('DEBUG row2 keys', Object.keys(rendered[2]));
+  console.log('DEBUG row2 children type', typeof rendered[2].children, Array.isArray(rendered[2].children));
+  assert.ok(
+    iconNamesOf(2).includes('icon-markdown'),
+    `src/file.md 应该用 markdown 图标,实际: ${JSON.stringify(iconNamesOf(2))}`
+  );
+  assert.ok(
+    !iconNamesOf(0).includes('icon-markdown'),
+    '目录行不该走文件图标表'
+  );
   assert.equal(rendered.length, 4);
   for (let index = 0; index < rendered.length; index += 1) {
     const props = rendered[index].props;

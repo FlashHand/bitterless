@@ -253,16 +253,12 @@ const writeStore = (root, platform, inventory) => {
   return directory
 }
 
-const writeCliStage = (root, packageTarget) => {
+// vendored 的 Micromeet CLI 于 2026-09 随 AI-CRMS 退役,`prepare-maestro-cli.cjs` 一起删了 ——
+// 现在没有任何步骤预建这个暂存区,stage 自己 mkdir。fixture 只准备一个空目录来放陈旧产物。
+const writeEmptyStage = (root) => {
   const stage = join(root, 'build', 'maestro-tools')
   mkdirSync(stage, { recursive: true })
-  const staged = packageTarget === 'win64' ? 'micromeet.exe' : 'micromeet'
-  write(join(stage, staged), 'fixture CLI')
-  write(
-    join(stage, 'manifest.json'),
-    `${JSON.stringify({ platform: packageTarget, staged, cliTarget: packageTarget }, null, 2)}\n`
-  )
-  return { stage, staged }
+  return { stage }
 }
 
 const makeFixture = (platform = 'mac_arm') => {
@@ -439,24 +435,23 @@ for (const [storePlatform, packageTarget] of [
   test(`offline ${storePlatform} store stages and verifies only its ${packageTarget} filenames`, () => {
     const fixture = makeFixture(storePlatform)
     try {
-      const cli = writeCliStage(fixture.root, packageTarget)
+      const { stage } = writeEmptyStage(fixture.root)
       const stale = storePlatform === 'win'
         ? ['bun', 'rg', 'fd', 'ouch']
         : ['bun.exe', 'rg.exe', 'fd.exe', 'ouch.exe']
-      for (const filename of stale) write(join(cli.stage, filename), 'stale')
+      for (const filename of stale) write(join(stage, filename), 'stale')
 
       stageExternalTools(fixture.root, packageTarget, fixture.inventory)
-      assert.equal(readFileSync(join(cli.stage, cli.staged), 'utf8'), 'fixture CLI')
-      for (const filename of stale) assert.equal(existsSync(join(cli.stage, filename)), false)
+      for (const filename of stale) assert.equal(existsSync(join(stage, filename)), false)
       for (const spec of payloadSpecsForPlatform(storePlatform, fixture.inventory)) {
-        assert.equal(existsSync(join(cli.stage, spec.path)), true, `${spec.path} was not staged`)
+        assert.equal(existsSync(join(stage, spec.path)), true, `${spec.path} was not staged`)
       }
       assert.doesNotThrow(() =>
         verifyStagedExternalTools(fixture.root, packageTarget, fixture.inventory)
       )
 
       const rg = fixture.inventory.rg.targets[storePlatform].output
-      write(join(cli.stage, rg), 'tampered after staging')
+      write(join(stage, rg), 'tampered after staging')
       assert.throws(
         () => verifyStagedExternalTools(fixture.root, packageTarget, fixture.inventory),
         /size mismatch|sha256 mismatch/
@@ -477,25 +472,20 @@ test('source packaging contract is offline, target-scoped, ignored, and external
   assert.equal(pkg.scripts['external-tools:init'], 'node scripts/maestro/externalTools.cjs init')
 
   const unpack = pkg.scripts['_package:unpack']
-  assert.ok(
-    unpack.indexOf('prepare:maestro-cli') < unpack.indexOf('prepare-maestro-package-tools.cjs'),
-    '_package:unpack must prepare the CLI before dispatching host tools'
-  )
   assert.doesNotMatch(unpack, /prepare-maestro-(anydoc|archive)\.cjs|externalTools\.cjs/)
+  assert.doesNotMatch(unpack, /maestro-cli/, '_package:unpack must not resurrect the retired CLI step')
 
   for (const scriptName of ['_package:mac_arm', '_package:mac_x64', '_package:win']) {
     const script = pkg.scripts[scriptName]
-    const cli = script.indexOf('prepare:maestro-cli') >= 0
-      ? script.indexOf('prepare:maestro-cli')
-      : script.indexOf('prepare-maestro-cli.cjs')
     const stage = script.indexOf('external-tools:stage') >= 0
       ? script.indexOf('external-tools:stage')
       : script.indexOf('externalTools.cjs stage')
     const verify = script.indexOf('external-tools:verify') >= 0
       ? script.indexOf('external-tools:verify')
       : script.indexOf('externalTools.cjs verify-stage')
-    assert.ok(cli >= 0 && cli < stage && stage < verify, `${scriptName} must run CLI → stage → verify`)
+    assert.ok(stage >= 0 && stage < verify, `${scriptName} must run stage → verify`)
     assert.doesNotMatch(script, /prepare-maestro-(anydoc|archive)\.cjs/)
+    assert.doesNotMatch(script, /maestro-cli/, `${scriptName} must not resurrect the retired CLI step`)
   }
   assert.match(pkg.scripts['_package:linux_x64'], /prepare-maestro-anydoc\.cjs linux_x64/)
   assert.match(pkg.scripts['_package:linux_arm64'], /prepare-maestro-anydoc\.cjs linux_arm/)
@@ -505,9 +495,13 @@ test('source packaging contract is offline, target-scoped, ignored, and external
     assert.ok(builder.includes(sourceExclusion))
   }
   assert.match(builder, /from: build\/maestro-tools\s+to: maestro-tools/)
-  for (const binary of ['micromeet', 'bun', 'rg', 'fd', 'anydoc/anydoc.node', 'ouch']) {
+  for (const binary of ['bun', 'rg', 'fd', 'anydoc/anydoc.node', 'ouch']) {
     assert.ok(builder.includes(`Contents/Resources/maestro-tools/${binary}`))
   }
+  assert.ok(
+    !builder.includes('Contents/Resources/maestro-tools/micromeet'),
+    'mac signing inventory must not resurrect the retired CLI binary'
+  )
 
   for (const directory of ['mac_arm', 'mac_intel', 'win']) {
     assert.equal(existsSync(join(projectRoot, 'external_tools', directory, '.gitkeep')), true)

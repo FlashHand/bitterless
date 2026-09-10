@@ -54,22 +54,6 @@ const bitterlessPreloadBuildDefine = {
   )
 };
 
-const maestroBuildDefine = {
-  __COACH_BUILD_REGION__: JSON.stringify(process.env.VITE_COACH_REGION || 'SG'),
-  __COACH_AI_CRMS_RELAY_BASE_URL__: JSON.stringify(
-    process.env.VITE_COACH_AI_CRMS_RELAY_BASE_URL || ''
-  ),
-  __COACH_AI_CRMS_RELAY_BASE_URL_SG__: JSON.stringify(
-    process.env.VITE_COACH_AI_CRMS_RELAY_BASE_URL_SG || ''
-  ),
-  __COACH_AI_CRMS_RELAY_BASE_URL_HK__: JSON.stringify(
-    process.env.VITE_COACH_AI_CRMS_RELAY_BASE_URL_HK || ''
-  ),
-  __COACH_AI_CRMS_RELAY_BASE_URL_ID__: JSON.stringify(
-    process.env.VITE_COACH_AI_CRMS_RELAY_BASE_URL_ID || ''
-  )
-};
-
 const bundledRuntimeDependencies = [
   '@langchain/anthropic',
   '@langchain/core',
@@ -412,7 +396,7 @@ const runtimeProfileBuildMarkerPlugin = {
 export default defineConfig({
   main: {
     plugins: [runtimeProfileBuildMarkerPlugin],
-    define: { ...generateEnvDefines(), ...maestroBuildDefine },
+    define: { ...generateEnvDefines() },
     build: {
       externalizeDeps: { exclude: bundledRuntimeDependencies },
       rollupOptions: {
@@ -457,7 +441,7 @@ export default defineConfig({
   },
   preload: {
     plugins: [onlyPreviewSandboxPreloadPlugin, trenchSandboxPreloadPlugin],
-    define: { ...maestroBuildDefine, ...bitterlessPreloadBuildDefine },
+    define: { ...bitterlessPreloadBuildDefine },
     build: {
       externalizeDeps: { exclude: bundledRuntimeDependencies },
       rollupOptions: {
@@ -505,7 +489,7 @@ export default defineConfig({
     }
   },
   renderer: {
-    define: { ...generateEnvDefines(), ...maestroBuildDefine },
+    define: { ...generateEnvDefines() },
     build: {
       rollupOptions: {
         input: {

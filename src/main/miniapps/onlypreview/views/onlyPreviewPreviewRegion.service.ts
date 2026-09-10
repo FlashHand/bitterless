@@ -128,6 +128,7 @@ export class OnlyPreviewPreviewRegionService {
   start(runtime: OnlyPreviewPreviewRegionRuntime): void {
     this.destroy();
     this.runtime = runtime;
+    regionsByHost.set(runtime.host.hostToken, this);
     this.viewService.start(runtime);
     this.activePreviewSurface = 'vue';
     this.vueResetAcknowledgedRevision = null;
@@ -526,6 +527,12 @@ export class OnlyPreviewPreviewRegionService {
 
   destroy(): void {
     const runtime = this.runtime;
+    // 只注销**自己**那一条。`start()` 开头就调 `destroy()`,而那时新的 runtime 还没写进来 ——
+    // 无条件 `delete(runtime.host.hostToken)` 在"同一个 host 换一份预览区"的路径上会把刚登记的
+    // 那一份抹掉。
+    if (runtime && regionsByHost.get(runtime.host.hostToken) === this) {
+      regionsByHost.delete(runtime.host.hostToken);
+    }
     this.findService.beginTransition();
     this.viewService.clearDocumentWatchdog();
     this.revokeCurrentAuthority();
@@ -796,4 +803,31 @@ export class OnlyPreviewPreviewRegionService {
   }
 }
 
+/**
+ * **一个 host 一个预览区。**
+ *
+ * 原来这里只有一个进程级实例 —— 那在「整个 app 只有一个 OnlyPreview 面」的前提下是对的。
+ * micromeet-cowork 的 `'file'` tab(`docs/features/file-preview-tabs.md` #6)要求同时存在多个预览面、
+ * 每个装一个本机文件,所以「用哪个预览区」必须由 **hostToken** 决定,而不是"就那一个"。
+ *
+ * 这个泛化对本仓也是修正而非负担:`present` / `snapshot` / `findSnapshot` 这些方法**本来就**每一个
+ * 都收 `hostToken` 并用 `requireOnlyPreviewPreviewRuntime` 校验它 —— 也就是说"哪个 host"一直是参数,
+ * 只有"哪个实例"被写死成了单例。两者不一致时的表现是:第二个 host 的每一次调用都在第一个 host 的
+ * 预览区上被拒,而错误码只会说「不是当前 runtime」。
+ */
+const regionsByHost = new Map<string, OnlyPreviewPreviewRegionService>();
+
 export const onlyPreviewPreviewRegionService = new OnlyPreviewPreviewRegionService();
+
+/**
+ * 这个 host 的预览区。查不到时回落到上面那个进程级实例。
+ *
+ * 回落**不是**兜底逻辑,而是保持既有行为:本仓的 OnlyPreview 用的就是那一份,而它 `start()` 时会把
+ * 自己登记进来,所以回落只在「host 已发但 `start()` 还没跑」那个窗口里起作用 —— 那个窗口里的调用
+ * 本来也会被 `requireOnlyPreviewPreviewRuntime` 拒掉,回落只是让它拒在同一个地方、报同一个错。
+ */
+export const resolveOnlyPreviewPreviewRegion = (
+  hostToken: unknown
+): OnlyPreviewPreviewRegionService =>
+  (typeof hostToken === 'string' ? regionsByHost.get(hostToken) : undefined) ??
+  onlyPreviewPreviewRegionService;
