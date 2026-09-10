@@ -35,7 +35,7 @@ network access.
 ## Contract
 
 - Pin Bun, ripgrep, fd, Ouch, and AnyDoc versions in `package.json`; never resolve `latest`.
-- `yarn external-tools:init` initializes all three requested targets. It may download and extract,
+- `yarn tools:init` initializes all three requested targets. It may download and extract,
   verifies the established AnyDoc release hashes, records every staged file's SHA-256 and size in a
   per-platform manifest, writes via temporary directories, and replaces a platform only after its
   complete inventory validates.

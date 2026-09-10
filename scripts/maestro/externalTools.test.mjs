@@ -25,6 +25,7 @@ const {
   BINARY_TOOL_NAMES,
   INVENTORY,
   MANIFEST_FILENAME,
+  STORE_PLATFORMS,
   createManifest,
   initializePlatform,
   normalizePackageTarget,
@@ -469,7 +470,13 @@ test('source packaging contract is offline, target-scoped, ignored, and external
   assert.equal(pkg.bun_version, '1.3.14')
   assert.equal(pkg.rg_version, '14.1.1')
   assert.equal(pkg.fd_version, '10.5.0')
-  assert.equal(pkg.scripts['external-tools:init'], 'node scripts/maestro/externalTools.cjs init')
+  // One initialization entry, spelled the same way as micromeet-cowork's (owner instruction
+  // 2026-09-10) — and it must be the ALL-platform init, never a host-only one.
+  assert.equal(pkg.scripts['tools:init'], 'node scripts/maestro/externalTools.cjs init')
+  assert.equal(pkg.scripts['tools:stage'], 'node scripts/maestro/externalTools.cjs stage')
+  assert.equal(pkg.scripts['tools:verify'], 'node scripts/maestro/externalTools.cjs verify-stage')
+  assert.equal(pkg.scripts['external-tools:init'], undefined, 'the renamed script must not linger')
+  assert.deepEqual(STORE_PLATFORMS, ['mac_arm', 'mac_intel', 'win'])
 
   const unpack = pkg.scripts['_package:unpack']
   assert.doesNotMatch(unpack, /prepare-maestro-(anydoc|archive)\.cjs|externalTools\.cjs/)
@@ -477,11 +484,11 @@ test('source packaging contract is offline, target-scoped, ignored, and external
 
   for (const scriptName of ['_package:mac_arm', '_package:mac_x64', '_package:win']) {
     const script = pkg.scripts[scriptName]
-    const stage = script.indexOf('external-tools:stage') >= 0
-      ? script.indexOf('external-tools:stage')
+    const stage = script.indexOf('tools:stage') >= 0
+      ? script.indexOf('tools:stage')
       : script.indexOf('externalTools.cjs stage')
-    const verify = script.indexOf('external-tools:verify') >= 0
-      ? script.indexOf('external-tools:verify')
+    const verify = script.indexOf('tools:verify') >= 0
+      ? script.indexOf('tools:verify')
       : script.indexOf('externalTools.cjs verify-stage')
     assert.ok(stage >= 0 && stage < verify, `${scriptName} must run stage → verify`)
     assert.doesNotMatch(script, /prepare-maestro-(anydoc|archive)\.cjs/)

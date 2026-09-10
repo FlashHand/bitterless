@@ -52,7 +52,7 @@ Implementation task:
 
 - Added the tracked `external_tools/{mac_arm,mac_intel,win}` shells and ignored every initialized
   payload while retaining their `.gitkeep` files.
-- Added `yarn external-tools:init`, with fixed versions plus archive and extracted-payload digests
+- Added `yarn tools:init`, with fixed versions plus archive and extracted-payload digests
   for Bun, ripgrep, fd, Ouch, and AnyDoc. Each valid existing platform is reused; a replacement is
   built and validated in temporary directories before the old platform is swapped out.
 - macOS and Windows packaging validates and stages exactly one initialized target without network
@@ -67,4 +67,4 @@ Implementation task:
   the result with no unresolved P0-P2 finding.
 - Initialization, a real desktop package, Electron/E2E, signing, notarization, and publication were
   intentionally not run. Ral owns those post-delivery checks, beginning with
-  `yarn external-tools:init`.
+  `yarn tools:init`.

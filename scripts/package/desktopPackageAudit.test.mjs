@@ -32,6 +32,14 @@ const {
   resolveUpdateDirectory,
   resolveUpdatePlatform,
 } = require('../release/releaseChannel.cjs');
+const { payloadSpecsForPlatform } = require('../maestro/externalTools.cjs');
+const MAESTRO_TOOLS_MANIFEST = 'external-tools.manifest.json';
+// The fixture spells the Windows target both ways (`win` and `windows`), so the store platform is
+// derived the way the builder derives the binary format: mac or not-mac.
+const maestroStoreFor = (platform, arch) => {
+  if (platform !== 'mac') return 'win';
+  return arch === 'arm64' ? 'mac_arm' : 'mac_intel';
+};
 const PLACEHOLDER_UPDATE_FEED_URL = 'https://assets.terncloud.com/bitterless/distro';
 
 const projectRoot = path.resolve(new URL('../..', import.meta.url).pathname);
@@ -92,6 +100,11 @@ const createSyntheticApplication = async ({
   appFiles = {},
   includeBetterSqlite3Binary = true,
   betterSqlite3Arch,
+  includeMaestroTools = true,
+  maestroToolsStorePlatform,
+  maestroManifestPlatform,
+  maestroToolsOverrides = {},
+  maestroToolsExtraFiles = {},
   includeMacIcon = true,
   includeOnlyPreviewAgentSkill = true,
   includeTrenchAgentSkill = true,
@@ -147,6 +160,26 @@ const createSyntheticApplication = async ({
         ]),
       )
     : {};
+  const maestroStorePlatform = maestroToolsStorePlatform ?? maestroStoreFor(platform, targetArch);
+  const maestroToolsFiles = includeMaestroTools
+    ? Object.fromEntries([
+        ...payloadSpecsForPlatform(maestroStorePlatform).map((spec) => [
+          `${resourcesPrefix}/maestro-tools/${spec.path}`,
+          maestroToolsOverrides[spec.path]
+            ?? (spec.executable || spec.path.endsWith('.node')
+              ? createBinary(targetArch)
+              : `${spec.path}\n`),
+        ]),
+        [
+          `${resourcesPrefix}/maestro-tools/${MAESTRO_TOOLS_MANIFEST}`,
+          JSON.stringify({ schemaVersion: 1, platform: maestroManifestPlatform ?? maestroStorePlatform }),
+        ],
+        ...Object.entries(maestroToolsExtraFiles).map(([relativePath, content]) => [
+          `${resourcesPrefix}/maestro-tools/${relativePath}`,
+          content,
+        ]),
+      ])
+    : {};
   const updateConfigFiles = includeUpdateConfig
     ? {
         [`${resourcesPrefix}/app-update.yml`]: [
@@ -172,6 +205,7 @@ const createSyntheticApplication = async ({
           'Contents/Resources/icon.icns': readFileSync(path.join(projectRoot, 'build/icon.icns')),
         }
       : {}),
+    ...maestroToolsFiles,
     ...previewSkillFiles,
     ...trenchSkillFiles,
     ...updateConfigFiles,
@@ -399,6 +433,77 @@ test('native runtime gate fails when better_sqlite3.node has the wrong architect
   assert.throws(
     () => auditDesktopPackage(fixture.applicationPath),
     /better_sqlite3\.node targets darwin\/x64, expected darwin\/arm64/,
+  );
+});
+
+test('maestro tools gate reports the staged store platform', async () => {
+  const fixture = await createSyntheticApplication({ platform: 'mac', arch: 'arm64' });
+
+  const result = auditDesktopPackage(fixture.applicationPath);
+
+  assert.equal(result.maestroTools.storePlatform, 'mac_arm');
+  assert.ok(result.maestroTools.files.includes('bun'));
+  assert.ok(result.maestroTools.files.includes('anydoc/anydoc.node'));
+});
+
+test('maestro tools gate fails when a shipped tool belongs to another platform', async () => {
+  const fixture = await createSyntheticApplication({
+    platform: 'mac',
+    arch: 'arm64',
+    maestroToolsOverrides: { bun: createPe64Binary('x64') },
+  });
+
+  assert.throws(
+    () => auditDesktopPackage(fixture.applicationPath),
+    /bun targets win32\/x64, expected darwin\/arm64/,
+  );
+});
+
+test('maestro tools gate fails when the packaged tools are the other store entirely', async () => {
+  const fixture = await createSyntheticApplication({
+    platform: 'win',
+    arch: 'x64',
+    maestroToolsStorePlatform: 'mac_arm',
+  });
+
+  assert.throws(
+    () => auditDesktopPackage(fixture.applicationPath),
+    /bun is not part of the win payload; that name belongs to the mac_arm\/mac_intel store/,
+  );
+});
+
+test('maestro tools gate fails on another platform file name left behind', async () => {
+  const fixture = await createSyntheticApplication({
+    platform: 'mac',
+    arch: 'arm64',
+    maestroToolsExtraFiles: { 'bun.exe': createPe64Binary('x64') },
+  });
+
+  assert.throws(
+    () => auditDesktopPackage(fixture.applicationPath),
+    /bun\.exe is not part of the mac_arm payload; that name belongs to the win store/,
+  );
+});
+
+test('maestro tools gate fails when the staged manifest names another platform', async () => {
+  const fixture = await createSyntheticApplication({
+    platform: 'mac',
+    arch: 'arm64',
+    maestroManifestPlatform: 'win',
+  });
+
+  assert.throws(
+    () => auditDesktopPackage(fixture.applicationPath),
+    /declares platform win, expected mac_arm/,
+  );
+});
+
+test('maestro tools gate fails when the tools were never staged', async () => {
+  const fixture = await createSyntheticApplication({ includeMaestroTools: false });
+
+  assert.throws(
+    () => auditDesktopPackage(fixture.applicationPath),
+    /Resources\/maestro-tools is missing/,
   );
 });
 

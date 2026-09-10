@@ -25,7 +25,7 @@ Linux 暂不使用新的三平台外部工具仓库，继续走既有 AnyDoc 和
 ```text
 固定版本与固定哈希
         |
-        | yarn external-tools:init（唯一允许下载外部工具的阶段）
+        | yarn tools:init（唯一允许下载外部工具的阶段）
         v
 external_tools/{mac_arm,mac_intel,win}
         |
@@ -63,11 +63,11 @@ Windows 使用 Electron 的同一运行时约定：
 
 | 工具 | 固定版本 | 安装来源 | 当前用途 |
 |---|---:|---|---|
-| Bun | `1.3.14` | `external-tools:init` | 为后续迁移能力预置；当前没有启用 Bun skill runner |
-| ripgrep (`rg`) | `14.1.1` | `external-tools:init` | 为本地检索能力预置 |
-| fd | `10.5.0` | `external-tools:init` | 为本地文件发现能力预置 |
-| Ouch | `0.8.2` | `external-tools:init` | Maestro 归档文件创建与解压 |
-| AnyDoc | `0.2.4` | `external-tools:init` | Maestro 文档转 Markdown；JavaScript bundle 与 `anydoc.node` 必须成套安装 |
+| Bun | `1.3.14` | `tools:init` | 为后续迁移能力预置；当前没有启用 Bun skill runner |
+| ripgrep (`rg`) | `14.1.1` | `tools:init` | 为本地检索能力预置 |
+| fd | `10.5.0` | `tools:init` | 为本地文件发现能力预置 |
+| Ouch | `0.8.2` | `tools:init` | Maestro 归档文件创建与解压 |
+| AnyDoc | `0.2.4` | `tools:init` | Maestro 文档转 Markdown；JavaScript bundle 与 `anydoc.node` 必须成套安装 |
 
 Bun、`rg` 和 `fd` 目前只是被可靠地放入应用资源；本方案不会启用 pi 内置
 `grep`/`find`、不会设置进程级 `PI_OFFLINE`，也不会改变模型或 Agent 运行策略。
@@ -110,7 +110,7 @@ anydoc/
 
 ```bash
 cd /Users/ral/Documents/projects/overmind/projects/bitterless
-yarn external-tools:init
+yarn tools:init
 ```
 
 该命令一次初始化 `mac_arm`、`mac_intel` 和 `win` 三个目录，而不是只初始化当前主机。
@@ -120,7 +120,7 @@ yarn external-tools:init
 需要在版本升级后或明确排除本地损坏时重建全部平台：
 
 ```bash
-yarn external-tools:init --force
+yarn tools:init --force
 ```
 
 不要把 `--force` 当作日常打包步骤。不要手工编辑 manifest、跳过哈希校验，或把下载文件
@@ -185,7 +185,7 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 - 只接受固定目录、固定文件名和 regular file；不接受符号链接；
 - manifest 必须与 `package.json` 的版本 pin 和脚本 inventory 一致；
 - stage 会移除另一平台残留的外部工具，再复制当前平台；
-- 任一验证失败都会中止打包，并提示先运行 `yarn external-tools:init`。
+- 任一验证失败都会中止打包，并提示先运行 `yarn tools:init`。
 
 `external_tools/**` 和旧的 `prebuilt/**` 都被 Electron Builder 排除出 `app.asar`。应用只携带
 当前 target 的一份已校验资源，避免源码缓存和安装资源重复占用 ASAR。
@@ -198,7 +198,7 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 2. 在 `scripts/maestro/externalTools.cjs` 更新固定版本、release URL、archive SHA-256、解压后
    payload SHA-256；AnyDoc 同时更新 npm SHA-512、bundle 哈希和各平台原生模块哈希；
 3. 更新 `scripts/maestro/externalTools.test.mjs` 中的预期 inventory；
-4. 执行 `yarn external-tools:init --force`，生成三平台新仓库；
+4. 执行 `yarn tools:init --force`，生成三平台新仓库；
 5. 执行 `yarn test:maestro-external-tools` 和 `yarn test:desktop-package-audit`；
 6. 构建每个受影响 target，并检查安装目录与签名结果。
 
@@ -209,17 +209,17 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 
 | 症状 | 处理方式 |
 |---|---|
-| 提示 external tools 未初始化或无效 | 重新执行 `yarn external-tools:init`；脚本只重建未通过校验的平台 |
+| 提示 external tools 未初始化或无效 | 重新执行 `yarn tools:init`；脚本只重建未通过校验的平台 |
 | 下载 archive 哈希不一致 | 停止打包，核对上游 release 是否被替换；不要绕过校验或直接采用新哈希 |
 | `curl`、`tar` 或 `unzip` 找不到 | 安装/恢复对应系统工具后重新初始化 |
 | 暂存区多出 `micromeet` / `manifest.json` | CLI 退役前的存量产物；`rm -rf build/maestro-tools` 后重新 stage |
-| 平台目录存在额外文件、符号链接或损坏文件 | 执行 `yarn external-tools:init --force` 原子重建，不要手工修 manifest |
+| 平台目录存在额外文件、符号链接或损坏文件 | 执行 `yarn tools:init --force` 原子重建，不要手工修 manifest |
 | `app.asar` 再次异常增大 | 检查 `electron-builder.tmp.yml` 仍排除 `external_tools/**` 和 `prebuilt/**`，并运行 desktop package audit |
 | macOS 签名遗漏 | 检查 `mac.binaries` 包含 `bun`、`rg`、`fd`、`ouch` 和 `anydoc/anydoc.node` |
 
 ## Owner 验收清单
 
-- [ ] `yarn external-tools:init` 完成三平台初始化并在第二次运行时全部复用；
+- [ ] `yarn tools:init` 完成三平台初始化并在第二次运行时全部复用；
 - [ ] `git status` 没有出现初始化生成的二进制或 manifest；
 - [ ] `yarn test:maestro-external-tools` 通过；
 - [ ] `yarn test:desktop-package-audit` 通过；

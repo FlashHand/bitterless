@@ -431,7 +431,7 @@ const validateExternalStore = (root, storePlatform, inventory = INVENTORY) => {
   } catch (error) {
     throw new Error(
       `${storePlatform} external tools are not initialized or are invalid: ${(error && error.message) || String(error)}. ` +
-        'Run `yarn external-tools:init` before packaging.'
+        'Run `yarn tools:init` before packaging.'
     )
   }
   return directory
@@ -710,7 +710,7 @@ const parseArgs = (argv = process.argv.slice(2)) => {
 const printHelp = () => {
   console.log(
     'Maestro external tools\n\n' +
-      '  yarn external-tools:init [--force]          initialize mac_arm, mac_intel, and win\n' +
+      '  yarn tools:init [--force]                   initialize mac_arm, mac_intel, and win\n' +
       '  node scripts/maestro/externalTools.cjs stage [mac_arm|mac_intel|win64]\n' +
       '  node scripts/maestro/externalTools.cjs verify-stage [mac_arm|mac_intel|win64]'
   )

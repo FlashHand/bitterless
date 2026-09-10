@@ -140,6 +140,12 @@ design document.
   implemented; owner verification pending: advanced the canonical build after migration
   `260831200000`, retained history and the fail-closed guard, and passed the complete migration
   matrix plus [review 1](plan/reviews/maestro-sqlite-build-version-093-1.md).
+- [`tools:init` entry and unaudited packaged tool platform](issues/tools-init-entry-and-unaudited-packaged-tool-platform.md) —
+  implemented; owner initialization/package verification pending (2026-09-10): the initialization
+  command is now `yarn tools:init` in both this repository and `micromeet-cowork` (all three stores,
+  any host), and the packaged-application audit gained a `Resources/maestro-tools` gate — platform
+  and architecture read from each shipped binary's own header, since signing invalidates digests and
+  a cross-built win64 package cannot be executed here.
 - [Maestro external tools packaged inside ASAR](issues/maestro-tools-packaged-inside-asar.md) -
   implemented; owner initialization/package verification pending: initialize Bun, ripgrep, fd,
   Ouch, and AnyDoc once for macOS ARM, macOS Intel, and Windows, then stage one validated target

@@ -25,6 +25,14 @@ const BETTER_SQLITE3_BINARY_PARTS = Object.freeze([
   'Release',
   'better_sqlite3.node',
 ]);
+const MAESTRO_TOOLS_DIRECTORY = 'maestro-tools';
+// The staged external-tool store is per platform; this maps the target proved by the application
+// executable's own header onto that store's directory name (scripts/maestro/externalTools.cjs).
+const TARGET_TO_STORE_PLATFORM = Object.freeze({
+  'darwin/arm64': 'mac_arm',
+  'darwin/x64': 'mac_intel',
+  'win32/x64': 'win',
+});
 const ONLY_PREVIEW_AGENT_SKILL_FILES = Object.freeze([
   'SKILL.md',
   path.join('agents', 'openai.yaml'),
@@ -384,6 +392,96 @@ const inspectBetterSqlite3Binary = (resourcesPath, target) => {
   return binaryPath;
 };
 
+const listFilesRecursively = (root, base = '') => {
+  const files = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === '.DS_Store') continue;
+    const relative = base ? path.posix.join(base, entry.name) : entry.name;
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...listFilesRecursively(absolute, relative));
+    else files.push(relative);
+  }
+  return files;
+};
+
+// Resources/maestro-tools must hold EXACTLY the target platform's payload. `verify-stage` proves the
+// staging directory before Electron Builder runs; this proves the artifact, which is the only place a
+// stage/target mismatch shows up (a manual `stage mac_arm` followed by `signedBuild.js --win`, an
+// interrupted _package:* that skipped its stage step, a build/maestro-tools reused across targets).
+//
+// Identity is read from each binary's own header rather than its digest: code signing rewrites every
+// Mach-O listed under mac.binaries, so a staged-vs-shipped digest comparison is legitimately unequal
+// there. The AnyDoc JavaScript bundle is never rewritten, so it keeps its pinned digests.
+const inspectMaestroTools = (resourcesPath, target) => {
+  const { MANIFEST_FILENAME, STORE_PLATFORMS, payloadSpecsForPlatform } = require('../maestro/externalTools.cjs');
+  const storePlatform = TARGET_TO_STORE_PLATFORM[`${target.platform}/${target.arch}`];
+  if (!storePlatform) {
+    throw new Error(`unsupported external-tools target: ${target.platform}/${target.arch}`);
+  }
+  const toolsPath = path.join(resourcesPath, MAESTRO_TOOLS_DIRECTORY);
+  if (!fs.existsSync(toolsPath) || !fs.statSync(toolsPath).isDirectory()) {
+    throw new Error(`Resources/${MAESTRO_TOOLS_DIRECTORY} is missing; stage it with \`yarn tools:stage\``);
+  }
+
+  const specs = payloadSpecsForPlatform(storePlatform);
+  const expected = new Set([...specs.map((spec) => spec.path), MANIFEST_FILENAME]);
+  // A file name can belong to more than one other store (mac_arm and mac_intel stage identical
+  // names), so every owner is reported — naming just one would read as a claim about which.
+  const foreign = new Map();
+  for (const other of STORE_PLATFORMS) {
+    if (other === storePlatform) continue;
+    for (const spec of payloadSpecsForPlatform(other)) {
+      if (expected.has(spec.path)) continue;
+      foreign.set(spec.path, [...(foreign.get(spec.path) ?? []), other]);
+    }
+  }
+
+  for (const relative of listFilesRecursively(toolsPath)) {
+    if (expected.has(relative)) continue;
+    const owners = foreign.get(relative);
+    throw new Error(
+      owners
+        ? `${relative} is not part of the ${storePlatform} payload; that name belongs to the ${owners.join('/')} store`
+        : `unexpected file in Resources/${MAESTRO_TOOLS_DIRECTORY}: ${relative}`,
+    );
+  }
+
+  for (const spec of specs) {
+    const filePath = path.join(toolsPath, ...spec.path.split('/'));
+    const stats = fs.existsSync(filePath) ? fs.lstatSync(filePath) : null;
+    if (!stats || !stats.isFile()) {
+      throw new Error(`${spec.path} is missing from Resources/${MAESTRO_TOOLS_DIRECTORY}`);
+    }
+    // The AnyDoc JavaScript bundle carries no platform identity; its bytes are pinned one step
+    // earlier by verify-stage. Here it only has to be present and complete.
+    if (!spec.executable && !spec.path.endsWith('.node')) continue;
+    let binary;
+    try {
+      binary = inspectBinary(filePath);
+    } catch (error) {
+      throw new Error(`${spec.path} is not a usable executable: ${error.message}`);
+    }
+    if (binary.platform !== target.platform || !binary.arches.includes(target.arch)) {
+      throw new Error(
+        `${spec.path} targets ${binary.platform}/${binary.arches.join('+')}, expected ${target.platform}/${target.arch}`,
+      );
+    }
+  }
+
+  const manifestPath = path.join(toolsPath, MANIFEST_FILENAME);
+  if (!fs.existsSync(manifestPath)) throw new Error(`${MANIFEST_FILENAME} is missing`);
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`${MANIFEST_FILENAME} is unreadable: ${error.message}`);
+  }
+  if (manifest.platform !== storePlatform) {
+    throw new Error(`${MANIFEST_FILENAME} declares platform ${String(manifest.platform)}, expected ${storePlatform}`);
+  }
+  return { toolsPath, storePlatform, files: specs.map((spec) => spec.path) };
+};
+
 const hasPackagedResources = (candidate) => {
   try {
     getResourcesPath(candidate);
@@ -668,6 +766,16 @@ const auditDesktopPackage = (inputPath, options = {}) => {
   } catch (error) {
     failures.push(`native runtime gate failed: ${error.message}`);
   }
+  let maestroTools = null;
+  try {
+    if (!applicationTarget) throw new Error('the application target is unavailable');
+    maestroTools = inspectMaestroTools(resourcesPath, applicationTarget);
+    console.log(
+      `[desktop-package-audit] maestro-tools ${maestroTools.storePlatform} verified (${maestroTools.files.length} payload files)`,
+    );
+  } catch (error) {
+    failures.push(`maestro tools gate failed: ${error.message}`);
+  }
   let applicationIconPaths = null;
   if (applicationTarget?.platform === 'darwin') {
     try {
@@ -751,6 +859,7 @@ const auditDesktopPackage = (inputPath, options = {}) => {
     targetPlatform: applicationTarget.platform,
     targetArch: applicationTarget.arch,
     betterSqlite3BinaryPath,
+    maestroTools,
     applicationIconPaths,
     packagedRuntimeProfile,
     packagedUpdateFeedUrl,
