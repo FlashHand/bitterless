@@ -3,7 +3,7 @@ import type { HostToolCatalogEntry, HostToolCatalogResult, HostToolPolicyMap, Ho
 export const HOST_TOOL_CATALOG: HostToolCatalogEntry[] = [
   {
     name: 'host_tool_catalog',
-    scopes: ['cowork', 'trainer'],
+    scopes: ['cowork'],
     category: 'observe',
     risk: 'read',
     summary: 'Read the current host tool catalog and safety boundaries.',
@@ -111,7 +111,7 @@ export const HOST_TOOL_CATALOG: HostToolCatalogEntry[] = [
   },
   {
     name: 'capture_timeline',
-    scopes: ['cowork', 'trainer'],
+    scopes: ['cowork'],
     category: 'capture',
     risk: 'read',
     summary: 'Read the unified UI/API capture timeline.',
@@ -120,7 +120,7 @@ export const HOST_TOOL_CATALOG: HostToolCatalogEntry[] = [
   },
   {
     name: 'capture_search',
-    scopes: ['cowork', 'trainer'],
+    scopes: ['cowork'],
     category: 'capture',
     risk: 'read',
     summary: 'Search capture timeline by URL, method, status, element text, headers, and previews.',
@@ -129,7 +129,7 @@ export const HOST_TOOL_CATALOG: HostToolCatalogEntry[] = [
   },
   {
     name: 'capture_event_detail',
-    scopes: ['cowork', 'trainer'],
+    scopes: ['cowork'],
     category: 'capture',
     risk: 'read',
     summary: 'Read one capture event/request-response pair in detail.',
@@ -144,42 +144,6 @@ export const HOST_TOOL_CATALOG: HostToolCatalogEntry[] = [
     summary: 'Generate one or more reusable skills from the current capture.',
     useWhen: 'When the user asks to turn the current demonstration into skills.',
     safety: 'Skill persistence runs deterministic redaction and audit.'
-  },
-  {
-    name: 'get_skill_detail',
-    scopes: ['trainer'],
-    category: 'skill',
-    risk: 'read',
-    summary: 'Read a skill detail before optimizing or deleting it.',
-    useWhen: 'Trainer-only: clarify which skill to update/remove.',
-    safety: 'Read-only; scoped to known skill ids.'
-  },
-  {
-    name: 'create_or_update_skill',
-    scopes: ['trainer'],
-    category: 'training',
-    risk: 'write',
-    summary: 'Create/update a skill from current capture evidence.',
-    useWhen: 'Trainer-only: user asks to generate or reinforce a skill.',
-    safety: 'Deduplicates same-name same-domain skills and archives the previous version.'
-  },
-  {
-    name: 'optimize_skill',
-    scopes: ['trainer'],
-    category: 'training',
-    risk: 'write',
-    summary: 'Refine an existing skill metadata/body/recipe.',
-    useWhen: 'Trainer-only: user asks to adjust an existing skill.',
-    safety: 'Archives previous version before replacement.'
-  },
-  {
-    name: 'delete_skill',
-    scopes: ['trainer'],
-    category: 'training',
-    risk: 'destructive',
-    summary: 'Delete a recording skill.',
-    useWhen: 'Trainer-only and only when user clearly asks for deletion.',
-    safety: 'Built-in skills cannot be deleted; path must stay inside skill registry.'
   },
   {
     name: 'workspace_context',

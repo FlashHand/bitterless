@@ -2,18 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { Button, Empty, Message, Option, Select } from '@arco-design/web-vue'
 import { IconAlertTriangle, IconDownload, IconRefresh, IconSearch, IconShieldCheck, IconTool, IconTrash } from '@tabler/icons-vue'
-import type { HostApprovalEvent, HostToolCatalogEntry, HostToolPolicyMode, HostToolRisk, HostToolScope } from '@maestro-shared/coach.api'
+import type { HostApprovalEvent, HostToolCatalogEntry, HostToolPolicyMode, HostToolRisk } from '@maestro-shared/coach.api'
 import { workbenchStore as store } from '../workbench.store'
 import './WorkbenchToolsView.less'
 
 const queryDraft = ref(store.hostToolQuery)
 
-const scopes: { id: HostToolScope; label: string }[] = [
-  { id: 'cowork', label: 'Maestro' },
-  { id: 'trainer', label: 'Trainer' }
-]
-
-const title = computed(() => (store.hostToolScope === 'trainer' ? 'Trainer Tools' : 'Maestro Tools'))
+const title = 'Maestro Tools'
 const subtitle = computed(() => `${store.hostToolCatalog?.total || 0} tools`)
 const approvalSubtitle = computed(() => `${store.hostApprovalEvents.length} recent`)
 
@@ -55,10 +50,6 @@ const categoryClass = (tool: HostToolCatalogEntry): string => {
   if (tool.category === 'workspace' || tool.category === 'file') return 'workbench-tools__category--workspace'
   if (tool.category === 'act') return 'workbench-tools__category--act'
   return 'workbench-tools__category--default'
-}
-
-const setScope = (scope: HostToolScope): void => {
-  void store.setHostToolScope(scope)
 }
 
 const setCategory = (value: unknown): void => {
@@ -124,19 +115,6 @@ onMounted(() => {
       </div>
 
       <div name="tools__controls" class="workbench-tools__controls">
-        <div name="tools__scope" class="workbench-tools__scope">
-          <button
-            v-for="scope in scopes"
-            :key="scope.id"
-            type="button"
-            class="workbench-tools__scope__button"
-            :class="{ 'workbench-tools__scope__button--active': store.hostToolScope === scope.id }"
-            @click="setScope(scope.id)"
-          >
-            {{ scope.label }}
-          </button>
-        </div>
-
         <Select
           name="tools__category"
           :model-value="store.hostToolCategory"

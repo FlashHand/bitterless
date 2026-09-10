@@ -276,7 +276,7 @@ export type WorkbenchPane =
   | 'about'
   | 'log'
 // Approval history persists the original scope id; the user-facing label is Maestro.
-export type HostToolScope = 'cowork' | 'trainer'
+export type HostToolScope = 'cowork'
 export type HostToolCategory = 'observe' | 'act' | 'api' | 'capture' | 'skill' | 'workspace' | 'file' | 'tab' | 'training'
 export type HostToolRisk = 'read' | 'write' | 'destructive'
 export type HostToolPolicyMode = 'bypass' | 'confirm' | 'disabled'

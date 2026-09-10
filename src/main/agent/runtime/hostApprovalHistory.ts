@@ -76,7 +76,7 @@ function normalizeHostApprovalEvent(value: unknown): HostApprovalEvent | null {
     label,
     requestedAt
   }
-  const scope = rec.scope === 'cowork' || rec.scope === 'trainer' ? rec.scope : undefined
+  const scope = rec.scope === 'cowork' ? rec.scope : undefined
   if (scope) item.scope = scope
   const detail = cleanApprovalText(rec.detail, 500)
   if (detail) item.detail = detail

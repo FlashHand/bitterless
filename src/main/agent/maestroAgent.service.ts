@@ -448,7 +448,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
   }): Promise<HostToolCatalogResult> {
     await this.loadHostToolPolicies()
     return readHostToolCatalog({
-      scope: params?.scope === 'trainer' ? 'trainer' : 'cowork',
+      // 只剩 'cowork' 一个 scope(trainer 随 Coach agent 一起退役,2026-09-10)——
+      // 入参保留是为了不改 XPC 契约的形状,但它只可能是这一个值。
+      scope: 'cowork',
       category: params?.category || '',
       query: params?.query || '',
       policies: this.hostToolPolicies
@@ -469,15 +471,10 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         error: 'toolName is required'
       }
     }
-    const known =
-      readHostToolCatalog({
-        scope: 'cowork',
-        policies: this.hostToolPolicies
-      }).tools.some((tool) => tool.name === toolName) ||
-      readHostToolCatalog({
-        scope: 'trainer',
-        policies: this.hostToolPolicies
-      }).tools.some((tool) => tool.name === toolName)
+    const known = readHostToolCatalog({
+      scope: 'cowork',
+      policies: this.hostToolPolicies
+    }).tools.some((tool) => tool.name === toolName)
     if (!known) {
       return {
         ok: false,

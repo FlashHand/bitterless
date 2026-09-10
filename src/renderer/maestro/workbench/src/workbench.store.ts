@@ -621,7 +621,7 @@ class WorkbenchStoreState {
   }
 
   async setHostToolScope(scope: HostToolScope): Promise<void> {
-    if (scope !== 'cowork' && scope !== 'trainer') return
+    if (scope !== 'cowork') return
     this.hostToolScope = scope
     await this.refreshHostToolCatalog()
   }

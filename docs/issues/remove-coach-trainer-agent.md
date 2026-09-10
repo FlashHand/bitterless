@@ -38,14 +38,24 @@ cowork 那边 `grep -rniI "coach" src` **零命中** —— 同一个产品形�
   `ensureAgents()` 形状里的 `piTrainer`
 - `shared/maestro/coach.api.ts` + `main/maestro/xpc/coach.handler.ts`：3 个 XPC 方法
 
-## 本次**不动**（不是这个 agent，且缠着持久化状态）
+## 第二步：`'trainer'` 这个 host-tool scope 也一起拆了
 
-`'trainer'` 这个 **host-tool scope**：`HostToolScope = 'cowork' | 'trainer'`、`hostToolCatalog.ts` 里
-8 处条目（其中 4 个是 trainer 独有工具）、`hostApprovalHistory.ts` 里**按 scope 持久化过的审批记录**、
-以及 Workbench Tools 的 `Trainer` 页签。
+先前打算搁下它（怕连带一次数据迁移），量过之后发现不必 —— 而且**留着有实害**：
+`hostToolCatalog` 是 `buildHostToolCatalogTool` 交给模型读的说明书，那 4 个 trainer 独有条目
+（`get_skill_detail` / `create_or_update_skill` / `optimize_skill` / `delete_skill`）的实现已经随
+trainer 删掉了，留着等于告诉模型有它调不到的工具。
 
-拆它要连带处理已经落盘的历史记录，是独立一件事 —— 混进这次删除会把一个可回滚的删除变成一次数据迁移。
-留下的现象：Workbench Tools 里那个 `Trainer` 页签还在，但它配的 agent 已经没了。要不要一起拆等 Ral 定。
+- `HostToolScope` → 只剩 `'cowork'`。`getHostToolCatalog` 的 `scope` 入参保留（不改契约形状），
+  但它只可能是这一个值
+- `hostToolCatalog.ts`：删掉 4 个 trainer 独有条目；4 处 `['cowork', 'trainer']` → `['cowork']`
+- `hostApprovalHistory.ts`：归一化只认 `'cowork'` —— **已落盘的 `scope: 'trainer'` 旧记录退化成
+  「无 scope」**，记录本身还在、照常显示。优雅降级，不是迁移，所以不用改数据
+- Workbench Tools：只剩一个 scope 时那个切换器就是噪音，连按钮块与它的 4 段 Less 一起去掉，
+  标题写死 `Maestro Tools`
+- `setHostToolPolicy` 里原来要读两个 scope 的目录来判断「这个工具名认不认识」，现在读一次
+
+`BaseAgent.ts` 那张活动分类名单里还留着 `get_skill_detail` / `delete_skill` 两个名字 —— 纯字符串匹配，
+无害，而且 `get_skill_contract` / `run_skill_script` / `replay_skill_ui` 这几条同族的路还活着，不动它。
 
 ## 验证
 
