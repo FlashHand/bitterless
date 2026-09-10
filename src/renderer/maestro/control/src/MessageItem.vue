@@ -5,7 +5,7 @@ import { Trigger } from '@arco-design/web-vue'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
 import { IconActivity, IconDotsVertical, IconExternalLink, IconFolderOpen, IconSparkles } from '@tabler/icons-vue'
 import { messageStore } from './store/message.store'
-import type { AgentActivityStep, CoachXpcContract, FileStatusResult, ReplayResult } from '@maestro-shared/coach.api'
+import type { AgentActivityStep, CoachXpcContract, FileStatusResult } from '@maestro-shared/coach.api'
 import type { ChatFile, ChatMessage } from './store/message.type'
 import AttachmentCard from './AttachmentCard.vue'
 import ChatConfirm from './task/ChatConfirm.vue'
@@ -61,28 +61,6 @@ const messageSkills = computed(() => {
   if (props.message.skills?.length) return props.message.skills
   return props.message.skill ? [props.message.skill] : []
 })
-const replaySummary = (replay?: ReplayResult): string => {
-  if (!replay) return ''
-  const mode = replay.mode === 'api' ? 'API' : replay.mode === 'ui' ? 'UI' : 'Run'
-  const calls = replay.apiCalls ? ` · ${replay.apiCalls} API` : ''
-  const steps = replay.stepsRun ? ` · ${replay.stepsRun} step${replay.stepsRun === 1 ? '' : 's'}` : ''
-  return `${mode}${calls}${steps}`
-}
-const replayPreview = (replay?: ReplayResult): string => {
-  const text = replay?.responseText?.trim()
-  if (!text) return ''
-  return text.length > 360 ? text.slice(0, 360) + '...' : text
-}
-const replayAuth = (replay?: ReplayResult): string => {
-  const auth = replay?.auth || []
-  if (!auth.length) return ''
-  return auth
-    .map((item) => {
-      const source = item.applied ? item.source : 'missing'
-      return item.key ? `${item.header}: ${source}(${item.key})` : `${item.header}: ${source}`
-    })
-    .join(', ')
-}
 
 const showBubble = computed(() => {
   const m = props.message
@@ -92,8 +70,7 @@ const showBubble = computed(() => {
     Boolean(m.content) ||
     visibleActivity.value.length > 0 ||
     artifactFiles.value.length > 0 ||
-    messageSkills.value.length > 0 ||
-    Boolean(m.replay)
+    messageSkills.value.length > 0
   )
 })
 
@@ -217,7 +194,7 @@ watch(artifactPathKey, () => void refreshFileStatuses(), { immediate: true })
             v-if="visibleActivity.length"
             name="messageItem__activity"
             class="message-activity"
-            :class="{ 'message-activity--spaced': props.message.content || messageSkills.length || props.message.replay || artifactFiles.length }"
+            :class="{ 'message-activity--spaced': props.message.content || messageSkills.length || artifactFiles.length }"
           >
             <li v-if="hiddenActivityCount" class="message-activity__hidden">
               {{ hiddenActivityCount }} earlier step{{ hiddenActivityCount === 1 ? '' : 's' }}
@@ -268,36 +245,6 @@ watch(artifactPathKey, () => void refreshFileStatuses(), { immediate: true })
                 >
                   <IconFolderOpen :size="15" stroke="1.8" />
                 </button>
-              </div>
-            </div>
-          </div>
-          <div
-            v-if="props.message.replay"
-            name="messageItem__replay"
-            class="message-replay"
-            :class="props.message.replay.ok ? 'message-replay--success' : 'message-replay--error'"
-          >
-            <div class="message-replay__row">
-              <IconActivity
-                :size="16"
-                stroke="1.8"
-                class="message-replay__icon"
-              />
-              <div class="message-replay__content">
-                <div class="message-replay__title">
-                  {{ props.message.replay.ok ? 'Run succeeded' : 'Run failed' }}
-                  <span class="message-replay__summary">{{ replaySummary(props.message.replay) }}</span>
-                </div>
-                <div v-if="props.message.replay.errors.length" class="message-replay__errors">
-                  {{ props.message.replay.errors.join('; ') }}
-                </div>
-                <div v-if="replayAuth(props.message.replay)" class="message-replay__auth">
-                  {{ replayAuth(props.message.replay) }}
-                </div>
-                <pre
-                  v-if="replayPreview(props.message.replay)"
-                  class="message-replay__preview"
-                >{{ replayPreview(props.message.replay) }}</pre>
               </div>
             </div>
           </div>
