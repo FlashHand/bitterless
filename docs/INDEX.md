@@ -56,8 +56,17 @@ design document.
 - [Maestro slash commands](features/maestro-slash-commands.md) — implemented; owner testing pending: Cowork-style
   `/clear` and `/view_context` menu, preserving BL runtime and composer behavior.
 
+- [Maestro default workspace](features/maestro-default-workspace.md) — implemented 2026-09-10; owner E2E pending:
+  with nothing bound, EVERY workspace tool (`write_file` / `create_artifact` included) resolves against ONE shared
+  `~/.bitterless-<profile id>/default-workspace`, `mkdir -p` at boot and keyed by the same axis that splits userData.
+  Retires the per-chat `<userData>/cowork/chat_workspaces/<chat id>` fallback and `resolveWritablePath`; relative reads
+  now share the writes base. Explicit workspace still wins; `isInsideRoot` + realpath checks unchanged.
+
 - [Chat resize interrupted by OnlyPreview focus](issues/maestro-chat-resize-interrupted-by-preview-focus.md) — implemented; owner testing pending;
   BL-only repair preserves sibling focus and Cowork-style pointer gesture lifecycle.
+
+- [OnlyPreview structured-text folding](plan/tasks/onlypreview-structured-text-folding-172.md) — implemented in BL/Cowork;
+  JSON/XML/YAML previews fold, open with five levels expanded and copy folded lines; owner testing pending.
 
 - [Project Cmd+Delete](plan/tasks/onlypreview-project-delete-shortcut-166.md) — implemented in BL/Cowork;
   focused Shell opens the existing delete confirmation; owner testing pending.

@@ -327,8 +327,8 @@ export const buildAgentTurnPrompt = (params: {
         'If a workspace tool reports workspace-not-found / workspace-not-directory, the app clears the stale reference; ask the user to choose the new location.'
       ].join('\n')
     : [
-        'No workspace selected. create_artifact writes generated files to the app userData artifacts directory.',
-        'extract_archive, create_archive, and open_workspace_folder use this chat’s safe default workspace; do not ask the user to select one for those operations.'
+        'No workspace selected: every workspace tool works in the ONE shared default workspace instead — write_file and create_artifact included.',
+        'Never ask the user to select a workspace for a file operation; every write reports its absolute destination, which is how they find it.'
       ].join('\n')
   const memoryBlock = params.includeConversationMemory
     ? [

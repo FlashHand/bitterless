@@ -15,6 +15,7 @@ import {
   type WorkspacePathResolution
 } from '@maestro-main/files/workspaceArchive.service'
 import { writeArtifactFromJson } from '@maestro-main/files/artifactWriter.service'
+import { ensureDefaultWorkspace } from '@maestro-main/files/defaultWorkspace'
 import type { AgentFileArtifact, FileStatusResult, WorkspaceRef, WorkspaceRefResult } from '@maestro-shared/coach.api'
 import {
   WORKSPACE_CONFIG_DOMAIN,
@@ -328,19 +329,30 @@ export class WorkspaceFileService extends CommonService<WorkspaceFileServiceStat
     await this.persistDefaultWorkspace()
   }
 
+  /**
+   * The root this session actually works in: its explicit binding, else the ONE shared default
+   * workspace (ensured here). Owner decision 2026-09-10 — see
+   * docs/features/maestro-default-workspace.md.
+   */
+  private effectiveWorkspaceRoot(sessionKey: string): string {
+    const workspace = this.workspaceRefs.get(sessionKey)
+    return workspace ? resolve(workspace.path) : ensureDefaultWorkspace()
+  }
+
   private resolveWorkspacePath(sessionKey: string, pathArg: string): WorkspacePathResolution {
     const workspace = this.workspaceRefs.get(sessionKey)
-    if (!workspace) return { ok: false, root: '', error: 'no-workspace' }
-    const root = resolve(workspace.path)
+    // Nothing bound is not an error: the shared default workspace answers, ensured on the way in.
+    // Only an EXPLICIT reference can go stale, so only that one is cleared below.
+    const root = workspace ? resolve(workspace.path) : ensureDefaultWorkspace()
     let realRoot = root
     try {
       if (!statSync(root).isDirectory()) {
-        this.clearWorkspaceRef(sessionKey)
+        if (workspace) this.clearWorkspaceRef(sessionKey)
         return { ok: false, root, error: 'workspace-not-found' }
       }
       realRoot = realpathSync(root)
     } catch {
-      this.clearWorkspaceRef(sessionKey)
+      if (workspace) this.clearWorkspaceRef(sessionKey)
       return { ok: false, root, error: 'workspace-not-found' }
     }
     const cleaned = pathArg.trim().replace(/^@/, '')
@@ -367,12 +379,13 @@ export class WorkspaceFileService extends CommonService<WorkspaceFileServiceStat
     else if (cleaned.startsWith('~/') || cleaned.startsWith('~\\')) {
       cleaned = join(homedir(), cleaned.slice(2))
     }
-    const workspace = this.workspaceRefs.get(sessionKey)
-    const workspaceRoot = workspace ? resolve(workspace.path) : ''
-    const base = workspaceRoot || homedir()
+    // Same base as the write tools (explicit binding, else the shared default). It used to be
+    // `homedir()` when nothing was bound, so an agent could write notes.md and then fail to read it
+    // back by that name.
+    const base = this.effectiveWorkspaceRoot(sessionKey)
     const path = !cleaned ? base : isAbsolute(cleaned) ? resolve(cleaned) : resolve(base, cleaned)
-    const insideWorkspace = Boolean(workspaceRoot && isInsideRoot(workspaceRoot, path))
-    const root = insideWorkspace ? workspaceRoot : path
+    const insideWorkspace = isInsideRoot(base, path)
+    const root = insideWorkspace ? base : path
     return { path, root, insideWorkspace }
   }
 
@@ -666,7 +679,7 @@ export class WorkspaceFileService extends CommonService<WorkspaceFileServiceStat
 
   async toolOpenWorkspaceFolder(sessionKey: string, pathArg?: string): Promise<string> {
     const rel = String(pathArg || '').trim().replace(/^@/, '')
-    const resolved = this.workspaceArchive.resolveWritablePath(sessionKey, rel)
+    const resolved = this.resolveWorkspacePath(sessionKey, rel)
     if (!resolved.ok || !resolved.path) {
       return `ERROR: ${resolved.error || 'workspace unavailable'}`
     }

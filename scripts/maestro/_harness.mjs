@@ -73,6 +73,9 @@ const hostAliasAllowlist = new Map([
   ])],
   // 债:main 侧 Maestro 直接用宿主的出站 HTTP 分发器,而不是经由自己的端口。
   ['main/net/proxy.ts', new Set(['@main/networking/outboundHttpDispatcher.service'])],
+  // 债:共享默认工作空间按 runtime profile id 分版本(与 userData 的版本隔离对齐,Preview 不能写进
+  // Production 的文件),而这个 id 只有宿主的 runtime profile 知道。
+  ['main/files/defaultWorkspace.ts', new Set(['@main/environment/runtimeProfile.runtime'])],
   // 债:localHome / workbench 直接用宿主的 home shell bridge(登录态与外壳通信)。
   ['renderer/localHome/src/localHomeAuth.store.ts', new Set([
     '@renderer/common/homeShellBridge.client',

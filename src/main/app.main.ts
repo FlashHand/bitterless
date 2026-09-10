@@ -1,4 +1,5 @@
 import { runtimeProfile } from '@main/environment/runtimeProfile.bootstrap';
+import { ensureDefaultWorkspace } from '@maestro-main/files/defaultWorkspace';
 import { app, net, session } from 'electron';
 import { appendFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -255,7 +256,13 @@ const configureE2EUserData = (): void => {
 };
 
 configureE2EUserData();
+
 if (!isHelperMode) {
+  // The shared default workspace exists from boot, not from the first write: it is where every file
+  // tool works when no directory is bound (docs/features/maestro-default-workspace.md), so the owner
+  // can open it before the agent has put anything there. After configureE2EUserData() — that call
+  // redirects the home path under E2E.
+  ensureDefaultWorkspace();
   registerTrenchGmgnIpc(coinResourceService);
   registerSnipingIpc();
   registerMonitoringIpc();

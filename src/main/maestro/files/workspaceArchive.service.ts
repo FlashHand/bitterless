@@ -11,7 +11,6 @@ import {
   statSync
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { maestroDataRoot } from '@maestro-main/data/maestroDataRoot'
 import {
   ArchiveError,
   createArchive,
@@ -36,16 +35,6 @@ export interface WorkspaceArchiveHost {
 const isInsideRoot = (root: string, path: string): boolean => {
   const rel = relative(root, path)
   return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel))
-}
-
-const nearestExistingAncestor = (path: string): string => {
-  let current = path
-  while (!existsSync(current)) {
-    const parent = dirname(current)
-    if (parent === current) return current
-    current = parent
-  }
-  return current
 }
 
 const isPermissionError = (error: unknown): boolean => {
@@ -169,45 +158,6 @@ export const mdDirLink = (absPath: string): string => {
 export class WorkspaceArchiveService {
   constructor(private readonly host: WorkspaceArchiveHost) {}
 
-  private sessionFallbackWorkspace(sessionKey: string): string {
-    const sanitized = String(sessionKey || 'default')
-      .replace(/[^a-zA-Z0-9._-]/g, '_')
-      .slice(0, 96)
-    const safe = sanitized && sanitized !== '.' && sanitized !== '..' ? sanitized : 'default'
-    return join(maestroDataRoot(), 'chat_workspaces', safe)
-  }
-
-  // Archives and open_workspace_folder get a lazy per-chat fallback. The ordinary
-  // write_file/create_artifact tools continue to require the explicitly selected workspace.
-  resolveWritablePath(sessionKey: string, pathArg: string): WorkspacePathResolution {
-    const direct = this.host.resolveWorkspacePath(sessionKey, pathArg)
-    if (direct.ok || direct.error !== 'no-workspace') return direct
-
-    const root = this.sessionFallbackWorkspace(sessionKey)
-    mkdirSync(root, { recursive: true })
-    const realRoot = realpathSync(root)
-    const rel = String(pathArg || '').trim().replace(/^@/, '')
-    const target = rel ? resolve(root, rel) : root
-    if (!isInsideRoot(root, target)) {
-      return { ok: false, root, realRoot, error: 'path-escapes-workspace' }
-    }
-    try {
-      const realExisting = realpathSync(nearestExistingAncestor(target))
-      if (!isInsideRoot(realRoot, realExisting)) {
-        return { ok: false, root, realRoot, error: 'path-escapes-workspace' }
-      }
-    } catch {
-      return { ok: false, root, realRoot, error: 'workspace-path-unavailable' }
-    }
-    return {
-      ok: true,
-      root,
-      realRoot,
-      path: target,
-      rel: relative(root, target) || '.'
-    }
-  }
-
   async toolListArchive(
     sessionKey: string,
     pathArg: string,
@@ -236,7 +186,7 @@ export class WorkspaceArchiveService {
     if (!trimmed) return 'ERROR: extract_archive needs a "path".'
     const target = this.host.resolveReadPath(sessionKey, trimmed).path
     const destRel = String(destArg || '').trim() || basename(target).replace(/\.[^.]+$/, '')
-    const dest = this.resolveWritablePath(sessionKey, destRel)
+    const dest = this.host.resolveWorkspacePath(sessionKey, destRel)
     if (!dest.ok || !dest.path) return `ERROR: ${dest.error || 'workspace unavailable'}`
     if (!isInsideRoot(dest.root, dest.path)) {
       return 'ERROR: the destination is outside the workspace.'
@@ -275,7 +225,7 @@ export class WorkspaceArchiveService {
     if (!archiveRel) {
       return 'ERROR: create_archive needs an "archive" path (its extension picks the format, e.g. out.zip / out.tar.gz).'
     }
-    const archive = this.resolveWritablePath(sessionKey, archiveRel)
+    const archive = this.host.resolveWorkspacePath(sessionKey, archiveRel)
     if (!archive.ok || !archive.path) {
       return `ERROR: ${archive.error || 'workspace unavailable'}`
     }
