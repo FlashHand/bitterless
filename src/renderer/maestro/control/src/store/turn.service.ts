@@ -2,7 +2,7 @@ import { injectable } from 'inversify'
 import { CommonService } from '@maestro-shared/iocHelper/ioc.helper'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
-import { turnDiagnostics, type MaestroTurnStage } from './turnDiagnostics.service'
+import { describeErrorForLog, turnDiagnostics, type MaestroTurnStage } from './turnDiagnostics.service'
 import type {
   AgentActivityStep,
   AgentReply,
@@ -577,9 +577,39 @@ export class TurnService extends CommonService<MessageStoreState> {
       outcome: reply.ok ? 'success' : 'failure',
       dispatched,
       elapsedMs: Date.now() - turn.startedAt,
-      reason: reply.ok ? undefined : reply.error
+      // 错误原文会被脱敏吃成 `***`(24+ 字符的 token 整体替换),所以拆成三段短的记
+      // —— 名字 / 前 20 字符 / 总长度。这是 2026-09-10 那次"查不下去"换来的。
+      ...(reply.ok ? {} : describeErrorForLog(reply.error ?? reply.text ?? 'unknown'))
     })
-    await this.finishReply(session, turn, reply)
+    /**
+     * **回合的释放必须是无条件的。**
+     *
+     * `finishReply` 有两条早退(`session.turn !== turn`、拿不到落点)、中间还有一整段格式化与
+     * 持久化 —— 任何一处抛出或早退,`session.turn = undefined` 那一句就到不了。而 `session.turn`
+     * 还在 = 状态条永久停在「Sent · waiting for a response…」并继续计时,**而且**下一条消息会被
+     * 判成 steering、插进这个已经死掉的回合 —— 于是"发消息永远没回复"
+     * (Ral 2026-09-10 报的正是这个形状:25 秒还在 waiting)。
+     *
+     * 早退本身是对的(别人已经收尾了就该让位),错的是"释放"只在成功路径上。所以这里补一道
+     * 兜底:只在**这一轮还是我**时清 —— 别人接管过就不碰,幂等且不会抢别人的收尾。
+     *
+     * 兜底真的开火时留一行:它开火说明上游有 bug,不记就永远查不到。
+     */
+    try {
+      await this.finishReply(session, turn, reply)
+    } finally {
+      if (session.turn === turn) {
+        turnDiagnostics.emit('send-terminal', {
+          turnId: turn.id,
+          outcome: 'failure',
+          reason: 'turn-not-released-by-finishReply'
+        })
+        session.turn = undefined
+        this._state.setActiveAgentTurnSnapshot(null, turn.id)
+        session.updatedAt = Date.now()
+        void this._state.persistSession(session)
+      }
+    }
     return reply
   }
 

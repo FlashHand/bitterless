@@ -44,6 +44,28 @@ const renderValue = (value: unknown): string | undefined => {
   return trimmed.replace(/\s+/g, '_').slice(0, 200)
 }
 
+/**
+ * 把一个错误拆成**在脱敏之后仍然可读**的三个字段。
+ *
+ * 为什么需要:日志落盘要过 `diagnostic.service` 的脱敏,其中一条是
+ * `\b[A-Za-z0-9_-]{24,}\b → ***` —— 任何 24 字符以上的连续 token 整体变成 `***`。
+ * 于是「`Error: <一个长标识符>.`」这种消息落盘后是 `Error: ***.`,**等于没记**
+ * (2026-09-10 实测:发送失败的原因就这样被吃掉了,查不下去)。
+ *
+ * 脱敏本身是对的 —— agent 的错误消息里可能带凭据。所以这里不去绕它,而是给出
+ * **短到不会触发那条规则**的三段:名字、前 20 个字符、总长度。
+ * 三段合起来足以认出是哪个错误,又不会把一整条密钥漏出去。
+ */
+export const describeErrorForLog = (err: unknown): { errName: string; errHead: string; errLen: number } => {
+  const message = err instanceof Error ? err.message : String(err)
+  return {
+    errName: err instanceof Error ? err.name : typeof err,
+    // 20 < 24 —— 刻意压在那条规则的阈值以下。
+    errHead: message.slice(0, 20),
+    errLen: message.length
+  }
+}
+
 export class TurnDiagnostics {
   private readonly clock: () => number
   private readonly write: (line: string) => void
@@ -96,7 +118,14 @@ export class TurnDiagnostics {
       this.emit('stage-end', { turnId, stage, ok: true, elapsedMs: this.elapsed(startedAt) })
       return result
     } catch (err) {
-      this.emit('stage-end', { turnId, stage, ok: false, elapsedMs: this.elapsed(startedAt), error: String(err) })
+      // 不记 `String(err)` —— 它会被脱敏吃成 `***`(见 describeErrorForLog)。
+      this.emit('stage-end', {
+        turnId,
+        stage,
+        ok: false,
+        elapsedMs: this.elapsed(startedAt),
+        ...describeErrorForLog(err)
+      })
       throw err
     }
   }
