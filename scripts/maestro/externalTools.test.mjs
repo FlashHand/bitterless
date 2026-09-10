@@ -38,6 +38,36 @@ const {
 const { commandsForHost } = require('../prepare-maestro-package-tools.cjs')
 
 const EXPECTED_BINARY_TARGETS = {
+  zellij: {
+    versionKey: 'zellij_version',
+    version: '0.45.1',
+    targets: {
+      mac_arm: {
+        archive: 'zellij-aarch64-apple-darwin.tar.gz',
+        archiveSha256: 'c029ba4fe1927b79ad9f0cdd59155c4dff80777863c85857d4d09b88b56f9891',
+        inner: 'zellij',
+        output: 'zellij',
+        sha256: 'ca5f9333735bdbc59a621f1d8ed8e24798845302a28ff175d253d4793d5a4a2c',
+        url: 'https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-aarch64-apple-darwin.tar.gz'
+      },
+      mac_intel: {
+        archive: 'zellij-x86_64-apple-darwin.tar.gz',
+        archiveSha256: '8e8bea22737d1652278c51fc5c26c7c22c9855d0ebb9634a84b8873823093114',
+        inner: 'zellij',
+        output: 'zellij',
+        sha256: 'e3afe876c04cb83ca3f68cb939113ec7b1abe5fb46c13727c102a64afcb4b7d4',
+        url: 'https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-apple-darwin.tar.gz'
+      },
+      win: {
+        archive: 'zellij-x86_64-pc-windows-msvc.zip',
+        archiveSha256: 'b854e7b223e67d0705c5f685ef50541c38a57981b13624d09c92bed419b6f80d',
+        inner: 'zellij.exe',
+        output: 'zellij.exe',
+        sha256: '7c34f38921e6884873a9922bfdd4907f4d68fd0a2dd930ce357e4c7cb23f6f42',
+        url: 'https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-pc-windows-msvc.zip'
+      }
+    }
+  },
   bun: {
     version: '1.3.14',
     versionKey: 'bun_version',
@@ -287,6 +317,7 @@ test('package target mapping uses the three requested external_tools directories
 })
 
 test('release inventory locks every platform asset, archive hash, output, and payload hash', () => {
+  assert.deepEqual(BINARY_TOOL_NAMES, ['bun', 'rg', 'fd', 'ouch', 'zellij'])
   for (const [tool, expected] of Object.entries(EXPECTED_BINARY_TARGETS)) {
     assert.deepEqual(INVENTORY[tool], expected, `${tool} release inventory drifted`)
   }
@@ -428,6 +459,26 @@ test('strict store validation rejects missing, tampered, and symlinked payloads'
   }
 })
 
+test('Zellij is required and must match the pinned platform payload', () => {
+  const fixture = makeFixture()
+  try {
+    const zellij = join(fixture.directory, 'zellij')
+    rmSync(zellij)
+    assert.throws(
+      () => validateExternalStore(fixture.root, 'mac_arm', fixture.inventory),
+      /unexpected files/
+    )
+    writeStore(fixture.root, 'mac_arm', fixture.inventory)
+    write(zellij, Buffer.from('mac_arm:zellij:altered'))
+    assert.throws(
+      () => validateExternalStore(fixture.root, 'mac_arm', fixture.inventory),
+      /zellij (?:size|sha256) mismatch/
+    )
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true })
+  }
+})
+
 for (const [storePlatform, packageTarget] of [
   ['mac_arm', 'mac_arm'],
   ['mac_intel', 'mac_intel'],
@@ -438,8 +489,8 @@ for (const [storePlatform, packageTarget] of [
     try {
       const { stage } = writeEmptyStage(fixture.root)
       const stale = storePlatform === 'win'
-        ? ['bun', 'rg', 'fd', 'ouch']
-        : ['bun.exe', 'rg.exe', 'fd.exe', 'ouch.exe']
+        ? ['bun', 'rg', 'fd', 'ouch', 'zellij']
+        : ['bun.exe', 'rg.exe', 'fd.exe', 'ouch.exe', 'zellij.exe']
       for (const filename of stale) write(join(stage, filename), 'stale')
 
       stageExternalTools(fixture.root, packageTarget, fixture.inventory)
@@ -470,6 +521,7 @@ test('source packaging contract is offline, target-scoped, ignored, and external
   assert.equal(pkg.bun_version, '1.3.14')
   assert.equal(pkg.rg_version, '14.1.1')
   assert.equal(pkg.fd_version, '10.5.0')
+  assert.equal(pkg.zellij_version, '0.45.1')
   // One initialization entry, spelled the same way as micromeet-cowork's (owner instruction
   // 2026-09-10) — and it must be the ALL-platform init, never a host-only one.
   assert.equal(pkg.scripts['tools:init'], 'node scripts/maestro/externalTools.cjs init')
@@ -502,8 +554,12 @@ test('source packaging contract is offline, target-scoped, ignored, and external
     assert.ok(builder.includes(sourceExclusion))
   }
   assert.match(builder, /from: build\/maestro-tools\s+to: maestro-tools/)
-  for (const binary of ['bun', 'rg', 'fd', 'anydoc/anydoc.node', 'ouch']) {
+  for (const binary of ['bun', 'rg', 'fd', 'anydoc/anydoc.node', 'ouch', 'zellij']) {
     assert.ok(builder.includes(`Contents/Resources/maestro-tools/${binary}`))
+  }
+  if (existsSync(join(projectRoot, 'electron-builder.yml'))) {
+    const generatedBuilder = readFileSync(join(projectRoot, 'electron-builder.yml'), 'utf8')
+    assert.ok(generatedBuilder.includes('Contents/Resources/maestro-tools/zellij'))
   }
   assert.ok(
     !builder.includes('Contents/Resources/maestro-tools/micromeet'),

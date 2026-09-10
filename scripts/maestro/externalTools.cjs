@@ -24,9 +24,39 @@ const STORE_TO_PACKAGE = {
 }
 const ANYDOC_PACKAGE_NAME = '@firecrawl/anydoc'
 const ANYDOC_BUNDLE_FILES = ['anydoc.js', 'cli.js', 'index.js', 'package.json']
-const BINARY_TOOL_NAMES = ['bun', 'rg', 'fd', 'ouch']
+const BINARY_TOOL_NAMES = ['bun', 'rg', 'fd', 'ouch', 'zellij']
 
 const INVENTORY = {
+  zellij: {
+    versionKey: 'zellij_version',
+    version: '0.45.1',
+    targets: {
+      mac_arm: {
+        archive: 'zellij-aarch64-apple-darwin.tar.gz',
+        archiveSha256: 'c029ba4fe1927b79ad9f0cdd59155c4dff80777863c85857d4d09b88b56f9891',
+        inner: 'zellij',
+        output: 'zellij',
+        sha256: 'ca5f9333735bdbc59a621f1d8ed8e24798845302a28ff175d253d4793d5a4a2c',
+        url: 'https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-aarch64-apple-darwin.tar.gz'
+      },
+      mac_intel: {
+        archive: 'zellij-x86_64-apple-darwin.tar.gz',
+        archiveSha256: '8e8bea22737d1652278c51fc5c26c7c22c9855d0ebb9634a84b8873823093114',
+        inner: 'zellij',
+        output: 'zellij',
+        sha256: 'e3afe876c04cb83ca3f68cb939113ec7b1abe5fb46c13727c102a64afcb4b7d4',
+        url: 'https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-apple-darwin.tar.gz'
+      },
+      win: {
+        archive: 'zellij-x86_64-pc-windows-msvc.zip',
+        archiveSha256: 'b854e7b223e67d0705c5f685ef50541c38a57981b13624d09c92bed419b6f80d',
+        inner: 'zellij.exe',
+        output: 'zellij.exe',
+        sha256: '7c34f38921e6884873a9922bfdd4907f4d68fd0a2dd930ce357e4c7cb23f6f42',
+        url: 'https://github.com/zellij-org/zellij/releases/download/v0.45.1/zellij-x86_64-pc-windows-msvc.zip'
+      }
+    }
+  },
   bun: {
     versionKey: 'bun_version',
     version: '1.3.14',

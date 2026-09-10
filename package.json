@@ -6,6 +6,7 @@
   "fd_version": "10.5.0",
   "ouch_version": "0.8.2",
   "rg_version": "14.1.1",
+  "zellij_version": "0.45.1",
   "description": "An Electron application with Vue and TypeScript",
   "main": "./out/main/app.main.js",
   "repository": "git@github.com:FlashHand/bitterless.git",

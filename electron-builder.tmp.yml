@@ -167,6 +167,7 @@ mac:
     - Contents/Resources/maestro-tools/fd
     - Contents/Resources/maestro-tools/anydoc/anydoc.node
     - Contents/Resources/maestro-tools/ouch
+    - Contents/Resources/maestro-tools/zellij
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   hardenedRuntime: true

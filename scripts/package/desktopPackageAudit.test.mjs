@@ -443,6 +443,7 @@ test('maestro tools gate reports the staged store platform', async () => {
 
   assert.equal(result.maestroTools.storePlatform, 'mac_arm');
   assert.ok(result.maestroTools.files.includes('bun'));
+  assert.ok(result.maestroTools.files.includes('zellij'));
   assert.ok(result.maestroTools.files.includes('anydoc/anydoc.node'));
 });
 
@@ -457,6 +458,30 @@ test('maestro tools gate fails when a shipped tool belongs to another platform',
     () => auditDesktopPackage(fixture.applicationPath),
     /bun targets win32\/x64, expected darwin\/arm64/,
   );
+});
+
+test('maestro tools gate rejects missing and wrong-architecture Zellij on every target', async () => {
+  for (const { platform, arch, filename, wrongBinary, expectedTarget } of [
+    { platform: 'mac', arch: 'arm64', filename: 'zellij', wrongBinary: createMachO64Binary('x64'), expectedTarget: 'darwin/arm64' },
+    { platform: 'mac', arch: 'x64', filename: 'zellij', wrongBinary: createPe64Binary('x64'), expectedTarget: 'darwin/x64' },
+    { platform: 'win', arch: 'x64', filename: 'zellij.exe', wrongBinary: createMachO64Binary('arm64'), expectedTarget: 'win32/x64' },
+  ]) {
+    const fixture = await createSyntheticApplication({
+      platform,
+      arch,
+      maestroToolsOverrides: { [filename]: wrongBinary },
+    });
+    assert.throws(
+      () => auditDesktopPackage(fixture.applicationPath),
+      (error) => error.message.includes(`${filename} targets`)
+        && error.message.includes(`expected ${expectedTarget}`),
+    );
+    unlinkSync(path.join(fixture.resourcesPath, 'maestro-tools', filename));
+    assert.throws(
+      () => auditDesktopPackage(fixture.applicationPath),
+      (error) => error.message.includes(filename) && /missing/.test(error.message),
+    );
+  }
 });
 
 test('maestro tools gate fails when the packaged tools are the other store entirely', async () => {
@@ -762,6 +787,7 @@ test('Electron Builder registers the audit and excludes non-runtime roots', () =
     'Contents/Resources/maestro-tools/rg',
     'Contents/Resources/maestro-tools/fd',
     'Contents/Resources/maestro-tools/ouch',
+    'Contents/Resources/maestro-tools/zellij',
     'Contents/Resources/maestro-tools/anydoc/anydoc.node',
   ]) {
     assert(

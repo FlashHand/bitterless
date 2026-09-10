@@ -221,7 +221,7 @@ tokens, renderer values, and raw errors are forbidden.
 ### Bundled external tools
 
 Maestro's standalone executables and native document converter are application resources, not
-JavaScript dependencies. `yarn tools:init` prepares the pinned Bun, ripgrep, fd, Ouch, and
+JavaScript dependencies. `yarn tools:init` prepares the pinned Bun, ripgrep, fd, Ouch, Zellij, and
 AnyDoc inventories for `mac_arm`, `mac_intel`, and `win` under the gitignored `external_tools/`
 store. Packaging never downloads them: each external-tool preparation step creates the staging
 directories it needs, then the selected platform is validated and copied to `build/maestro-tools`,
@@ -232,6 +232,8 @@ Only the target platform enters an application bundle. `external_tools/**` and t
 explicit signing inventory. AnyDoc and Ouch consume these resource paths today. Bun, ripgrep, and
 fd are pre-positioned for migrated Maestro capabilities but this packaging contract does not enable
 pi builtins, change process-global pi offline/model behavior, or introduce a Bun skill runner.
+Zellij `0.45.1` is pre-positioned for Terminal integration; distribution does not start a server
+or change the default-off [Terminal setting](terminal-toggle.md).
 Operator initialization, package ordering, upgrades, and recovery are defined in the
 [Maestro CLI executable installation guide](../guides/maestro-cli-executable-installation.md).
 

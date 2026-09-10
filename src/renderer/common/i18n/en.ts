@@ -201,6 +201,12 @@ export const en = {
       saveSuccess: 'Saved successfully',
       saveFailed: 'Save failed'
     },
+    terminal: {
+      tabTitle: 'Terminal',
+      enable: 'Enable terminal',
+      loadFailed: 'Could not load the terminal setting. Reopen Terminal settings to try again.',
+      saveFailed: 'Could not save the terminal setting. Try again.'
+    },
     account: {
       tabTitle: 'Account',
       title: 'Account',

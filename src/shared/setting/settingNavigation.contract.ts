@@ -4,6 +4,7 @@ export const SETTING_TABS = [
   'proxy',
   'general',
   'account',
+  'terminal',
   'llm',
   'systemPrompt',
   'notification',

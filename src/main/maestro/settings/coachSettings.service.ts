@@ -8,7 +8,8 @@ const DEFAULT_SETTINGS: CoachSettings = {
   startUrl: DEFAULT_START_URL,
   llmProvider: 'openai-codex',
   llmModel: 'gpt-5.6-luna',
-  llmEffort: 'low'
+  llmEffort: 'low',
+  terminalEnabled: false
 }
 
 const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
@@ -55,7 +56,8 @@ function normalizeSettings(value: Partial<CoachSettings>): CoachSettings {
     startUrl: normalizeStartUrl(value.startUrl),
     llmProvider: provider,
     llmModel,
-    llmEffort: normalizeLlmEffort(value.llmEffort, llmModel)
+    llmEffort: normalizeLlmEffort(value.llmEffort, llmModel),
+    terminalEnabled: value.terminalEnabled === true
   }
 }
 

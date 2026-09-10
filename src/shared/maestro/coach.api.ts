@@ -389,6 +389,7 @@ export interface CoachSettings {
   llmProvider: string
   llmModel: string
   llmEffort: LlmEffort
+  terminalEnabled: boolean
 }
 
 export type LlmProviderId = 'openai-codex' | 'anthropic' | string

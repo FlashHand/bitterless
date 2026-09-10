@@ -7,12 +7,15 @@ vendored 的 Micromeet CLI 与 `scripts/prepare-maestro-cli.cjs` 已整体移除
 external-tools 安装链**不变** —— `maestro-tools` 仍然装着 Bun / ripgrep / fd / Ouch / AnyDoc，
 只是不再多一个 `micromeet` 二进制。文件名保留是为了不打断既有链接。
 
+同日新增 [Zellij 分发](../features/terminal-zellij-distribution.md)：沿用这条安装链，
+版本固定为 `0.45.1`；当前只分发二进制，终端进程与页面尚未接入。
+
 本方案管理 Maestro 随桌面应用分发的独立可执行程序和原生模块。目标不是把工具安装到
 开发机或用户的全局 `PATH`，而是形成一个可复现、可校验且不进入 `app.asar` 的应用资源目录。
 
 适用范围：
 
-- Bun、ripgrep (`rg`)、fd、Ouch；
+- Bun、ripgrep (`rg`)、fd、Ouch、Zellij；
 - AnyDoc JavaScript bundle 和平台原生模块；
 - macOS ARM64、macOS x64 和 Windows x64。
 
@@ -67,6 +70,7 @@ Windows 使用 Electron 的同一运行时约定：
 | ripgrep (`rg`) | `14.1.1` | `tools:init` | 为本地检索能力预置 |
 | fd | `10.5.0` | `tools:init` | 为本地文件发现能力预置 |
 | Ouch | `0.8.2` | `tools:init` | Maestro 归档文件创建与解压 |
+| Zellij | `0.45.1` | `tools:init` | 为后续终端集成预置；当前不启动进程 |
 | AnyDoc | `0.2.4` | `tools:init` | Maestro 文档转 Markdown；JavaScript bundle 与 `anydoc.node` 必须成套安装 |
 
 Bun、`rg` 和 `fd` 目前只是被可靠地放入应用资源；本方案不会启用 pi 内置
@@ -76,9 +80,9 @@ Bun、`rg` 和 `fd` 目前只是被可靠地放入应用资源；本方案不会
 
 | 本地仓库目录 | 打包 target | 外部可执行文件 |
 |---|---|---|
-| `external_tools/mac_arm` | `mac_arm` | `bun`, `rg`, `fd`, `ouch` |
-| `external_tools/mac_intel` | `mac_intel` | `bun`, `rg`, `fd`, `ouch` |
-| `external_tools/win` | `win64` | `bun.exe`, `rg.exe`, `fd.exe`, `ouch.exe` |
+| `external_tools/mac_arm` | `mac_arm` | `bun`, `rg`, `fd`, `ouch`, `zellij` |
+| `external_tools/mac_intel` | `mac_intel` | `bun`, `rg`, `fd`, `ouch`, `zellij` |
+| `external_tools/win` | `win64` | `bun.exe`, `rg.exe`, `fd.exe`, `ouch.exe`, `zellij.exe` |
 
 每个平台还包含：
 
@@ -215,7 +219,7 @@ node scripts/maestro/externalTools.cjs verify-stage mac_arm
 | 暂存区多出 `micromeet` / `manifest.json` | CLI 退役前的存量产物；`rm -rf build/maestro-tools` 后重新 stage |
 | 平台目录存在额外文件、符号链接或损坏文件 | 执行 `yarn tools:init --force` 原子重建，不要手工修 manifest |
 | `app.asar` 再次异常增大 | 检查 `electron-builder.tmp.yml` 仍排除 `external_tools/**` 和 `prebuilt/**`，并运行 desktop package audit |
-| macOS 签名遗漏 | 检查 `mac.binaries` 包含 `bun`、`rg`、`fd`、`ouch` 和 `anydoc/anydoc.node` |
+| macOS 签名遗漏 | 检查 `mac.binaries` 包含 `bun`、`rg`、`fd`、`ouch`、`zellij` 和 `anydoc/anydoc.node` |
 
 ## Owner 验收清单
 

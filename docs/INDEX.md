@@ -6,6 +6,11 @@ design document.
 
 ## Feature contracts
 
+- [Terminal setting](features/terminal-toggle.md) - default-off Terminal switch shared
+  by Home and Workbench Settings; stores the preference ahead of process integration.
+- [Zellij distribution](features/terminal-zellij-distribution.md) - pinned Zellij
+  binaries join `tools:init`, platform manifests, offline staging, and macOS signing.
+
 - [INDEX CA list and Generate](plan/tasks/trench-index-generate-031.md) - Add saves metadata;
   Generate explicitly rebuilds the selected chain.
 

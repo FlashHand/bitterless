@@ -25,6 +25,14 @@
           {{ i18nHelper.setting.account.tabTitle }}
         </div>
         <div
+          name="setting__nav-terminal"
+          class="setting__nav-item"
+          :class="{ 'setting__nav-item--active': settingNavStore.activeTab === 'terminal' }"
+          @click="onNavClick('terminal')"
+        >
+          {{ i18nHelper.setting.terminal.tabTitle }}
+        </div>
+        <div
           class="setting__nav-item"
           :class="{ 'setting__nav-item--active': settingNavStore.activeTab === 'llm' }"
           @click="onNavClick('llm')"
@@ -67,6 +75,7 @@
           :show-chat-menu-control="showChatMenuControl"
         />
         <AccountSetting v-if="settingNavStore.activeTab === 'account'" />
+        <TerminalSetting v-if="settingNavStore.activeTab === 'terminal'" />
         <LLMSetting v-if="settingNavStore.activeTab === 'llm'" />
         <SystemPromptSetting v-if="settingNavStore.activeTab === 'systemPrompt'" />
         <NotificationSetting v-if="settingNavStore.activeTab === 'notification'" />
@@ -88,6 +97,7 @@ import { settingNavStore } from './store/settingNav.store';
 const ProxySetting = defineAsyncComponent(() => import('./components/ProxySetting/ProxySetting.vue'));
 const GeneralSetting = defineAsyncComponent(() => import('./components/GeneralSetting/GeneralSetting.vue'));
 const AccountSetting = defineAsyncComponent(() => import('./components/AccountSetting/AccountSetting.vue'));
+const TerminalSetting = defineAsyncComponent(() => import('./components/TerminalSetting/TerminalSetting.vue'));
 const LLMSetting = defineAsyncComponent(() => import('./components/LLMSetting/LLMSetting.vue'));
 const SystemPromptSetting = defineAsyncComponent(
   () => import('./components/SystemPromptSetting/SystemPromptSetting.vue')

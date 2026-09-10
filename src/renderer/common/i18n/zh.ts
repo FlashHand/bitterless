@@ -199,6 +199,12 @@ export const zh: typeof en = {
       saveSuccess: '保存成功',
       saveFailed: '保存失败'
     },
+    terminal: {
+      tabTitle: '终端',
+      enable: '启用终端',
+      loadFailed: '无法加载终端设置，请重新打开终端设置后重试。',
+      saveFailed: '无法保存终端设置，请重试。'
+    },
     account: {
       tabTitle: '账号',
       title: '账号',
