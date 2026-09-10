@@ -378,6 +378,7 @@ export const zh: typeof en = {
       name: 'EyesOnAgents',
       subtitle: '观测本机 Codex 与 Claude 任务，并按 Domain 整理'
     },
+    zellij: { name: 'Zellij', subtitle: '本地终端会话与分屏快捷键' },
     submodules: {
       name: 'Submodules',
       subtitle: '实时查看一个目录下所有 Git 子模块当前所在的分支'
@@ -943,6 +944,53 @@ export const zh: typeof en = {
     syncPermanentFailures: '永久失败',
     syncRetry: '重试',
     syncDiscard: '丢弃'
+  },
+  zellij: {
+    title: 'Zellij',
+    initialize: '初始化并打开',
+    settings: '终端设置',
+    splitDown: '向下分屏',
+    splitRight: '向右分屏',
+    closePane: '关闭当前窗格',
+    save: '保存快捷键',
+    saved: '快捷键已保存',
+    copied: '已复制配置目录',
+    configDirectory: '配置目录',
+    copy: '复制',
+    open: '打开',
+    refresh: '刷新设置',
+    shortcutsHint:
+      '使用 Zellij 按键语法，例如 Super d 或 Ctrl Alt d。快捷键在 Normal 模式下使用；Locked 模式按 Ctrl+G，其他模式按 Esc 返回 Normal。',
+    emptyEnabled: '点击“初始化并打开”准备本地终端，然后创建或选择会话。',
+    emptyDisabled: '先启用终端，再点击“初始化并打开”。现有配置会保留。',
+    status: {
+      off: '已关闭',
+      idle: '待初始化',
+      starting: '正在打开…',
+      ready: '已连接',
+      error: '需要处理'
+    },
+    errors: {
+      disabled: '请先启用终端再初始化。',
+      'binary-missing': '缺少内置 Zellij。请运行 yarn tools:init 并暂存工具，或重新安装应用。',
+      'unsupported-platform': 'Zellij 支持 macOS 和 Windows。',
+      'port-occupied': '12877 端口被其他服务占用，请释放该端口后重试。',
+      'version-mismatch': '本地服务不是 Zellij 0.45.1，请停止冲突服务后重试。',
+      'start-failed': 'Zellij 未能启动或已停止，请点击“初始化并打开”重试。',
+      'startup-timeout': 'Zellij 启动超时，请重试。',
+      'authentication-failed': '无法登录本地终端，请点击“初始化并打开”重试。',
+      'token-failed': 'Zellij 无法创建认证令牌，请重试。',
+      'secure-storage-unavailable': '安全凭证存储不可用，请恢复系统钥匙串访问权限后重试。',
+      'config-invalid': '无法安全编辑配置，请打开配置目录检查 config.kdl。',
+      'config-drift': '配置已在其他位置修改，请刷新设置后重新保存。',
+      'config-validation-failed': 'Zellij 不接受这些配置，请检查快捷键后重试。原配置已保留。',
+      'config-write-failed': '无法保存配置，请检查目录权限。',
+      'shortcut-invalid': '请输入有效的 Zellij 快捷键，例如 Ctrl、Alt、Super 或 Shift 加按键。',
+      'shortcut-conflict': '快捷键重复或已用于其他操作，请选择其他按键。',
+      'directory-missing': '配置目录尚不存在，请先初始化终端。',
+      'directory-open-failed': '无法打开配置目录。',
+      'operation-failed': '终端操作失败，请刷新设置或重试。'
+    }
   },
   submodules: {
     title: 'Submodules',

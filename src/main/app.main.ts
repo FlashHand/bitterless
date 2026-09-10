@@ -28,6 +28,7 @@ import { coinWindowHandler } from './xpc/coinWindow.handler';
 import { maestroWindowHandler } from './xpc/maestroWindow.handler';
 import { eyesOnAgentsWindowHandler } from './xpc/eyesOnAgentsWindow.handler';
 import { submodulesWindowHandler } from './xpc/submodulesWindow.handler';
+import { zellijWindowService } from '@main/zellij/zellijWindow.service';
 import { todoWindowHandler } from './xpc/todoWindow.handler';
 import { pluginTestHandler } from './xpc/pluginTest.handler';
 import { applicationLanguageService } from './i18n/applicationLanguage.service';
@@ -415,6 +416,7 @@ const cleanupResources = (): Promise<void> => {
     try { await maestroWindowHandler.destroyForHostQuit(); } catch {}
     try { await eyesOnAgentsWindowHandler.destroyForHostQuit(); } catch {}
     try { await submodulesWindowHandler.destroyForHostQuit(); } catch {}
+    try { await zellijWindowService.destroy(); } catch {}
     try { await todoWindowHandler.destroyForHostQuit(); } catch {}
     try { await pluginTestHandler.destroyForHostQuit(); } catch {}
     try { mainWindowHelper.destroy(); } catch {}

@@ -32,6 +32,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
+import { createXpcRendererEmitter } from 'electron-xpc/renderer';
+import { ZELLIJ_WINDOW_HANDLER_NAME, type ZellijWindowApi } from '@shared/zellij/zellij.type';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
 import { homeShellBridge } from '@renderer/common/homeShellBridge.client';
 import { omniWindowEmitter } from '@/emitter/omniWindow.emitter';
@@ -45,6 +47,10 @@ import { unwrapOnlyPreviewResult } from '@shared/onlypreview/onlyPreview.contrac
 import { createMiniApps, type MiniApp } from './miniApps.constant';
 
 const openingAppIds = ref(new Set<string>());
+const zellijWindowEmitter = createXpcRendererEmitter<ZellijWindowApi>(ZELLIJ_WINDOW_HANDLER_NAME);
+const openZellij = async (): Promise<void> => {
+  await zellijWindowEmitter.openZellijWindow();
+};
 
 const openTodo = async () => {
   await homeShellBridge.openTodo();
@@ -117,6 +123,7 @@ const miniApps = computed(() =>
     openOmniBrowser,
     openOnlyPreview,
     openSubmodules,
+    openZellij,
     i18nHelper,
   ).map((app) => ({ ...app, name: app.name.toUpperCase() })),
 );

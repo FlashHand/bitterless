@@ -15,6 +15,8 @@ import './eyesOnAgents.handler';
 import './submodulesWindow.handler';
 import './submodulesSystem.handler';
 import './submodules.handler';
+import './zellij.handler';
+import './zellijWindow.handler';
 import './omniWindow.handler';
 import './shell.handler';
 import './sqlitePassword.handler';

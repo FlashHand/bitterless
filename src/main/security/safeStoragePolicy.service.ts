@@ -4,7 +4,8 @@ export type SafeStorageCaller =
   | 'todoist-sync'
   | 'sqlite-password'
   | 'maestro-sqlite'
-  | 'trench-io';
+  | 'trench-io'
+  | 'zellij';
 
 export const resolveSafeStorageIsolationMode = (input: {
   e2e: boolean;

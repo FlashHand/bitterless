@@ -24,8 +24,9 @@ Settings
   an error. Re-entering the category reloads the saved setting.
 - Both English and Chinese label the category and switch. Reuse the Settings page's
   typography, spacing, theme colors, and borderless Arco switch.
-- This change only stores the boolean. It does not start or stop Zellij, create an
-  embedded terminal, or authenticate a browser session. Those remain separate work.
+- The [Zellij miniapp](zellij-miniapp.md) uses this same preference as its runtime
+  gate. Enabling alone does not launch a process; Initialize and open does. Disabling
+  detaches the terminal and stops only the server child owned by Bitterless.
 
 ## Verification
 

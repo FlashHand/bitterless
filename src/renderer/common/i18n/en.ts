@@ -384,6 +384,7 @@ export const en = {
       name: 'EyesOnAgents',
       subtitle: 'Observe local Codex and Claude tasks and organize them by Domain'
     },
+    zellij: { name: 'Zellij', subtitle: 'Local terminal sessions and pane shortcuts' },
     submodules: {
       name: 'Submodules',
       subtitle: 'Watch the current branch of every Git submodule in one directory'
@@ -960,6 +961,65 @@ export const en = {
     syncPermanentFailures: 'Permanent failures',
     syncRetry: 'Retry',
     syncDiscard: 'Discard'
+  },
+  zellij: {
+    title: 'Zellij',
+    initialize: 'Initialize and open',
+    settings: 'Terminal settings',
+    splitDown: 'Split down',
+    splitRight: 'Split right',
+    closePane: 'Close pane',
+    save: 'Save shortcuts',
+    saved: 'Shortcuts saved',
+    copied: 'Configuration directory copied',
+    configDirectory: 'Configuration directory',
+    copy: 'Copy',
+    open: 'Open',
+    refresh: 'Refresh settings',
+    shortcutsHint:
+      'Use Zellij key syntax, such as Super d or Ctrl Alt d. These shortcuts work in Normal mode. Press Ctrl+G to leave Locked mode, or Esc from another mode.',
+    emptyEnabled:
+      'Choose Initialize and open to prepare your local terminal, then create or select a session.',
+    emptyDisabled:
+      'Enable terminal, then choose Initialize and open. Your existing configuration will be preserved.',
+    status: {
+      off: 'Off',
+      idle: 'Ready to initialize',
+      starting: 'Opening…',
+      ready: 'Connected',
+      error: 'Needs attention'
+    },
+    errors: {
+      disabled: 'Enable terminal before initializing.',
+      'binary-missing':
+        'The bundled Zellij binary is missing. Run yarn tools:init and stage the tools, or reinstall the application.',
+      'unsupported-platform': 'Zellij is available on macOS and Windows.',
+      'port-occupied': 'Port 12877 is occupied by another service. Free that port and try again.',
+      'version-mismatch':
+        'The local server is not Zellij 0.45.1. Stop the conflicting server and try again.',
+      'start-failed': 'Zellij stopped or could not start. Choose Initialize and open to retry.',
+      'startup-timeout': 'Zellij did not become ready in time. Try again.',
+      'authentication-failed':
+        'Could not sign in to the local terminal. Choose Initialize and open to retry.',
+      'token-failed': 'Zellij could not create an authentication token. Try again.',
+      'secure-storage-unavailable':
+        'Secure credential storage is unavailable. Restore access to the system keychain and try again.',
+      'config-invalid':
+        'The configuration cannot be edited safely. Open its directory and check config.kdl.',
+      'config-drift':
+        'The configuration changed elsewhere. Refresh settings before saving again.',
+      'config-validation-failed':
+        'Zellij rejected these settings. Check the shortcuts and try again. The original configuration was preserved.',
+      'config-write-failed': 'Could not save the configuration. Check directory permissions.',
+      'shortcut-invalid':
+        'Enter a valid Zellij shortcut. Use Ctrl, Alt, Super or Shift followed by a key.',
+      'shortcut-conflict':
+        'A shortcut is duplicated or belongs to another action. Choose a different key.',
+      'directory-missing':
+        'The configuration directory does not exist yet. Initialize the terminal first.',
+      'directory-open-failed': 'Could not open the configuration directory.',
+      'operation-failed': 'The terminal operation failed. Refresh settings or try again.'
+    }
   },
   submodules: {
     title: 'Submodules',

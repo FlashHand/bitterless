@@ -67,6 +67,7 @@
     "typecheck:eyes-on-agents:ui": "vue-tsc --noEmit -p scripts/eyes-on-agents/tsconfig.ui.json --composite false",
     "check:maestro": "node scripts/maestro/check-maestro.mjs",
     "test:maestro-external-tools": "node --test scripts/maestro/externalTools.test.mjs",
+    "test:zellij": "node --test tests/zellij/*.test.mjs",
     "test:maestro-pi-agent-dir": "node --test scripts/maestro/piAgentDir.test.ts",
     "test:maestro-crms-residue": "node --test scripts/maestro/crmsResidueCleanup.test.ts",
     "check:chat-composer": "node scripts/maestro/check-chat-composer.mjs",
@@ -203,6 +204,7 @@
   },
   "devDependencies": {
     "@arco-design/web-vue": "^2.57.0",
+    "@bgotink/kdl": "0.4.0",
     "@earendil-works/pi-ai": "0.85.1",
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",

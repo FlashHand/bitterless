@@ -9,6 +9,7 @@ import { coinWindowEmitter } from '@/emitter/coinWindow.emitter'
 import { eyesOnAgentsWindowEmitter } from '@/emitter/eyesOnAgentsWindow.emitter'
 import { submodulesWindowEmitter } from '@/emitter/submodulesWindow.emitter'
 import { createXpcRendererEmitter } from 'electron-xpc/renderer'
+import { ZELLIJ_WINDOW_HANDLER_NAME, type ZellijWindowApi } from '@shared/zellij/zellij.type'
 import type { CoachXpcContract } from '@maestro-shared/coach.api'
 import { createMiniApps, type MiniApp } from '@/views/miniApp/miniApps.constant'
 import './WorkbenchAppsView.less'
@@ -18,6 +19,7 @@ const coach = createXpcRendererEmitter<Pick<CoachXpcContract, 'openCompositeTab'
 )
 
 const openingAppIds = ref(new Set<string>())
+const zellijWindowEmitter = createXpcRendererEmitter<ZellijWindowApi>(ZELLIJ_WINDOW_HANDLER_NAME)
 
 const miniApps = computed(() =>
   createMiniApps(
@@ -39,6 +41,7 @@ const miniApps = computed(() =>
     // Inside Cowork, OnlyPreview opens as a tab in this window rather than as its own window.
     async () => await coach.openCompositeTab({ id: 'onlypreview' }),
     async () => await submodulesWindowEmitter.openSubmodulesWindow(),
+    async () => await zellijWindowEmitter.openZellijWindow(),
     i18nHelper,
   ),
 )

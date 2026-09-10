@@ -24,6 +24,7 @@ export type WindowStateKey =
   | 'omni'
   | 'eyes-on-agents'
   | 'submodules'
+  | 'zellij'
   | 'maestro'
   | 'coin'
   | 'onlypreview'

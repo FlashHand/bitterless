@@ -635,6 +635,11 @@
     "@babel/helper-string-parser" "^7.27.1"
     "@babel/helper-validator-identifier" "^7.28.5"
 
+"@bgotink/kdl@0.4.0":
+  version "0.4.0"
+  resolved "https://registry.npmmirror.com/@bgotink/kdl/-/kdl-0.4.0.tgz#6d8a4776d423f41c6d99e532764aedff9f6e08a6"
+  integrity sha512-F0uJCjo5FQvFdcGF5QbYVNfcGiRWlocuzyIdQxottZF2+gu6L2xjMGEu9PIpse2hifAca/19vIospgaETCKxIg==
+
 "@bramus/specificity@^2.4.2":
   version "2.4.2"
   resolved "https://registry.npmmirror.com/@bramus/specificity/-/specificity-2.4.2.tgz#aa8db8eb173fdee7324f82284833106adeecc648"

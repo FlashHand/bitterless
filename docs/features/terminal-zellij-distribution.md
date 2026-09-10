@@ -20,6 +20,7 @@ through the existing `yarn tools:init` command in Bitterless and Cowork.
   package dependency is introduced.
 - Distribution does not register an agent tool, start a server, create a terminal
   window, authenticate a session, or change the default-off Terminal preference.
+  Explicit runtime initialization is provided by the [Zellij miniapp](zellij-miniapp.md).
 
 ## Sources
 

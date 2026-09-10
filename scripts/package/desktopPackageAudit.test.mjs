@@ -647,6 +647,7 @@ test('dependency classification keeps external runtime roots and bundles selecte
     'zod',
   ];
   const bundledRuntimeDependencies = [
+    '@bgotink/kdl',
     '@langchain/anthropic',
     '@langchain/core',
     '@langchain/google-genai',

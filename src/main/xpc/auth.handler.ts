@@ -10,6 +10,7 @@ import { pluginTestHandler } from './pluginTest.handler';
 import { todoWindowHandler } from './todoWindow.handler';
 import { eyesOnAgentsWindowHandler } from './eyesOnAgentsWindow.handler';
 import { submodulesWindowHandler } from './submodulesWindow.handler';
+import { zellijWindowService } from '@main/zellij/zellijWindow.service';
 import {
   resumeEyesOnAgentsAfterAuth,
   suspendEyesOnAgentsForAuth,
@@ -200,6 +201,7 @@ class AuthHandler extends XpcMainHandler implements AuthSessionApi {
     await eyesOnAgentsWindowHandler._destroyForAuth().catch((err) => {
       console.warn('[AuthHandler] Failed to destroy EyesOnAgents window:', err);
     });
+    await zellijWindowService.destroy().catch(() => undefined);
     await submodulesWindowHandler._destroyForAuth().catch((err) => {
       console.warn('[AuthHandler] Failed to destroy Submodules window:', err);
     });

@@ -1,0 +1,1 @@
+import 'electron-xpc/preload';

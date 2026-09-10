@@ -55,6 +55,7 @@ const bitterlessPreloadBuildDefine = {
 };
 
 const bundledRuntimeDependencies = [
+  '@bgotink/kdl',
   '@langchain/anthropic',
   '@langchain/core',
   '@langchain/google-genai',
@@ -123,7 +124,7 @@ const submodulesDevCspPlugin = {
   name: 'bitterless:submodules-dev-csp',
   apply: 'serve' as const,
   transformIndexHtml(html: string, context: { path: string }) {
-    if (!context.path.includes('/submodules/')) return html;
+    if (!context.path.includes('/submodules/') && !context.path.includes('/zellij/')) return html;
     return html.replace(
       "connect-src 'none'",
       "connect-src 'self' ws://localhost:* wss://localhost:*"
@@ -455,6 +456,7 @@ export default defineConfig({
           translator: resolve('src/preload/translator/translator.preload.ts'),
           motto: resolve('src/preload/motto/motto.preload.ts'),
           submodules: resolve('src/preload/submodules/submodules.preload.ts'),
+          zellij: resolve('src/preload/zellij/zellij.preload.ts'),
           onlypreview: resolve('src/preload/onlypreview/onlypreview.preload.ts'),
           onlypreviewContent: resolve('src/preload/onlypreview/onlypreviewContent.preload.ts'),
           fileSearch: resolve('src/preload/fileSearch/fileSearch.preload.ts'),
@@ -502,6 +504,7 @@ export default defineConfig({
           translator: resolve('src/renderer/translator/index.html'),
           motto: resolve('src/renderer/motto/index.html'),
           submodules: resolve('src/renderer/submodules/index.html'),
+          zellij: resolve('src/renderer/zellij/index.html'),
           'onlypreview/shell': resolve('src/renderer/onlypreview/shell/index.html'),
           'onlypreview/preview': resolve('src/renderer/onlypreview/preview/index.html'),
           'onlypreview/globalSearch': resolve(

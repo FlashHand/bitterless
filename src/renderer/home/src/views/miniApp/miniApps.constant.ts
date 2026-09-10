@@ -5,6 +5,7 @@ import coinIcon from '@renderer/common/assets/icons/coin.png';
 import eyesOnAgentsIcon from '@renderer/common/assets/icons/eyes-on-agents.svg';
 import submodulesIcon from '@renderer/common/assets/icons/submodules.svg';
 import onlyPreviewIcon from '@renderer/common/assets/icons/onlypreview.svg';
+import zellijIcon from '@renderer/common/assets/icons/zellij.svg';
 import type { en } from '@renderer/common/i18n/en';
 
 export interface MiniApp {
@@ -23,8 +24,16 @@ export const createMiniApps = (
   openOmniBrowser: () => void,
   openOnlyPreview: () => void,
   openSubmodules: () => void,
+  openZellij: () => void,
   i18n: typeof en,
 ): MiniApp[] => [
+  {
+    id: 'zellij',
+    name: i18n.miniApp.zellij.name,
+    subtitle: i18n.miniApp.zellij.subtitle,
+    icon: zellijIcon,
+    action: openZellij,
+  },
   {
     id: 'todo',
     name: i18n.miniApp.todo.name,

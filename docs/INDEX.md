@@ -7,7 +7,9 @@ design document.
 ## Feature contracts
 
 - [Terminal setting](features/terminal-toggle.md) - default-off Terminal switch shared
-  by Home and Workbench Settings; stores the preference ahead of process integration.
+  by Home and Workbench Settings and the Zellij miniapp runtime gate.
+- [Zellij miniapp](features/zellij-miniapp.md) - implemented; owner testing pending;
+  explicit initialization, native terminal view, Normal-mode shortcuts, and configuration access.
 - [Zellij distribution](features/terminal-zellij-distribution.md) - pinned Zellij
   binaries join `tools:init`, platform manifests, offline staging, and macOS signing.
 
