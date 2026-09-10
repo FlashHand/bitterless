@@ -66,66 +66,6 @@ export const AGENT_FILE_MIME_BY_EXT: Record<string, string> = {
   '.log': 'text/plain'
 }
 
-export const buildTrainerTurnPrompt = (params: {
-  message: string
-  skills: string
-  recording: string
-  currentUrl: string
-}): string => {
-  let domain = params.currentUrl
-  try {
-    domain = new URL(params.currentUrl).hostname
-  } catch {
-    /* keep raw */
-  }
-  return [
-    `Current URL: ${params.currentUrl}`,
-    `You train skills for THIS site only (${domain}). The skills below and any you create/optimize/delete belong to this domain; new skills are saved under it automatically.`,
-    '',
-    `Existing skills for ${domain}:`,
-    params.skills,
-    '',
-    'Current capture quick index (not full evidence; use capture_timeline / capture_search / capture_event_detail for details before creating non-trivial skills):',
-    params.recording,
-    '',
-    'User message:',
-    params.message
-  ].join('\n')
-}
-
-export const summarizeRecordsForTrainer = (records: IngestRecord[]): string => {
-  const events = records.map((record) => record.event)
-  const actions = events.filter((event) => event.kind === 'action').length
-  const net = events.filter(
-    (event) => event.kind === 'net.request' || event.kind === 'net.response'
-  ).length
-  if (actions === 0 && net === 0) {
-    return '(no active capture — Capture first to create a skill from a capture)'
-  }
-  const lines = records
-    .slice(-40)
-    .map((record) => {
-      const event = record.event
-      const prefix = record.flagged ? '* ' : ''
-      const suffix = record.spec?.trim() ? ` — ${record.spec.trim()}` : ''
-      if (event.kind === 'action') return `${prefix}[ui] ${event.desc}${suffix}`
-      if (event.kind === 'net.request') {
-        return `${prefix}[req] ${event.method} ${event.url}${suffix}`
-      }
-      if (event.kind === 'net.response') {
-        return `${prefix}[res] ${event.status} ${event.url}${suffix}`
-      }
-      if (event.kind === 'snapshot') {
-        return `${prefix}[snapshot] ${event.title || event.url}${suffix}`
-      }
-      return ''
-    })
-    .filter(Boolean)
-    .join('\n')
-  const correlations = summarizeActionApiCorrelations(records, 8)
-  return `${actions} UI steps, ${net} network events.\n${lines}${correlations ? `\nLikely UI→API links:\n${correlations}` : ''}`
-}
-
 export const normalizeHostToolPolicies = (value: unknown): HostToolPolicyMap => {
   const raw =
     value && typeof value === 'object' && !Array.isArray(value)

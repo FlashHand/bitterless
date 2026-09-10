@@ -5,11 +5,13 @@
 // 打不开(管理后台里这类控件很多,钻探因此少覆盖一批入口),而且单点跳变是最好认的自动化特征。
 // 更别扭的是:可见的蓝光标靠 CSS transition 滑过去,页面对它一无所知 —— 看到的和页面收到的是两回事。
 //
-// 轨迹算法在 `@shared/algorithmHelper`(Bézier + Fitts's Law,出处见那里的 readme)。
+// 轨迹算法在 `./algorithm`(Bézier + Fitts's Law,出处见那里的 readme)。**它住在 maestro 树内**:
+// 最初放在 `src/shared/algorithmHelper` 下,被 `assertMaestroAliasBoundary` 判为越界 ——
+// maestro 子树要能整体搬走,一个只有它用的纯算法库不能留在宿主侧。
 // 这个文件只管两件事:把算出来的点派发成 CDP 事件,以及把**同一条**轨迹画给人看。
 import type { WebContents } from 'electron'
-import { humanPath, randomPointInBox } from '@shared/algorithmHelper/humanPath.helper'
-import type { Box, Vector } from '@shared/algorithmHelper/algorithm.type'
+import { humanPath, randomPointInBox } from '@maestro-main/drive/algorithm/humanPath.helper'
+import type { Box, Vector } from '@maestro-main/drive/algorithm/algorithm.type'
 // bl 走 `String(fn)` 注入(与 snapshotWalker 同形),不是 cowork 的 vite 虚拟模块 ——
 // 理由写在被引的那个文件头部(keepNames 那一段)。
 import { MOUSE_OVERLAY } from './inject/mouseOverlay.inject'

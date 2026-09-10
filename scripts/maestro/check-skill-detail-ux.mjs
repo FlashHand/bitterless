@@ -68,7 +68,7 @@ for (const [facade, owner] of [
 }
 assert(skillService.includes("record.event.kind !== 'error' && record.event.kind !== 'info'"), 'skill ingest should filter error/info capture noise')
 assert(skillService.includes("capture.source === 'edited' ? 'edited records' : 'events'"), 'skill ingest should preserve capture source reporting')
-assert(skillService.includes('this._state.lastAgentRun = {') && skillService.includes('this._state.lastTrainerRun = { skill: result.skill }'), 'SkillService should preserve agent and trainer turn result state')
+assert(skillService.includes('this._state.lastAgentRun = {'), 'SkillService should preserve agent turn result state')
 assert(skillService.includes("xpcMain.broadcast('coach/skills-changed'"), 'SkillService should broadcast successful skill changes')
 assert(skillService.includes("errors: ['Skill recipe not found.']") && skillService.includes("errors: ['Browser view is not ready.']"), 'SkillService should preserve missing recipe/browser replay errors')
 assert(skillService.includes("message: 'Export cancelled.'") && skillService.includes("message: 'Import cancelled.'"), 'SkillService should preserve import/export cancellation results')

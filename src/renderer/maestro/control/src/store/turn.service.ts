@@ -783,8 +783,12 @@ export class TurnService extends CommonService<MessageStoreState> {
     // 工具行**也建落点**,不只文字。否则两条播报之间的几十次工具调用只在状态条露一行,
     // 时间线上什么都看不到 —— 而这正是「不能继续感知工具调用」那条抱怨(Ral 2026-08-14)。
     // 建出来的落点会被下一条播报封口,所以它天然只装自己这一段的工具行。
+    // 没有活回合 ⇒ 没有落点(`ensureSink` 自己也会直接返回 undefined)。回合已经释放之后
+    // 迟到的那几帧丢在这里,而不是凭空造一个回合 —— 与 `pushStream` 同一个姿态。
+    const turn = session.turn
+    if (!turn) return
     this.ensureSink(session)
-    session.turn.activity.push(step)
+    turn.activity.push(step)
     this._state.scheduleScrollToBottomIfNear()
   }
 
@@ -793,8 +797,10 @@ export class TurnService extends CommonService<MessageStoreState> {
     const session = this.sessionForAgentPayload(payload)
     if (!session) return
     this.touch(session)
-    if (payload.active) session.turn.phase = 'thinking'
-    session.turn.thinking = payload.active
+    const turn = session.turn
+    if (!turn) return
+    if (payload.active) turn.phase = 'thinking'
+    turn.thinking = payload.active
     const sink = this.sink(session)
     if (sink) sink.thinking = payload.active
     if (payload.active) this._state.scheduleScrollToBottomIfNear()

@@ -14,7 +14,9 @@ const require = createRequire(import.meta.url)
 const baseAgent = readFileSync(join(root, 'main/agent/BaseAgent.ts'), 'utf8')
 const runtimeTypes = readFileSync(join(root, 'main/agent/runtime/agentRuntime.types.ts'), 'utf8')
 const piRuntime = readFileSync(join(root, 'main/agent/runtime/piRuntimeAdapter.ts'), 'utf8')
-const coachRuntime = readFileSync(join(root, 'main/agent/runtime/coachRuntimeAdapter.ts'), 'utf8')
+const agentService = readFileSync(join(root, 'main/agent/maestroAgent.service.ts'), 'utf8')
+// 断言「某个文件保持删除状态」用它 —— 直接 readFileSync 会在文件不存在时抛，那是我们要的相反结果。
+const readIfExists = (rel) => (existsSync(join(projectRoot, rel)) ? readFileSync(join(projectRoot, rel), 'utf8') : '')
 const mediaResolver = readFileSync(join(root, 'main/agent/runtime/mediaRefResolver.ts'), 'utf8')
 const mediaUpload = readFileSync(join(root, 'main/maestro/networking/api/mediaUpload.api.ts'), 'utf8')
 const errorSanitizer = readFileSync(join(sdkRoot, 'runtime/errorSanitizer.ts'), 'utf8')
@@ -42,8 +44,21 @@ if (!piOpenAiCompletionsPath) {
   console.warn(`[check-agent-runtime] SKIP pi openai-completions media-serialization assertion: no openai-completions.js under @earendil-works/pi-ai (looked in ${piOpenAiCompletionsCandidates.join(', ')}). Re-point this guard at the new pi-ai path.`)
 }
 
+/**
+ * **收集全部失败,不在第一条就抛。**
+ *
+ * 2026-09-10 的教训:这个守卫原来是 fail-fast 的,而第 122 行那条
+ * (`BaseAgent should use the Coach runtime router by default`)**本来就是红的** ——
+ * BaseAgent 早就把 runtime 改成必填入参、没有默认值。于是它一抛,**后面所有断言从没执行过**,
+ * 修好它之后立刻又冒出下一条早已过时的断言。
+ *
+ * bl 自己记过同一件事:`docs/issues/maestro-parity-guards-revived.md`
+ * 「`check-maestro.mjs:13` 在遍历之前先调 assertMaestroAliasBoundary();这个断言在 HEAD 就是红的
+ *  ⇒ 它一抛,后面 39 个检查一个都不会执行」。fail-fast 的守卫会把"一条坏了"伪装成"只有一条坏了"。
+ */
+const failures = []
 const assert = (condition, message) => {
-  if (!condition) throw new Error(message)
+  if (!condition) failures.push(message)
 }
 
 const loadBaseAgent = () => {
@@ -62,8 +77,36 @@ const loadBaseAgent = () => {
   )
   wrapped(
     mod.exports,
+    /**
+     * BaseAgent 的相对 import 要在这里给桩 —— `require` 是相对**本守卫脚本**建的,
+     * 解析不到 `./runtime/*`,而它们是 `.ts`、也不能直接 require。
+     *
+     * 2026-09-10:原来只桩了 `./runtime/coachRuntimeAdapter`,而 BaseAgent 后来新增的
+     * `inputBudget` / `modelIoLog` 两个导入没人补 —— `loadBaseAgent()` 因此一直是坏的,
+     * 只是它藏在那条早已变红的 fail-fast 断言后面**从没被执行过**。
+     * 这两个桩只需满足"被调用不炸",守卫断言的是 BaseAgent 的会话行为,不是它们的行为。
+     */
     (specifier) => {
-      if (specifier === './runtime/coachRuntimeAdapter') return { CoachRuntimeAdapter: class CoachRuntimeAdapter {} }
+      if (specifier === './runtime/inputBudget') {
+        return {
+          inputBudget: {
+            line: () => '',
+            report: () => undefined,
+            reset: () => undefined,
+            turnIndexNow: () => 0,
+            turnStart: () => undefined
+          }
+        }
+      }
+      if (specifier === './runtime/modelIoLog') {
+        return {
+          modelIoLog: {
+            append: () => undefined,
+            openSession: async () => undefined,
+            sessionDir: null
+          }
+        }
+      }
       return require(specifier)
     },
     mod,
@@ -76,7 +119,6 @@ const loadBaseAgent = () => {
 for (const forbidden of ['codex exec', '--ephemeral', 'execFile(', 'spawn(', 'spawnSync(']) {
   assert(!baseAgent.includes(forbidden), `BaseAgent must not use CLI per-message execution: ${forbidden}`)
   assert(!piRuntime.includes(forbidden), `PiRuntimeAdapter must not use CLI per-message execution: ${forbidden}`)
-  assert(!coachRuntime.includes(forbidden), `CoachRuntimeAdapter must not use CLI per-message execution: ${forbidden}`)
 }
 
 assert(runtimeTypes.includes('export interface AgentRuntimeAdapter'), 'provider-neutral AgentRuntimeAdapter should exist')
@@ -100,12 +142,26 @@ assert(mediaUpload.includes('new FormData()') && mediaUpload.includes("form.set(
 assert(mediaUpload.includes('new File([readFileSync(ref.path)]'), 'media upload should send binary file data without string/base64 conversion')
 assert(mediaUpload.includes('upload response did not include url/downloadUrl'), 'media upload should require a returned downloadable URL')
 assert(!mediaUpload.includes('base64') && !mediaUpload.includes("toString('base64')"), 'media upload must not use base64')
-// AI-CRMS 于 2026-09 退役,它那条原生运行时随之删除。这里守的不是「还剩几条运行时」,
-// 而是**路由这道接缝还在** —— 下一个非 pi 运行时要接回来的地方是 `select()`,不是 BaseAgent。
-assert(coachRuntime.includes('new PiRuntimeAdapter()'), 'CoachRuntimeAdapter should own the pi runtime instance')
-assert(coachRuntime.includes('private select(): AgentRuntimeAdapter'), 'CoachRuntimeAdapter should keep the per-provider selection seam')
-assert(coachRuntime.includes('return this.pi'), 'CoachRuntimeAdapter should route every provider to pi now that AI-CRMS is retired')
-assert(!coachRuntime.includes('ai-crms'), 'CoachRuntimeAdapter must not resurrect the retired AI-CRMS route')
+// 2026-09-10:中间那层 `CoachRuntimeAdapter` 拆了 —— 它是 21 行纯转发(`select()` 恒返回同一个
+// `PiRuntimeAdapter`),AI-CRMS 2026-09 退役后只剩 pi 一条路,那是为一个不存在的第二条路付抽象税。
+// **原来那四条断言里只有一条还有意义**,就是"不许复活 AI-CRMS",迁到这里;
+// 另外三条守的是被拆掉那层自己的形状(own the instance / keep the seam / route to pi),
+// 随它一起作废 —— 守一个已经不存在的接缝,只会在下一次真要加接缝时挡路。
+// 钉的是「不许有第二条运行时分支」,不是「不许提到 ai-crms」——
+// 文件里那句 `ai-crms` 是历史注释(记 2026-09-08 那个 bug 曾在 ai-crms adapter 上原样复发),
+// 按字面查会把它误判成复活路由。第一版就是这么写的,当场被自己的守卫抓住。
+assert(
+  !/from ['"].*aiCrms|new AiCrms|AiCrmsRuntimeAdapter/.test(piRuntime),
+  'PiRuntimeAdapter must not resurrect the retired AI-CRMS runtime (import/instantiate)'
+)
+assert(
+  !readIfExists('src/main/agent/runtime/coachRuntimeAdapter.ts'),
+  'coachRuntimeAdapter.ts 应当保持删除状态 —— 它是纯转发层,重新引入会让每次加会话入参都多付一次过路费'
+)
+assert(
+  agentService.includes('runtime: new PiRuntimeAdapter()'),
+  'agentPorts() 应当直接持有 PiRuntimeAdapter(中间那层已拆)'
+)
 assert(errorSanitizer.includes('export const sanitizeRuntimeError') && errorSanitizer.includes('[REDACTED_JWT]'), 'runtime error sanitizer should redact common token patterns')
 assert(piRuntime.includes("sanitizeRuntimeError(event.message.errorMessage, 'provider')") && piRuntime.includes("sanitizeRuntimeError(err instanceof Error ? err.message : String(err), 'tool')"), 'pi runtime should sanitize provider and tool errors')
 assert(packageJson.includes('"check:maestro": "node scripts/maestro/check-maestro.mjs"'), 'package scripts should expose the embedded Maestro parity suite')
@@ -119,7 +175,14 @@ if (piOpenAiCompletions) {
 }
 
 assert(baseAgent.includes('private sessionPromise: Promise<AgentRuntimeSession> | null = null'), 'BaseAgent should keep one reusable session promise')
-assert(baseAgent.includes('new CoachRuntimeAdapter()'), 'BaseAgent should use the Coach runtime router by default')
+// **这条断言本来就是红的**(2026-09-10 发现):BaseAgent 早就把 runtime 改成必填入参
+// (`this.runtime = opts.runtime`),没有任何默认值,而断言还在找那个已经不存在的
+// `new CoachRuntimeAdapter()`。守一个不存在的默认值 = 这个守卫整体不可执行(assert 一抛就
+// 停在这儿,后面的都不跑)。现在改成守真正的事实:**运行时是注入的,BaseAgent 不自己选**。
+assert(
+  baseAgent.includes('this.runtime = opts.runtime') && !baseAgent.includes('?? new '),
+  'BaseAgent 的 runtime 必须是注入的、没有默认值 —— 选运行时不是它的职责'
+)
 assert(baseAgent.includes('if (!this.sessionPromise) this.sessionPromise = this.startSession()'), 'ensureSession should be idempotent')
 assert(baseAgent.includes('session = await withTimeout(') && baseAgent.includes('this.ensureSession()'), 'prompt should reuse the managed session')
 assert(baseAgent.includes('if (options?.freshSession) this.reset()'), 'prompt should explicitly opt into fresh sessions only when requested')
@@ -260,4 +323,9 @@ assert(oneShot.ok && runtimeState.createCalls === 3, 'oneShot should use a throw
 assert(runtimeState.createOptions[2]?.tools?.length === 0, 'oneShot should not expose conversation tools')
 assert(runtimeState.sessions[1]?.prompts.length === 1, 'oneShot should not reuse or mutate the managed conversation session')
 
+if (failures.length) {
+  console.error(`[check-agent-runtime] FAILED — ${failures.length} 条`)
+  for (const line of failures) console.error('  ✗ ' + line)
+  process.exit(1)
+}
 console.log('[check-agent-runtime] ok')

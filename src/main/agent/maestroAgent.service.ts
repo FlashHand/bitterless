@@ -21,7 +21,6 @@ import type {
   SessionIoPathResult
 } from '@maestro-shared/coach.api'
 import { MaestroAgent } from '@main/agent/MaestroAgent'
-import { CoachAgent } from '@main/agent/CoachAgent'
 import { DelegateAgent } from '@main/agent/DelegateAgent'
 import { readHostToolCatalog } from '@main/agent/hostToolCatalog'
 import { extractVariablesFromMessage } from '@main/agent/naturalLanguageVariables'
@@ -60,13 +59,11 @@ import {
   agentMediaMimeForPath,
   buildAgentTurnPrompt,
   buildConversationCompactPrompt,
-  buildTrainerTurnPrompt,
   normalizeCompactSummary,
   normalizeHostToolPolicies,
   normalizeHostToolPolicyMode,
   safeUrlForDebug,
   summarizeApprovalArgs,
-  summarizeRecordsForTrainer,
   type AgentSkillBrief
 } from '@main/agent/runtime/agentPrompt'
 import type { CaptureRecordSource } from '@maestro-main/capture/captureRecordSource'
@@ -80,7 +77,7 @@ import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
 import { modelIoLog } from './runtime/modelIoLog'
 import { maestroAgentDir, maestroAuthPath, maestroModelsPath } from '@maestro-main/llm/llmPaths'
 import { describeLlmTarget, providerLabel, type LlmStoredTarget } from '@maestro-main/llm/llmModels'
-import { CoachRuntimeAdapter } from './runtime/coachRuntimeAdapter'
+import { PiRuntimeAdapter } from './runtime/piRuntimeAdapter'
 import { uploadMediaRefsForProvider } from '@maestro-main/networking/api/mediaUpload.api'
 import type { SkillGeneratorService } from '@maestro-main/skills/skillGenerator.service'
 import type { SkillRegistryService } from '@maestro-main/skills/skillRegistry.service'
@@ -171,11 +168,17 @@ interface MaestroAgentRuntimeServices {
  * `@main/agent/BaseAgent` 里 `BaseAgentOptions.runtime` / `describeTarget` 的注释:
  * 给默认值等于让宿主"忘了传"也能编译过,于是 agent 又静默分叉一次。
  *
- * 每个 agent 一个 `CoachRuntimeAdapter`,和接入 SDK 之前 BaseAgent 构造里
- * `opts.runtime ?? new CoachRuntimeAdapter()` 的语义一致,不在这次搬迁里顺手改成共享。
+ * 每个 agent 一个 `PiRuntimeAdapter`,不共享。
+ *
+ * **2026-09-10 拆掉了中间那层 `CoachRuntimeAdapter`。** 它是 21 行的纯转发:
+ * 持有一个 `new PiRuntimeAdapter()`,`select()` 恒返回它。保留它的理由曾是
+ * 「下一个非 pi 运行时接回来的接缝」—— 但 2026-09 AI-CRMS 退役后只剩 pi 一条路,
+ * 那是**为一个不存在的第二条路付抽象税**,而且税是实的:每次给会话加一个入参
+ * (比如 A1 要往下传的 `resourceLoader`),这一层都得跟着改一次签名,纯过路费。
+ * 真要接第二个运行时时再加回来 —— **那时才知道接缝该长什么样,现在这个形状是猜的。**
  */
-const agentPorts = (): { runtime: CoachRuntimeAdapter; describeTarget: typeof describeLlmTarget } => ({
-  runtime: new CoachRuntimeAdapter(),
+const agentPorts = (): { runtime: PiRuntimeAdapter; describeTarget: typeof describeLlmTarget } => ({
+  runtime: new PiRuntimeAdapter(),
   describeTarget: describeLlmTarget
 })
 
@@ -191,16 +194,11 @@ export interface MaestroAgentServiceState {
   captureRecordsForAgent(): CaptureRecordSource
   replaySkill(params: { skillId: string; variables: Record<string, string> }): Promise<ReplayResult>
   syncWorkspaceFromContext(sessionKey: string, workspace?: WorkspaceRef): void
-  trainerToolDetail(skillId: string): string
-  trainerToolCreate(guidance: string): Promise<string>
-  trainerToolOptimize(skillId: string, guidance: string): Promise<string>
-  trainerToolDelete(skillId: string): string
   emitTrace(event: TraceEvent): void
 }
 
 export interface MaestroAgentInstances {
   pi: MaestroAgent
-  piTrainer: CoachAgent
   piDelegate: DelegateAgent
   piGen: BaseAgent
 }
@@ -250,12 +248,10 @@ const MAESTRO_CHAT_MAX_TOOL_ROUNDS = 200
 @injectable()
 export class MaestroAgentService extends CommonService<MaestroAgentServiceState> {
   private pi: MaestroAgent | null = null
-  private piTrainer: CoachAgent | null = null
   private piDelegate: DelegateAgent | null = null
   private piGen: BaseAgent | null = null
 
   private readonly maestroAgents = new Map<string, MaestroAgent>()
-  private readonly trainerAgents = new Map<string, CoachAgent>()
   private readonly delegateAgents = new Map<string, DelegateAgent>()
   private readonly hydratedMaestroAgentSessions = new Set<string>()
   private readonly attachedPaths = new Map<string, Set<string>>()
@@ -285,7 +281,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
 
   lastAgentArtifacts: AgentFileArtifact[] = []
   tabsOpenedThisTurn: TabInfo[] = []
-  lastTrainerRun: { skill?: SkillSummary } = {}
 
   private activeLlmProvider = 'openai-codex'
   private activeLlmModel = 'gpt-5.6-luna'
@@ -336,18 +331,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         })
       )
     }
-    if (!this.piTrainer) {
-      this.piTrainer = this.configureAgent(
-        new CoachAgent({
-          ...agentPorts(),
-          buildTools: () => this.buildTrainerTools(),
-          authPath: maestroAuthPath(),
-          modelsPath: maestroModelsPath(),
-          agentDir: maestroAgentDir(),
-          onDebug: broadcastCodexDebug
-        })
-      )
-    }
     if (!this.piDelegate) {
       this.piDelegate = this.configureAgent(
         new DelegateAgent({
@@ -362,7 +345,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     }
     return {
       pi: this.pi,
-      piTrainer: this.piTrainer,
       piDelegate: this.piDelegate,
       piGen: this.piGen
     }
@@ -381,12 +363,8 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     this.activeLlmEffort = effort
     this.piGen?.setTarget(provider, model, effort)
     this.pi?.setTarget(provider, model, effort)
-    this.piTrainer?.setTarget(provider, model, effort)
     this.piDelegate?.setTarget(provider, model, effort)
     for (const agent of this.maestroAgents.values()) {
-      agent.setTarget(provider, model, effort)
-    }
-    for (const agent of this.trainerAgents.values()) {
       agent.setTarget(provider, model, effort)
     }
     for (const agent of this.delegateAgents.values()) {
@@ -405,16 +383,13 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
 
   resetTurnState(): void {
     this.lastAgentRun = {}
-    this.lastTrainerRun = {}
   }
 
   resetAgentSessions(): void {
     this.pi?.reset()
-    this.piTrainer?.reset()
     this.piDelegate?.reset()
     this.piGen?.reset()
     for (const agent of this.maestroAgents.values()) agent.reset()
-    for (const agent of this.trainerAgents.values()) agent.reset()
     for (const agent of this.delegateAgents.values()) agent.reset()
     this.hydratedMaestroAgentSessions.clear()
   }
@@ -443,11 +418,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     const agents = new Set(
       [
         this.pi,
-        this.piTrainer,
         this.piDelegate,
         this.piGen,
         ...this.maestroAgents.values(),
-        ...this.trainerAgents.values(),
         ...this.delegateAgents.values()
       ].filter((agent): agent is BaseAgent => Boolean(agent))
     )
@@ -457,17 +430,14 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
 
     this.attachedPaths.clear()
     this.maestroAgents.clear()
-    this.trainerAgents.clear()
     this.delegateAgents.clear()
     this.hydratedMaestroAgentSessions.clear()
     this.pi = null
-    this.piTrainer = null
     this.piDelegate = null
     this.piGen = null
     this.lastAgentRun = {}
     this.lastAgentArtifacts = []
     this.tabsOpenedThisTurn = []
-    this.lastTrainerRun = {}
     if (activeTurn) this.finishAgentTurn(activeTurn, 'stopped')
   }
 
@@ -1200,10 +1170,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     }
   }
 
-  async abortTrainer(params?: { sessionId?: string }): Promise<void> {
-    await this.getExistingTrainerAgent(params?.sessionId)?.abort()
-  }
-
   async abortDelegate(params?: { sessionId?: string }): Promise<void> {
     await this.getExistingDelegateAgent(params?.sessionId)?.abort()
   }
@@ -1302,27 +1268,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     return agent
   }
 
-  private getTrainerAgent(sessionId?: string): CoachAgent {
-    this.assertAgentRuntimeActive()
-    const key = this.agentSessionKey(sessionId)
-    if (key === 'default') return this.ensureAgents().piTrainer
-    let agent = this.trainerAgents.get(key)
-    if (!agent) {
-      agent = this.configureAgent(
-        new CoachAgent({
-          ...agentPorts(),
-          buildTools: () => this.buildTrainerTools(),
-          authPath: maestroAuthPath(),
-          modelsPath: maestroModelsPath(),
-          agentDir: maestroAgentDir(),
-          onDebug: broadcastCodexDebug
-        })
-      )
-      this.trainerAgents.set(key, agent)
-    }
-    return agent
-  }
-
   private getDelegateAgent(sessionId?: string): DelegateAgent {
     this.assertAgentRuntimeActive()
     const key = this.agentSessionKey(sessionId)
@@ -1356,12 +1301,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     const key = this.agentSessionKey(sessionId)
     if (key === 'default') return this.pi
     return this.maestroAgents.get(key) ?? null
-  }
-
-  private getExistingTrainerAgent(sessionId?: string): CoachAgent | null {
-    const key = this.agentSessionKey(sessionId)
-    if (key === 'default') return this.piTrainer
-    return this.trainerAgents.get(key) ?? null
   }
 
   private getExistingDelegateAgent(sessionId?: string): DelegateAgent | null {
@@ -1777,143 +1716,6 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       files,
       error: 'empty-agent-turn'
     }
-  }
-
-  async trainerMessage(params: {
-    message: string
-    sessionId?: string
-    files?: { name: string; content: string }[]
-  }): Promise<AgentReply> {
-    const message = params.message.trim()
-    if (!message) {
-      return {
-        ok: false,
-        text: 'Empty message.',
-        ts: Date.now(),
-        error: 'empty-message'
-      }
-    }
-    const services = this._state.ensureServices()
-    await this._state.ensurePersistedCaptureRecordsLoaded()
-    await this.loadHostToolPolicies()
-    const trainer = this.getTrainerAgent(params.sessionId)
-    this.lastTrainerRun = {}
-    const files = (params.files || []).filter(
-      (file) => file && file.name && typeof file.content === 'string'
-    )
-    const withFiles = files.length
-      ? files.map((file) => `# Attached file: ${file.name}\n\n${file.content}`).join('\n\n') +
-        `\n\n---\n\n${message}`
-      : message
-    const result = await trainer.prompt(
-      buildTrainerTurnPrompt({
-        message: withFiles,
-        skills: services.registry.promptContext(this._state.currentUrl) || '(none)',
-        recording: summarizeRecordsForTrainer(this._state.captureRecordsForAgent().records),
-        currentUrl: this._state.currentUrl
-      })
-    )
-    if (!result.ok) {
-      const error = result.error || 'Trainer is unavailable.'
-      return {
-        ok: false,
-        text: describeAgentPromptError(this.activeLlmProvider, this.activeLlmModel, error),
-        ts: Date.now(),
-        error: 'trainer-failed'
-      }
-    }
-    const skill = this.lastTrainerRun.skill
-    if (!skill && result.errorMessage) {
-      return {
-        ok: false,
-        text: describeModelError(this.activeLlmProvider, this.activeLlmModel, result.errorMessage),
-        ts: Date.now(),
-        error: 'model-error'
-      }
-    }
-    this._state.emitTrace({
-      kind: 'info',
-      msg: `trainer: ${skill ? `updated ${skill.name}` : 'reply'}`,
-      ts: Date.now()
-    })
-    return {
-      ok: true,
-      text: result.text || 'OK.',
-      ts: Date.now(),
-      skill
-    }
-  }
-
-  async resetTrainerConversation(params?: { sessionId?: string }): Promise<{ ok: boolean }> {
-    this.lastTrainerRun = {}
-    this.getExistingTrainerAgent(params?.sessionId)?.reset()
-    return { ok: true }
-  }
-
-  private buildTrainerTools(): PiToolSpec[] {
-    return this.wrapHostTools('trainer', [
-      this.buildHostToolCatalogTool('trainer'),
-      ...this._state.buildCaptureAnalysisTools(),
-      {
-        name: 'get_skill_detail',
-        description:
-          "Read a skill's full detail (description, triggers, inputs, body) before deciding how to change it.",
-        params: [
-          {
-            name: 'skill_id',
-            required: true,
-            description: 'Skill id from the existing-skills list.'
-          }
-        ],
-        execute: async (args) => this._state.trainerToolDetail(String(args.skill_id ?? ''))
-      },
-      {
-        name: 'create_or_update_skill',
-        description:
-          'Create a skill from the CURRENT RECORDING after inspecting capture evidence (or update the same-named skill — the previous version is archived automatically). guidance steers the name, triggers, and intent.',
-        params: [
-          {
-            name: 'guidance',
-            required: false,
-            description: 'Operator goal/guidance steering the generated skill.'
-          }
-        ],
-        execute: async (args) =>
-          this._state.trainerToolCreate(typeof args.guidance === 'string' ? args.guidance : '')
-      },
-      {
-        name: 'optimize_skill',
-        description:
-          "Refine an EXISTING skill's metadata/notes per guidance; the previous version is archived automatically.",
-        params: [
-          {
-            name: 'skill_id',
-            required: true,
-            description: 'Skill id to optimize.'
-          },
-          {
-            name: 'guidance',
-            required: true,
-            description: 'What to improve or change.'
-          }
-        ],
-        execute: async (args) =>
-          this._state.trainerToolOptimize(String(args.skill_id ?? ''), String(args.guidance ?? ''))
-      },
-      {
-        name: 'delete_skill',
-        description:
-          'Delete an existing skill by id. Destructive — only when the user clearly asks for removal.',
-        params: [
-          {
-            name: 'skill_id',
-            required: true,
-            description: 'Skill id to delete.'
-          }
-        ],
-        execute: async (args) => this._state.trainerToolDelete(String(args.skill_id ?? ''))
-      }
-    ])
   }
 
   buildHostToolCatalogTool(scope: HostToolScope): PiToolSpec {

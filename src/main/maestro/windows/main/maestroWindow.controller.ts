@@ -21,7 +21,6 @@ import type { PiToolSpec } from '@main/agent/BaseAgent'
 import { buildFileTools } from '@main/agent/tools/fileTools'
 import { buildArchiveTools } from '@main/agent/tools/archiveTools'
 import { MaestroAgent } from '@main/agent/MaestroAgent'
-import { CoachAgent } from '@main/agent/CoachAgent'
 import { DelegateAgent } from '@main/agent/DelegateAgent'
 import {
   MaestroAgentService,
@@ -257,14 +256,6 @@ class MaestroWindowController
 
   set lastAgentRun(value: { skill?: SkillSummary; skills?: SkillSummary[]; replay?: ReplayResult }) {
     this.agentService.lastAgentRun = value
-  }
-
-  get lastTrainerRun(): { skill?: SkillSummary } {
-    return this.agentService.lastTrainerRun
-  }
-
-  set lastTrainerRun(value: { skill?: SkillSummary }) {
-    this.agentService.lastTrainerRun = value
   }
 
   get tabsOpenedThisTurn(): TabInfo[] {
@@ -821,22 +812,6 @@ class MaestroWindowController
     return await this.workspaceFile.toolWorkspaceContext(sessionKey, actionArg)
   }
 
-  trainerToolDetail(skillId: string): string {
-    return this.skillService.trainerToolDetail(skillId)
-  }
-
-  async trainerToolCreate(guidance: string): Promise<string> {
-    return await this.skillService.trainerToolCreate(guidance)
-  }
-
-  async trainerToolOptimize(skillId: string, guidance: string): Promise<string> {
-    return await this.skillService.trainerToolOptimize(skillId, guidance)
-  }
-
-  trainerToolDelete(skillId: string): string {
-    return this.skillService.trainerToolDelete(skillId)
-  }
-
   async trainSkill(params: { skillId: string; guidance: string }): Promise<SkillCreateResult> {
     return await this.skillService.trainSkill(params)
   }
@@ -910,10 +885,6 @@ class MaestroWindowController
     await this.agentService.abortAgent(params)
   }
 
-  async abortTrainer(params?: { sessionId?: string }): Promise<void> {
-    await this.agentService.abortTrainer(params)
-  }
-
   async abortDelegate(params?: { sessionId?: string }): Promise<void> {
     await this.agentService.abortDelegate(params)
   }
@@ -983,18 +954,6 @@ class MaestroWindowController
 
   async logoutCodex(): Promise<LlmConfig> {
     return await this.llmService.logoutCodex()
-  }
-
-  // Skill TRAINER chat: a pi agent whose tools do skill CRUD (create / update /
-  // optimize / delete) — it never invokes skills, and same-name skills are
-  // versioned (old archived) rather than duplicated. Its session is separate from
-  // the invocation agent's, so the two conversations never mix.
-  async trainerMessage(params: { message: string; sessionId?: string; files?: { name: string; content: string }[] }): Promise<AgentReply> {
-    return await this.agentService.trainerMessage(params)
-  }
-
-  async resetTrainerConversation(params?: { sessionId?: string }): Promise<{ ok: boolean }> {
-    return await this.agentService.resetTrainerConversation(params)
   }
 
   buildCaptureAnalysisTools(): PiToolSpec[] {
@@ -1504,7 +1463,6 @@ class MaestroWindowController
     registry: SkillRegistryService
     generator: SkillGeneratorService
     pi: MaestroAgent
-    piTrainer: CoachAgent
     piDelegate: DelegateAgent
     settings: CoachSettingsService
     demo: BookingDemoService
@@ -1515,7 +1473,7 @@ class MaestroWindowController
       this.skillRegistry = new SkillRegistryService(maestroDataRoot())
       this.skillRegistry.ensureRuntimeStorage()
     }
-    const { pi, piTrainer, piDelegate, piGen } = this.agentService.ensureAgents()
+    const { pi, piDelegate, piGen } = this.agentService.ensureAgents()
     if (!this.skillGenerator) {
       this.skillGenerator = new SkillGeneratorService(
         this.skillRegistry,
@@ -1532,7 +1490,6 @@ class MaestroWindowController
       registry: this.skillRegistry,
       generator: this.skillGenerator,
       pi,
-      piTrainer,
       piDelegate,
       settings: this.settings,
       demo: this.demo

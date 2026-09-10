@@ -71,7 +71,10 @@ assert(baseAgent.includes("return ':id'"), 'API activity should hide long id-lik
 
 assert(/this\._state\.broadcastActivity\(\s*'tool',\s*`call generate_skill/.test(skillService), 'Generate should surface as an internal tool call')
 assert(/this\._state\.broadcastActivity\(\s*'tool',\s*`call ingest_recording/.test(skillService), 'Ingest should surface as an internal tool call')
-assert(/this\._state\.broadcastActivity\(\s*'tool',\s*`call create_or_update_skill/.test(skillService), 'Trainer skill generation should surface as an internal tool call')
+// `call create_or_update_skill` 那条随 Coach（skill trainer）agent 一起退役
+// （2026-09-10,`docs/issues/remove-coach-trainer-agent.md`）—— 它只在 `trainerToolCreate` 里播过,
+// 而那个工具包装层的唯一调用方就是已删掉的 trainer。上面 generate_skill / ingest_recording
+// 两条是另外两条活着的路,继续钉。
 assert(agentBroadcast.includes("xpcMain.broadcast('coach/agent-activity'"), 'agent runtime should broadcast agent activity to renderer')
 assert(agentBroadcast.includes("xpcMain.broadcast('coach/agent-thinking'"), 'agent runtime should broadcast live thinking state to renderer')
 assert(maestroWindow.includes('broadcastAgentActivity(phase, label, ok)'), 'controller should keep the activity facade required by domain services')

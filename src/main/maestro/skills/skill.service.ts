@@ -34,7 +34,6 @@ export interface SkillServiceState {
   ensureServices(): SkillRuntimeServices
   replayEngine: ReplayEngine | null
   lastAgentRun: { skill?: SkillSummary; skills?: SkillSummary[]; replay?: ReplayResult }
-  lastTrainerRun: { skill?: SkillSummary }
   broadcastActivity(phase: AgentActivityStep['phase'], label: string, ok?: boolean): void
   emitTrace(event: TraceEvent): void
   captureRecordsForAgent(): CaptureRecordSource
@@ -276,112 +275,5 @@ export class SkillService extends CommonService<SkillServiceState> {
       ts: Date.now()
     })
     return result
-  }
-
-  trainerToolDetail(skillId: string): string {
-    const detail = this._state.ensureServices().registry.readSkillDetail(skillId)
-    if (!detail) return `ERROR: unknown skill_id "${skillId}".`
-    return clipText(
-      JSON.stringify(
-        {
-          id: detail.id,
-          name: detail.name,
-          description: detail.description,
-          triggers: detail.triggers,
-          inputs: detail.inputs,
-          stepCount: detail.stepCount,
-          networkCount: detail.networkCount,
-          body: clipText(detail.body, 4_000)
-        },
-        null,
-        1
-      )
-    )
-  }
-
-  async trainerToolCreate(guidance: string): Promise<string> {
-    const startedAt = Date.now()
-    const capture = this._state.captureRecordsForAgent()
-    const records = capture.records.filter(
-      (record) => record.event.kind !== 'error' && record.event.kind !== 'info'
-    )
-    const events = records.map((record) => record.event)
-    const specNotes = buildIngestSpecNotes(records, capture.workflow)
-    this._state.broadcastActivity(
-      'tool',
-      `call create_or_update_skill (${events.length} ${capture.source === 'edited' ? 'edited records' : 'events'})`
-    )
-    try {
-      const result = await this._state
-        .ensureServices()
-        .generator.summarize(
-          events,
-          this._state.currentUrl,
-          guidance,
-          undefined,
-          specNotes || undefined
-        )
-      if (result.skill) this._state.lastTrainerRun = { skill: result.skill }
-      this._state.broadcastActivity(
-        'tool',
-        appendActivityDuration(
-          result.ok
-            ? `create_or_update_skill returned ${result.skill?.name || 'skill'}`
-            : `create_or_update_skill failed: ${result.error || result.message}`,
-          startedAt
-        ),
-        result.ok
-      )
-      return JSON.stringify({
-        ok: result.ok,
-        message: result.message,
-        error: result.error,
-        skillId: result.skill?.id
-      })
-    } catch (err) {
-      this._state.broadcastActivity(
-        'tool',
-        appendActivityDuration(`create_or_update_skill failed: ${(err as Error).message}`, startedAt),
-        false
-      )
-      throw err
-    }
-  }
-
-  async trainerToolOptimize(skillId: string, guidance: string): Promise<string> {
-    const startedAt = Date.now()
-    this._state.broadcastActivity('tool', `call optimize_skill (${skillId})`)
-    try {
-      const result = await this._state.ensureServices().generator.train(skillId, guidance)
-      if (result.skill) this._state.lastTrainerRun = { skill: result.skill }
-      this._state.broadcastActivity(
-        'tool',
-        appendActivityDuration(
-          result.ok
-            ? `optimize_skill returned ${result.skill?.name || skillId}`
-            : `optimize_skill failed: ${result.error || result.message}`,
-          startedAt
-        ),
-        result.ok
-      )
-      return JSON.stringify({
-        ok: result.ok,
-        message: result.message,
-        error: result.error,
-        skillId: result.skill?.id
-      })
-    } catch (err) {
-      this._state.broadcastActivity(
-        'tool',
-        appendActivityDuration(`optimize_skill failed: ${(err as Error).message}`, startedAt),
-        false
-      )
-      throw err
-    }
-  }
-
-  trainerToolDelete(skillId: string): string {
-    const result = this._state.ensureServices().registry.deleteSkill(skillId)
-    return JSON.stringify({ ok: result.ok, message: result.message, error: result.error })
   }
 }

@@ -245,14 +245,6 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     return await maestroWindowHelper.compactConversation(params)
   }
 
-  async trainerMessage(params: { message: string; sessionId?: string; files?: { name: string; content: string }[] }): Promise<AgentReply> {
-    return await maestroWindowHelper.trainerMessage(params)
-  }
-
-  async resetTrainerConversation(params?: { sessionId?: string }): Promise<{ ok: boolean }> {
-    return await maestroWindowHelper.resetTrainerConversation(params)
-  }
-
   async delegateMessage(params: { message: string; sessionId?: string }): Promise<AgentReply> {
     return await maestroWindowHelper.delegateMessage(params)
   }
@@ -263,10 +255,6 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
 
   async abortAgent(params: { sessionId: string; turnId: string }): Promise<void> {
     await maestroWindowHelper.abortAgent(params)
-  }
-
-  async abortTrainer(params?: { sessionId?: string }): Promise<void> {
-    await maestroWindowHelper.abortTrainer(params)
   }
 
   async abortDelegate(params?: { sessionId?: string }): Promise<void> {

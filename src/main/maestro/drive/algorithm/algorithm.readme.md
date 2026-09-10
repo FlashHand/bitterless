@@ -11,7 +11,7 @@
 ## 拟人轨迹
 
 ```ts
-import { humanPath, randomPointInBox } from '@shared/algorithmHelper/humanPath.helper'
+import { humanPath, randomPointInBox } from '@maestro-main/drive/algorithm/humanPath.helper'
 
 const target = randomPointInBox({ x, y, width, height })
 const { points, delays } = humanPath(current, target, { targetWidth: width })

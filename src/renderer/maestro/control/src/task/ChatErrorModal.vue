@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { IconX } from '@tabler/icons-vue'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
-import IconBtn from '@renderer/common/components/IconBtn/IconBtn.vue'
+import IconBtn from '../../../../common/components/IconBtn/IconBtn.vue'
 import type { ChatErrorCard } from '../store/message.type'
 import './ChatErrorModal.less'
 

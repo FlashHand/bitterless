@@ -100,10 +100,6 @@ export interface CoachXpcContract {
    */
   copySessionIoPath(params: { sessionId: string }): Promise<SessionIoPathResult>
   compactConversation(params: AgentCompactRequest): Promise<AgentCompactReply>
-  // `files` (md only, parsed to text in the renderer) are folded into the trainer turn as
-  // reference/source material; they also render as a separate `type:'files'` user bubble.
-  trainerMessage(params: { message: string; sessionId?: string; files?: { name: string; content: string }[] }): Promise<AgentReply>
-  resetTrainerConversation(params?: { sessionId?: string }): Promise<{ ok: boolean }>
   // Delegate chat: agent acts AS the user toward the user's customer (the message sender).
   delegateMessage(params: { message: string; sessionId?: string }): Promise<AgentReply>
   resetDelegateConversation(params?: { sessionId?: string }): Promise<{ ok: boolean }>
@@ -111,7 +107,6 @@ export interface CoachXpcContract {
   // the pending turn resolves. The agent session is then dropped so aborted output is not carried
   // into later model context.
   abortAgent(params: { sessionId: string; turnId: string }): Promise<void>
-  abortTrainer(params?: { sessionId?: string }): Promise<void>
   abortDelegate(params?: { sessionId?: string }): Promise<void>
   listTasks(): Promise<MaestroTask[]>
   respondTaskConfirm(params: { taskId: string; confirmId: string; confirm: boolean }): Promise<{ ok: boolean }>
