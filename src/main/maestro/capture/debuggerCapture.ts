@@ -555,9 +555,56 @@ export class DebuggerCapture {
     }
   }
 
+  /**
+   * **接管文件选择器**（Ral 2026-08-16：「上传或下载文件时可能都会选择目录,这需要被拦截,
+   * 并且 Agent 要能感知到」；本次随录制状态一起从 cowork 移植）。
+   *
+   * `will-download` 只盖住「文件已经开始下载」那一步。`<input type="file">` 走的是**另一套**：
+   * Chromium 直接弹原生选择器，Electron 层没有任何事件拦得住。CDP 的
+   * `Page.setInterceptFileChooserDialog` 是唯一正规入口 —— 开了之后 Chromium **不再弹框**，
+   * 改发一条 `Page.fileChooserOpened` 交给我们。
+   *
+   * 为什么必须拦：选择器是**模态**的，弹出来之后 agent 的 CDP 操作全打在它上面，
+   * 这一轮就地卡死，外面只看到 stalled。
+   *
+   * **只在录制期间开**（调用方保证）。一直开着的话，人平时用浏览器也再传不了文件 ——
+   * 那是把一个 agent 的需要变成整个应用的残疾。
+   *
+   * 失败不致命：老 Chromium 没这条命令，拦不住最多回到"可能弹框"，不该因此让录制起不来。
+   */
+  async setFileChooserIntercept(enabled: boolean): Promise<void> {
+    if (this.wc.isDestroyed()) return
+    await this.wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled }).catch((err) => {
+      this.onEvent({
+        kind: 'error',
+        msg: `file chooser intercept ${enabled ? 'on' : 'off'} failed: ${(err as Error).message}`,
+        ts: Date.now()
+      })
+    })
+  }
+
   private onMessage = async (_e: unknown, method: string, params: Record<string, any>): Promise<void> => {
     const dbg = this.wc.debugger
     try {
+      if (method === 'Page.fileChooserOpened') {
+        /**
+         * 文件选择器被接管了 —— **什么都不做就是拦截**：`setInterceptFileChooserDialog` 开着时
+         * Chromium 不会弹框，也不会自己继续；不调 `DOM.setFileInputFiles` 这次选择就无声作废，
+         * 页面拿到一个空的 file input。这正是我们要的。
+         *
+         * 只上报，**不代填** —— 代填等于替人做了「上传哪个文件」的决定，而那是**写操作**的入口：
+         * 文件真会被传到客户系统里去。
+         *
+         * 注意这不是"打断"：选择器压根没弹出来，页面拿到一个空 input，JS 继续往下跑，
+         * 录制一秒都没停。对 agent 而言它等价于"人按了取消"。
+         */
+        this.onEvent({
+          kind: 'error',
+          msg: `file chooser blocked (mode=${String(params?.mode || 'selectSingle')})`,
+          ts: Date.now()
+        })
+        return
+      }
       if (method === 'Fetch.requestPaused') {
         await this.handleFetchPaused(params)
       } else if (method === 'Network.requestWillBeSent') {

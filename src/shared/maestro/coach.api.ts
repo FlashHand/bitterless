@@ -470,7 +470,15 @@ export interface CaptureState {
   mode: CaptureMode
   file: string | null
   startedAt?: number
+  /** 「录制期间自动取消文件选择框」这个开关的当前电平（默认关，agent 流程自己开）。 */
+  autoDismissFileDialogs?: boolean
 }
+
+/**
+ * 这份录制是**谁开的**。它是「能不能停」的唯一判据 ——
+ * `stopCaptureIfAgentStarted` 只收 `'agent'` 那一种。
+ */
+export type CaptureStartedBy = 'operator' | 'agent'
 
 export interface CaptureOptions {
   recordActions: boolean

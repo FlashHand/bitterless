@@ -45,8 +45,7 @@ import type {
   CodexDebugEvent,
   ExportRecordingResult,
   IngestRecord,
-  SnapshotResult
-} from '@maestro-shared/coach.api'
+  SnapshotResult, CaptureStartedBy } from '@maestro-shared/coach.api'
 import type { CaptureRule } from '@maestro-shared/captureFilter.api'
 import type { CaptureMode, TraceEvent } from '@maestro-shared/trace.types'
 import type { ConfigApi } from '@maestro-shared/config.api'
@@ -154,12 +153,69 @@ export class CaptureService extends CommonService<CaptureServiceState> {
     return options
   }
 
+  /**
+   * 这份录制是**谁开的**（本次从 cowork 移植）。
+   *
+   * **默认 `'operator'` 是刻意的保守方向。** 两种漏法的代价不对称:
+   * 漏盖章 ⇒ 录制多活一会儿(多花磁盘,`stop_recording` / Capture 按钮随时能停);
+   * 错停 ⇒ **掐掉人正在录的演示,那是不可恢复的**。所以宁可漏停,不可错停。
+   */
+  private captureStartedBy: CaptureStartedBy = 'operator'
+
+  /** 只在录着的时候有意义 —— 没在录时读到的必须是保守值,而不是上一次的残留。 */
+  get captureProvenance(): CaptureStartedBy | null {
+    return this.capturing ? this.captureStartedBy : null
+  }
+
+  /** 「录制期间自动取消文件选择框」的电平。默认关 —— agent 流程自己开、自己关。 */
+  private autoDismissFileDialogs = false
+
+  /**
+   * 把当前录制**电平**播给所有渲染层。
+   *
+   * 红点只吃 `capture-started` / `capture-stopped` 两个**沿**,漏一个就永久错。
+   * 这个方法给"最需要灯是对的那一刻"一个显式的对表点 —— 播完之后灯还不亮,
+   * 就一定是录制真的没在跑,而不是投递问题:**它把一个查不清的现象变成一条可证伪的断言**。
+   */
+  announceCaptureState(): void {
+    xpcMain.broadcast('coach/capture-state', this.getCaptureState())
+  }
+
+  /**
+   * 只收掉**agent 自己开起来的**那份录制;人开的不动。
+   *
+   * 「录制的生命周期归人」那条规矩(Ral 2026-08-16)保留 —— 它保护的是人开的录制。
+   * 而 agent 流程(钻探第一步的 `start_recording`)开起来的那份不是人开的:
+   * 从人的视角他从没打开录制,只是启停了一次流程,灯却留在那亮着。
+   */
+  async stopCaptureIfAgentStarted(reason: string): Promise<boolean> {
+    if (!this.capturing || this.captureStartedBy !== 'agent') return false
+    console.log(`[capture] stopping the agent-started recording — ${reason}`)
+    await this.stopCapture()
+    return true
+  }
+
+  /**
+   * 开/关「自动取消文件选择框」。
+   *
+   * **只在录着的时候真的开拦截**(`on && this.capturing`)—— 一直开着的话人平时用浏览器
+   * 也再传不了文件,那是把一个 agent 的需要变成整个应用的残疾。
+   */
+  async setAutoDismissFileDialogs(on: boolean): Promise<void> {
+    if (this.autoDismissFileDialogs === on) return
+    this.autoDismissFileDialogs = on
+    const target = this.currentCaptureTarget()
+    await target?.capture?.setFileChooserIntercept(on && this.capturing).catch(() => undefined)
+    this.announceCaptureState()
+  }
+
   getCaptureState(): CaptureState {
     return {
       capturing: this.capturing,
       mode: this.captureMode,
       file: this.traceFile,
-      startedAt: this.capturing ? this.captureStartedAt : 0
+      startedAt: this.capturing ? this.captureStartedAt : 0,
+      autoDismissFileDialogs: this.autoDismissFileDialogs
     }
   }
 
@@ -171,9 +227,26 @@ export class CaptureService extends CommonService<CaptureServiceState> {
     }
   }
 
-  async startCapture(params?: { mode?: CaptureMode } & Partial<CaptureOptions>): Promise<CaptureState> {
+  /**
+   * @param opts.startedBy 这份录制是谁开的。默认 `'operator'` —— 见 `captureStartedBy` 的说明。
+   */
+  async startCapture(
+    params?: { mode?: CaptureMode } & Partial<CaptureOptions>,
+    opts?: { startedBy?: CaptureStartedBy }
+  ): Promise<CaptureState> {
     if (params?.mode) this.captureMode = params.mode
     if (params) await this.setCaptureOptions(params)
+    /**
+     * **这一段里只要有过人开的录制,来源就钉死 `'operator'`。**
+     *
+     * 场景是"人先开录演示 → 让 agent 干活 → 停 agent" —— 那份录制是人的。若这里让 agent 的
+     * `startedBy` 盖上去,人的录制就被**洗成** agent 的,下一次 `stopCaptureIfAgentStarted`
+     * 照样把它掐掉,而那恰恰是引入来源字段要保护的场景。宁可漏停,不可错停。
+     */
+    const replacingOperatorCapture = this.capturing && this.captureStartedBy === 'operator'
+    const effectiveStartedBy: CaptureStartedBy = replacingOperatorCapture
+      ? 'operator'
+      : opts?.startedBy || 'operator'
     const active = this._state.getOperationTabs().find((tab) => tab.id === this._state.getActiveOperationTabId())
     if (active && active.kind !== 'browser') {
       this.emitTrace({ kind: 'info', msg: `capture unavailable on ${active.kind} tab`, ts: Date.now() })
@@ -188,8 +261,20 @@ export class CaptureService extends CommonService<CaptureServiceState> {
     this.traceFile = join(dir, `trace-${Date.now()}.jsonl`)
     this.traceStream = createWriteStream(this.traceFile, { flags: 'a' })
     this.capturing = true
+    /**
+     * **来源与"占住 session"同一处落地。**
+     *
+     * 不能盖在 `startCapture` 入口:那里会被上面那些早退闸放过去 —— 一次什么都没做的
+     * agent start(闸早退)照样会把**人正在开**的那份录制改标成 `'agent'`,
+     * 于是下一次停止把人的演示掐掉。这是 cowork 侧 2026-09-09 被红队抓出来的方向。
+     */
+    this.captureStartedBy = effectiveStartedBy
     this.captureStartedAt = Date.now()
     this.captureTargetTabId = target.id
+    // 录制真的起来了 → 若"自动取消文件框"是开着的,把拦截跟着装上(它只在录制期间生效)。
+    if (this.autoDismissFileDialogs) {
+      await target.capture.setFileChooserIntercept(true).catch(() => undefined)
+    }
     this.traceEvents = []
     await this.clearCaptureRecordEdits()
     await target.capture.startRecording()
@@ -205,6 +290,9 @@ export class CaptureService extends CommonService<CaptureServiceState> {
   async stopCapture(): Promise<CaptureState> {
     const stoppedStartedAt = this.captureStartedAt
     this.capturing = false
+    // **复位成保守值。** 不复位的话,下一份人开的录制会继承上一份 agent 的章,
+    // 于是 `stopCaptureIfAgentStarted` 会去停一份人正在录的演示 —— 那是不可恢复的。
+    this.captureStartedBy = 'operator'
     this.captureStartedAt = 0
     const target = this.captureTargetTab()
     await target?.capture?.stopRecording()
