@@ -315,7 +315,15 @@ export class OnlyPreviewProjectNativeActionService {
         items.push(extra);
       }
       await onlyPreviewClipboardService.copyProjectItems(items, copyKind);
-    } catch {
+    } catch (error) {
+      // **把原因记下来再弹那个对话框。** 原来这里是裸 `catch {}`,于是授权失败、路径非法、osascript
+      // 挂掉、剪贴板被占用全折成同一句「复制失败」,真正的原因一个字都不留 —— Ral 2026-09-10 报
+      // 「复制文件名报错了」时就没有任何东西可看。对话框照旧(那是给人看的),日志是给下一次查的。
+      console.info(
+        `[onlypreview] event=copy-failed kind=${copyKind} count=${(selection?.length ?? 0) + 1} reason=${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
       await this.showCopyFailure(window).catch(() => undefined);
     }
   }

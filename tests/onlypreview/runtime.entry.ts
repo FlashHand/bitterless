@@ -16,3 +16,4 @@ export * from '../../src/main/miniapps/onlypreview/onlyPreviewWindowBounds.servi
 export * from '../../src/main/miniapps/onlypreview/onlyPreviewGlobalSearchFocus.service';
 export * from '../../src/main/miniapps/onlypreview/onlyPreviewRecentDirectory.service';
 export * from '../../src/shared/onlypreview/onlyPreviewTargetInput';
+export * from '../../src/renderer/onlypreview/shell/src/onlyPreviewCopyShortcut.service';

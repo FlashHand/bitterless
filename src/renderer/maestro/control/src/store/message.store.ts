@@ -1313,6 +1313,9 @@ export class MessageStoreState {
         keepRecentTokens: maxTokens <= 2048 ? Math.round(maxTokens * 0.3) : Math.min(Math.round(maxTokens * 0.25), 12000),
         // 迁移兜底而已:main 优先用自己 entry 树上最后一条 compaction entry 作为 S₁,
         // 只有树上还没有时才用这个(老会话的 `detail.compressedContext`)。
+        // ② 用户原话链**不在这里给** —— main 自己从 `<userData>/chain/<sessionId>.jsonl` 建
+        // (`compaction.handler.ts`)。渲染端存的是用户敲的原文,而 main 发出去的是长粘贴换过的
+        // 引用;渲染端建链等于把被换掉的长粘贴在第一次压缩时原样注入回来。这条路只能有一个来源。
         previousSummary: session.detail.compressedContext || undefined
       })
       if (reply.ok && reply.summary.trim()) {

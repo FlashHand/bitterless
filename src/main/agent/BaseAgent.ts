@@ -1,5 +1,6 @@
 import { homedir } from 'os'
 import { join } from 'path'
+import { BASE_SYSTEM_PROMPT } from './prompt/sysPrompt'
 import { inputBudget } from './runtime/inputBudget'
 import { modelIoLog } from './runtime/modelIoLog'
 import type { AgentActivityStep, AgentThinkingState, CodexDebugEvent, LlmEffort } from './runtime/runtime.types'
@@ -68,8 +69,6 @@ export interface BaseAgentOptions {
   cwd?: string
   /** pi builtin tools to enable (read/bash/edit/write/grep/find/ls). Empty/absent = host tools only. */
   builtinTools?: string[]
-  /** 工具循环轮次上限(per-session)。省略走运行时默认。探站类长回合需要抬高 —— 见 CoworkAgent。 */
-  maxToolRounds?: number
   /**
    * 一整个回合(整条 ReAct)的墙钟上限(per-session)。省略 → 环境变量 → 默认 600s。
    * 钻探的探索回合是几十页的一次遍历,600s 不够(它真正的边界是 exploreSession 自己的 120min
@@ -114,9 +113,9 @@ export interface BaseAgentOptions {
 // LLM provider/model are env-switchable. Subscription OAuth tokens are created by the in-app
 // browser login — AuthStorage.login — into the coach's userData auth store, NOT the `pi` CLI.
 const DEFAULT_PROVIDER = 'openai-codex'
+// Claude 退役(Ral 2026-09-11),所以这里只剩 codex 一条。
 const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
-  'openai-codex': 'gpt-6-astra',
-  anthropic: 'claude-opus-4-8'
+  'openai-codex': 'gpt-6-astra'
 }
 const DEFAULT_SESSION_START_TIMEOUT_MS = 45_000
 // pi's own builtin tools, all on (Ral 2026-07-27: 全开,后续按需删减). pi registers all seven but
@@ -148,9 +147,6 @@ const toolTimeoutMs = (): number => {
 export class BaseAgent {
   private sessionPromise: Promise<AgentRuntimeSession> | null = null
   private readonly runtime: AgentRuntimeAdapter
-  // The system prompt is injected ONCE per session as a preamble (pi exposes no API to set
-  // the LLM system prompt directly); `primed` tracks whether this session has received it.
-  private primed = false
   private busy = false
   // Runtime overrides set by the UI provider switch; take precedence over env/opts.
   private providerOverride?: string
@@ -201,12 +197,27 @@ export class BaseAgent {
   }
 
   /**
-   * The composed system prompt this agent injects — read from the LIVE instance (same
-   * systemPrompt() override the session preamble uses), so the Workbench Prompt tab can never
-   * drift from what actually runs.
+   * **交给运行时的完整 system 提示词 = 表 1 + 表 2。**
+   *
+   * 表 1 = `BASE_SYSTEM_PROMPT`(`prompt/sysPrompt.ts`,进程级,所有 agent 共用);
+   * 表 2 = 本子类的 `composeSystemPrompt()`(后端事实块 + `systemPrompt()` 的产品层)。
+   * 分层见 `overmind:areas/agent-runtime/chat/prompt-structure.html` #2。
+   *
+   * 2026-09-11 起表 2 **进 system 槽位**,不再拼在第一条 user 消息上 —— 那种做法一次压缩
+   * 就把产品人格冲掉了(`primed` 机制连同它那个坑一起删掉了)。
+   */
+  private fullSystemPrompt(): string {
+    const product = this.composeSystemPrompt().trim()
+    return product ? `${BASE_SYSTEM_PROMPT}\n\n${product}` : BASE_SYSTEM_PROMPT
+  }
+
+  /**
+   * The composed system prompt this agent injects — read from the LIVE instance, so the
+   * Workbench Prompt tab and `/view_context` can never drift from what actually runs.
+   * **返回的是完整那份(表 1 + 表 2)**,即运行时真正收到的字符串。
    */
   composedSystemPrompt(): string {
-    return this.composeSystemPrompt()
+    return this.fullSystemPrompt()
   }
 
   /** Switch the LLM backend live. Drops the session so the next turn rebuilds it. */
@@ -323,7 +334,16 @@ export class BaseAgent {
       cwd: this.opts.cwd,
       // Builtins only make sense alongside host tools (a tool-less session is a pure LLM call).
       builtinTools: withTools ? (this.opts.builtinTools ?? DEFAULT_PI_BUILTIN_TOOLS) : undefined,
-      maxToolRounds: this.opts.maxToolRounds
+      /**
+       * **接管 pi 的 system 槽位**(`prompt/sysPrompt.ts`,契约
+       * `docs/features/maestro-system-prompt-layers.md`)。传了它,pi 就不再生成原厂那段
+       * A1–A5 —— 我们逐字照搬 A1–A4、删掉 A5 那 1408 字符的 pi 文档索引。
+       *
+       * **无工具会话也传**(`withTools === false`,`oneShot()` 那条路)。这里有一处已知的
+       * 不精确:那种会话里 A2 的工具表列的是它并没有激活的内置工具。仍然传,因为
+       * 不传的代价更大 —— 不传就退回 pi 原厂,连 A5 一起拿回来。
+       */
+      systemPrompt: this.fullSystemPrompt()
     })
   }
 
@@ -392,7 +412,7 @@ export class BaseAgent {
         this.sessionPromise = null
         throw err
       }
-      const turn = await this.runPrompt(session, this.withSystemPreamble({ text: message, media: options?.media, images: options?.images }), timeoutMs)
+      const turn = await this.runPrompt(session, { text: message, media: options?.media, images: options?.images }, timeoutMs)
       // 上下文归因(Ral 2026-08-20:「我得知道是什么太大导致的,然后才能让 agent 制定拆分的方案」)。
       // **每回合都记**,不是只在出错时记 —— 撑爆上下文是累积的结果,只在爆掉那一刻看一眼,
       // 看到的是终局而不是过程,而拆分方案要的是过程(哪个工具在涨、涨得多快)。
@@ -459,7 +479,7 @@ export class BaseAgent {
    *    这里若顺手清一下,真正在跑的那个回合就失去了互斥保护,下一条普通消息会撞进它。
    * 3. **`busy` 为假时不走这条路。** 那时没有活跃回合,返回 `idle` 让调用方回到 `prompt()`。
    *
-   * 文本**逐字**交给会话:不加系统前缀(会话早就 primed 过)、不套回合模板 —— 压缩契约要求
+   * 文本**逐字**交给会话:不加系统前缀(系统提示词在建会话时就进 system 槽位了)、不套回合模板 —— 压缩契约要求
    * steering 消息原样进「② 用户原话链」。投递方式(steer / followUp)由适配器里的策略决定
    * (`steering/steeringPolicy.ts`),这里不判断,也不给调用方任何选择的口子。
    *
@@ -551,7 +571,7 @@ export class BaseAgent {
   /**
    * Tool-enabled ReAct run on a FRESH throwaway session — the full agent loop (page_snapshot +
    * ui_act + browser_exec + api_exec + run_request_script …) scoped to ONE goal, WITHOUT touching
-   * the conversational session or its `primed` state. This is the workflow engine's "AI node":
+   * the conversational session. This is the workflow engine's "AI node":
    * an `llm_reason` step, a maturity-dial `llm`-mode step, or a deterministic step's self-heal —
    * the agent observes+acts on the live page in an isolated thread that never pollutes the
    * operator's chat context. Does NOT take the `busy` lock (may run nested in an outer turn / a
@@ -566,9 +586,8 @@ export class BaseAgent {
         sessionStartTimeoutMs(),
         `agent runtime scoped session start timed out after ${Math.round(sessionStartTimeoutMs() / 1000)}s`
       )
-      // Prepend the system prompt for this throwaway session only (never touch this.primed).
-      const sys = this.composeSystemPrompt().trim()
-      const turn = await this.runPrompt(session, { text: sys ? `${sys}\n\n${goal}` : goal }, timeoutMs)
+      // 不再手工拼前缀:这个一次性会话在 createSession 时就带上了表 1 + 表 2。
+      const turn = await this.runPrompt(session, { text: goal }, timeoutMs)
       this.debug(
         turn.errorMessage ? 'agent-scoped-error' : 'agent-scoped-complete',
         turn.errorMessage ? 'warn' : 'info',
@@ -589,7 +608,6 @@ export class BaseAgent {
   reset(): void {
     const existing = this.sessionPromise
     this.sessionPromise = null
-    this.primed = false
     // 会话没了,累计数也要归零 —— 不清的话下一个会话的"累计"里混着上一个的,
     // 而那个数字是用来判断"该不该压缩/拆分"的,串味等于判据失效。
     inputBudget.reset()
@@ -616,14 +634,6 @@ export class BaseAgent {
     }
   }
 
-  // Prepend the system prompt to the FIRST message of a session (once); later turns rely on
-  // the session's own history. oneShot() bypasses this — its prompts are self-contained.
-  private withSystemPreamble(message: AgentRuntimePrompt): AgentRuntimePrompt {
-    if (this.primed) return message
-    this.primed = true
-    const sys = this.composeSystemPrompt().trim()
-    return sys ? { ...message, text: `${sys}\n\n${message.text}` } : message
-  }
 
   private async runPrompt(session: AgentRuntimeSession, message: AgentRuntimePrompt, timeoutMs: number): Promise<PiTurnResult> {
     let streamed = ''

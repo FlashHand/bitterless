@@ -4,6 +4,7 @@ import { Button, Message, Notification, Spin, Trigger } from '@arco-design/web-v
 import { IconLogin2, IconSparkle2, IconX } from '@tabler/icons-vue'
 import { createXpcRendererEmitter, xpcRenderer } from 'electron-xpc/renderer'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
+import { defaultLlmEffort } from '@maestro-shared/coach.api'
 import type {
   AgentActivityStep,
   AgentThinkingState,
@@ -58,7 +59,8 @@ const syncLlmContextWindow = (cfg: LlmConfig): void => {
   messageStore.setContextWindow(preset?.contextLengthK || 256, preset?.contextLengthLabel || '256K', preset?.compressionRemainingPercent || 10)
 }
 
-const firstEffort = (model: LlmTarget): LlmEffort => model.efforts[0]?.id || model.effort
+// 预设声明的默认档优先(astra 列 low..max 但默认 medium);`efforts[0]` 只是它不在自己列表里时的兜底。
+const firstEffort = (model: LlmTarget): LlmEffort => defaultLlmEffort(model)
 
 /**
  * Control 面板**不展示**的 provider。crms 退役后这张表是空的 —— 空是有意的,不是忘了填。

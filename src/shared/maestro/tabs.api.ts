@@ -7,6 +7,18 @@ export interface SavedTab {
   favicon: string
   /** 0-based order in the strip (after the pinned tab). */
   position: number
+  /**
+   * Tab kind, for a row that is NOT a web page.
+   *
+   * A composite mini-app tab (`'zellij'`) has an empty `url` and is restored through its registered
+   * spec instead. Absent/empty = an ordinary browser row, restored by URL as before.
+   */
+  kind?: string
+  /**
+   * The composite tab's identity, handed back verbatim on restore so the mini app returns to its
+   * own state (a Zellij tab to its own session) rather than to whatever happens to be first.
+   */
+  instanceId?: string
 }
 
 export interface TabsApi {

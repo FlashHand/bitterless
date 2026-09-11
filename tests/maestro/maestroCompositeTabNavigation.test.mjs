@@ -160,16 +160,22 @@ const fixture = async (context) => {
     title: 'OnlyPreview',
     favicon: 'data:image/svg+xml,onlypreview-test',
     displayUrl: onlyPreviewUrl,
+    // OnlyPreview binds one workspace and one search runtime, so reopening brings the one tab
+    // forward. That reuse is now the SPEC's declaration, not a rule about composite tabs in general
+    // — Zellij omits it precisely so several terminals can be open at once.
+    singleton: true,
     async open(host) {
       lifecycle.push('open');
       mountedHost = host;
       host.attach(container);
     },
-    close() {
+    // Every lifecycle callback is addressed BY HOST: one spec can now carry several live tabs, so a
+    // registration that remembered one host would drive the wrong tab.
+    close(host) {
       lifecycle.push('close');
-      mountedHost.detach(container);
+      host.detach(container);
     },
-    setActive(active) {
+    setActive(_host, active) {
       lifecycle.push(active ? 'activate' : 'deactivate');
       container.visible = active;
     },

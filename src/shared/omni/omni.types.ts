@@ -16,6 +16,7 @@ export const OMNI_MINI_APP_IDS = [
   'motto',
   'trench',
   'submodules',
+  'zellij',
 ] as const;
 export type OmniMiniAppId = (typeof OMNI_MINI_APP_IDS)[number];
 
@@ -50,6 +51,7 @@ export const OMNI_MINI_APP_DISPLAY_URLS: Record<OmniMiniAppId, string> = {
   motto: 'bl://miniapp/motto',
   trench: 'bl://miniapp/trench',
   submodules: 'bl://miniapp/submodules',
+  zellij: 'bl://miniapp/zellij',
 };
 
 export const isOmniMiniAppId = (value: unknown): value is OmniMiniAppId =>

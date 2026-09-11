@@ -1,6 +1,9 @@
+import moment from 'moment'
+import { renderChainPathLine } from '@main/agent/userChainStore.service'
 import { extname } from 'path'
 import { clipText, summarizeActionApiCorrelations } from '@maestro-main/capture/traceTimeline'
 import type {
+  ActiveTabContent,
   AgentCompactRequest,
   AgentConversationContext,
   HostToolPolicyMap,
@@ -177,11 +180,73 @@ export interface AgentSkillBrief {
   missing: string[]
 }
 
+/**
+ * **D3 的那一行。** 三态各自的最小可用表达。
+ *
+ * miniapp 态那句 `(not a web page; browser tools do not apply)` 是**必要的,不是修饰**:
+ * 宿主对非 browser tab 的拒绝发生在模型**已经调了工具之后**,把判据提前进 D3 才省掉那一轮。
+ *
+ * 文件态保留 `file://` 形态、**不转裸路径**:转换要 `@shared/onlypreview/*` 的
+ * `resolveAddressBarLocalPath`,而那正是 maestro 侧被明令禁止 import 的那棵树
+ * (`shared/maestro/previewOpener.api.ts:43-51`);手写 `new URL(x).pathname` 在 Windows 上会得到
+ * `/C:/…`。而且这个串与用户地址栏里看到的**是同一个**,反而更好对齐。
+ */
+export const describeActiveTabLine = (content: ActiveTabContent | null): string => {
+  if (!content) return '- Active tab: none'
+  if (content.state === 'file') return `- Active tab: local file — ${content.fileUrl} (open in ${content.app})`
+  if (content.state === 'miniapp') {
+    return `- Active tab: mini-app — ${content.app} (not a web page; browser tools do not apply)`
+  }
+  return content.title
+    ? `- Active tab: web page — ${content.url} ("${content.title}")`
+    : `- Active tab: web page — ${content.url}`
+}
+
+/**
+ * **D1 的取值 —— 本地时间。**
+ *
+ * Ral 2026-09-11:「D1 我确定是 local time 了,主要表达用户什么时候发了这个消息」。
+ * 所以它表达的是**这条 user 消息的发出时刻**,随消息一起进历史 —— 于是会话历史里天然留下
+ * 一串时间戳,模型能据此推算"上一句是多久以前说的"。
+ *
+ * 此前这里是 `new Date().toISOString()`(UTC)。UTC 对"用户此刻是上午还是深夜"这种判断没用,
+ * 而那正是本地时间要回答的事。
+ *
+ * 格式用 `moment`(项目规则:Node/Electron 侧用 moment,web 侧用 dayjs);
+ * **IANA 时区名用原生 `Intl`** —— moment 本体给不了它(要 moment-timezone,本仓没装),
+ * 而带上 `Asia/Shanghai` 这种名字才能让模型判断作息,光有 `+08:00` 不够。
+ */
+export const localNow = (): string => {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return `${moment().format('YYYY-MM-DD HH:mm:ss Z')} (${zone})`
+}
+
 export const buildAgentTurnPrompt = (params: {
   message: string
   context?: AgentConversationContext
   includeConversationMemory?: boolean
-  nowIso: string
+  /** D1 —— 这条 user 消息的发出时刻,本地时间。见 `localNow()`。 */
+  nowLocal: string
+  /**
+   * D3 —— 当前 tab 激活的内容(文件 / miniapp / 网页)。`null` = 没有活动 tab。
+   *
+   * **与 `currentUrl` 是两个东西,别合并。** `currentUrl` 是 `displayUrl(tab)` 的结果,
+   * 它只特判 `home` 与 `onlypreview`,composite tab(trench/zellij)落到 `tab.url` ——
+   * 而那个字段出生就是空串且永不被写,所以 `currentUrl` 在那两种 tab 上是**空串**。
+   * 它同时还是下面技能段 `domain` 的输入(`listSkillsForDomain` 按 `domain` 严格相等筛),
+   * 所以不能改它去承载 D3。技能段自己那个毛病是独立问题。
+   */
+  activeTab: ActiveTabContent | null
+  /**
+   * C —— 这个会话的用户原话历史文件(`<userData>/chain/<sessionId>.jsonl`)的**绝对路径**。
+   *
+   * 归 C 不归 D:它在一个会话内**不变**。每轮仍然重拼只是因为今天还没有独立的 C 层落点 ——
+   * 有了就该搬过去,那样它不再每轮参与拼装。
+   *
+   * **从 newchat 起就注入,哪怕文件是空的**(Ral 2026-09-11)。空文件读出来是空,
+   * 不存在的文件读出来是错误 —— 后者会让模型以为自己用错了工具。
+   */
+  userChainPath?: string
   currentUrl: string
   briefs: AgentSkillBrief[]
 }): string => {
@@ -258,9 +323,9 @@ export const buildAgentTurnPrompt = (params: {
     : '(none)'
   const compactSummary = params.context?.compactSummary?.trim() || '(none)'
   const workspace = params.context?.workspace
+  // 只留**指导**;路径那条事实归 D2(见下面的动态前缀),否则同一个路径在提示词里出现两次。
   const workspaceContext = workspace?.path
     ? [
-        `Selected workspace: ${workspace.path}`,
         'Use workspace tools for project files: workspace_context, list_workspace_files, search_files, read_file, write_file, create_artifact, open_workspace_folder, list_archive, extract_archive, create_archive.',
         'You may create/update files and generated artifacts inside this workspace. Do not delete, rename, move, or target the workspace directory itself.',
         'Folders are listed/searched before individual files are read. Archives are listed or extracted into a new or empty folder rather than passed to read_file; extraction refuses links/special entries and password-protected archive creation is refused.',
@@ -280,8 +345,34 @@ export const buildAgentTurnPrompt = (params: {
         recentContext
       ]
     : ['Conversation memory: use the live pi session history for prior turns.']
+  /**
+   * **表 3 · 动态前缀(D1/D2/D3)。**
+   *
+   * 三项的共同点:**在一个会话里都会变**,所以一个都不能进 system 槽位(表 1/表 2)——
+   * 进去就会让缓存前缀(system → tools → 会话历史)每轮作废。
+   * 它们随 user 消息一起注入、**一起进历史**,于是历史里留下一串快照:
+   * 「用户说这句话时,时间是几点、在哪个 workspace、在看哪个 tab」。
+   *
+   * 留痕这件事是有必要的,不是顺带:**用户在 UI 里切 workspace 或自己点浏览器,
+   * 一条聊天记录都不会插**(`message.store.ts:694` 那条路不调 `pushLocalNote`,
+   * 而 `pushLocalNote` 本身又是 `promptExcluded: true`)。所以除了这串快照,
+   * 模型没有任何别的途径知道"之前曾在 workspace A 干过活"。
+   *
+   * 分层与判据见 `overmind:areas/agent-runtime/chat/prompt-structure.html` #2 表 3。
+   */
+  const dynamicPrefix = [
+    'Context for THIS message (each line is re-read when the message is sent):',
+    `- Now: ${params.nowLocal}`,
+    workspace?.path
+      ? `- Active workspace: ${workspace.path}`
+      : '- Active workspace: none selected — the ONE shared default workspace is in use',
+    describeActiveTabLine(params.activeTab),
+    // C —— 会话级、路径固定。放在这三行之后:它不是"这条消息的上下文",而是"这个会话的坐标"。
+    ...(params.userChainPath ? [renderChainPathLine(params.userChainPath)] : [])
+  ].join('\n')
   return [
-    `Context — now: ${params.nowIso} | page: ${params.currentUrl}`,
+    dynamicPrefix,
+    '',
     `Recorded skills for THIS site (${domain}) — skills from other domains are not available here:`,
     list,
     '',

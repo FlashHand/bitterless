@@ -24,7 +24,7 @@
       :issues="allIssues"
       :disabled="!store.editable"
       :derived-pending="store.draft.changed || store.detail?.config_id === '0'"
-      @change="store.setField"
+      @change="(key, value) => store.setField(key, value)"
     />
     <div v-else class="sniping-configuration__unsupported" role="status">
       <strong>{{ t('trench.sniping.configuration.advancedRequired') }}</strong>

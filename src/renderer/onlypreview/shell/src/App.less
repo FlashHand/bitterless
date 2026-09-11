@@ -245,9 +245,25 @@ select {
   outline-offset: -2px;
 }
 
+/* 每一行的宽度 = **最宽那一行**,所以选中/悬停的底色铺满整行而不是停在文字末尾
+ * (Ral 2026-09-11:「文件和文件夹的背景色应该占用行宽度,而不是到文字结尾」)。
+ *
+ * 原来行上写的是 `width: max-content; min-width: 100%`。**没有横向溢出时它是对的**;一旦有一个长
+ * 文件名把树撑出横向滚动,`100%` 解析出来的是**可视内容宽**而不是滚动宽 —— 于是短行的底色在滚动
+ * 出去的那段里就断在文字末尾。
+ *
+ * 单列 grid 把这件事交给布局:`minmax(100%, max-content)` 让那一列至少满宽、最多等于最宽的行,
+ * 而 `justify-items` 默认 `stretch` 让每一行都铺满这一列。不需要改 DOM(那是 vendored 的模板),
+ * 也不需要给行算宽度。
+ *
+ * `align-content: start` 是**必须的**:grid 的默认 `stretch` 会把多余的竖向空间摊到行轨道之间,
+ * 表现是行数少的时候行与行之间凭空多出间距。 */
 .onlypreview-shell__tree {
   min-height: 0;
   flex: 1;
+  display: grid;
+  grid-template-columns: minmax(100%, max-content);
+  align-content: start;
   overflow: auto;
   padding: 2px 5px 8px;
   outline: 0;
@@ -269,8 +285,8 @@ select {
 }
 
 .onlypreview-shell__tree-row {
-  width: max-content;
-  min-width: 100%;
+  /* 宽度交给上面那一列(`minmax(100%, max-content)` ＋ `justify-items: stretch`)。
+   * 这里**不能**再写 `width: max-content` —— 那会让行重新按自己的内容收缩,底色又停在文字末尾。 */
   height: 22px;
   display: flex;
   align-items: center;

@@ -1,0 +1,148 @@
+import { app, View, WebContentsView } from 'electron';
+import { is } from '@electron-toolkit/utils';
+import { join } from 'node:path';
+import { autoOpenZellijDevTools, bindZellijDevTools } from './zellijDevTools.helper';
+import { ZellijTerminalView, type ZellijTerminalRect } from './zellijTerminalView';
+import { ZELLIJ_SURFACE_QUERY } from '@shared/zellij/zellij.type';
+
+/**
+ * The Zellij mini app as a self-contained, host-agnostic composite: one container `View` holding the
+ * chrome (`zellij/index.html`) and, when the runtime is ready, the terminal.
+ *
+ * Previously the chrome WAS the standalone window's own page, which is exactly what pinned Zellij
+ * to a window — a BrowserWindow's web contents cannot be carried into a tab. Making the chrome a
+ * `WebContentsView` inside a container lets the SAME surface be attached to a window today and to a
+ * Maestro tab or an Omni cell tomorrow, the way Trench already moves between the two.
+ *
+ * Geometry has two levels and they must not be confused:
+ *  - the CONTAINER is placed in host coordinates (window content rect, or the tab's content rect);
+ *  - its children are CONTAINER-relative, which is also the frame the renderer measures its hole in,
+ *    so `setContentBounds` needs no translation.
+ */
+export class ZellijSurface {
+  readonly container = new View();
+  private readonly controls: WebContentsView;
+  private readonly terminal: ZellijTerminalView;
+  private hostRect: ZellijTerminalRect = { x: 0, y: 0, width: 0, height: 0 };
+  /** Renderer-measured hole, container-relative. Height 0 means "not measured yet". */
+  private contentBounds: ZellijTerminalRect = { x: 0, y: 100, width: 0, height: 0 };
+  private visible = true;
+  private destroyed = false;
+
+  constructor(private readonly surfaceId: string) {
+    this.controls = new WebContentsView({
+      webPreferences: {
+        preload: join(app.getAppPath(), 'out', 'preload', 'zellij.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false
+      }
+    });
+    bindZellijDevTools(this.controls.webContents);
+    autoOpenZellijDevTools(this.controls.webContents);
+    this.container.addChildView(this.controls);
+    this.terminal = new ZellijTerminalView({
+      surfaceId: this.surfaceId,
+      container: this.container,
+      bounds: () => this.terminalRect(),
+      visible: () => this.visible,
+      destroyed: () => this.destroyed
+    });
+  }
+
+  /**
+   * Load the chrome, telling it which surface it is.
+   *
+   * The id travels in the URL rather than over XPC because the chrome needs it for its FIRST
+   * message: `setContentBounds` fires as soon as it has measured, and an `XpcMainHandler` method
+   * receives only `params` — no sender web contents — so with several surfaces live an id-less
+   * measurement would lay out whichever terminal happened to be addressed last.
+   */
+  async load(): Promise<void> {
+    if (is.dev && process.env.ELECTRON_RENDERER_URL) {
+      const url = new URL(`${process.env.ELECTRON_RENDERER_URL}/zellij/index.html`);
+      url.searchParams.set(ZELLIJ_SURFACE_QUERY, this.surfaceId);
+      await this.controls.webContents.loadURL(url.toString());
+    } else {
+      await this.controls.webContents.loadFile(
+        join(app.getAppPath(), 'out', 'renderer', 'zellij', 'index.html'),
+        { query: { [ZELLIJ_SURFACE_QUERY]: this.surfaceId } }
+      );
+    }
+  }
+
+  /** The host's content rect, in the host's own coordinates. */
+  setHostRect(rect: ZellijTerminalRect): void {
+    this.hostRect = rect;
+    this.layout();
+  }
+
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    this.container.setVisible(visible);
+    this.layout();
+  }
+
+  /** The hole the chrome measured for the terminal, container-relative. */
+  setContentBounds(input: ZellijTerminalRect): void {
+    if (!Object.values(input).every(Number.isFinite)) return;
+    const { width, height } = this.hostRect;
+    const x = Math.max(0, Math.min(width, Math.round(input.x)));
+    const y = Math.max(0, Math.min(height, Math.round(input.y)));
+    this.contentBounds = {
+      x,
+      y,
+      width: Math.max(0, Math.min(width - x, Math.round(input.width))),
+      height: Math.max(0, Math.min(height - y, Math.round(input.height)))
+    };
+    this.terminal.layout();
+  }
+
+  sync(): void {
+    this.terminal.sync();
+  }
+
+  focus(): void {
+    if (this.terminal.attached()) this.terminal.focus();
+    else if (!this.controls.webContents.isDestroyed()) this.controls.webContents.focus();
+  }
+
+  dispose(): void {
+    if (this.destroyed) return;
+    this.terminal.dispose();
+    // Mark destroyed only after the terminal has detached — it asks the host before removing its
+    // child view, and a surface that claims to be gone would leak that view instead.
+    this.destroyed = true;
+    this.container.removeChildView(this.controls);
+    if (!this.controls.webContents.isDestroyed()) this.controls.webContents.close();
+  }
+
+  private layout(): void {
+    if (this.destroyed) return;
+    this.container.setBounds({
+      x: Math.round(this.hostRect.x),
+      y: Math.round(this.hostRect.y),
+      width: Math.max(0, Math.round(this.hostRect.width)),
+      height: Math.max(0, Math.round(this.hostRect.height))
+    });
+    // The chrome fills the container; the terminal overlays the hole it measured.
+    this.controls.setBounds({
+      x: 0,
+      y: 0,
+      width: Math.max(0, Math.round(this.hostRect.width)),
+      height: Math.max(0, Math.round(this.hostRect.height))
+    });
+    this.terminal.layout();
+  }
+
+  private terminalRect(): ZellijTerminalRect {
+    const { width, height } = this.hostRect;
+    const bounds = this.contentBounds;
+    return {
+      x: bounds.x,
+      y: bounds.y,
+      width: Math.max(0, Math.min(bounds.width || width, width - bounds.x)),
+      height: Math.max(0, Math.min(bounds.height || height - bounds.y, height - bounds.y))
+    };
+  }
+}

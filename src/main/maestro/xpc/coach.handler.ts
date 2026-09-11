@@ -105,6 +105,10 @@ export class CoachXpcHandler extends XpcMainHandler implements CoachXpcContract 
     await maestroWindowHelper.openTab(params)
   }
 
+  async showNewTabMenu(params: { x: number; y: number }): Promise<void> {
+    await maestroWindowHelper.showNewTabMenu(params)
+  }
+
   async showTabMenu(params: { id: string }): Promise<void> {
     await maestroWindowHelper.showTabMenu(params)
   }

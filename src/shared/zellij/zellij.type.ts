@@ -2,6 +2,15 @@ export const ZELLIJ_STATE_EVENT = 'zellij/state' as const;
 export const ZELLIJ_HANDLER_NAME = 'ZellijHandler' as const;
 export const ZELLIJ_WINDOW_HANDLER_NAME = 'ZellijWindowHandler' as const;
 
+/**
+ * Query parameter carrying a chrome's own surface id (`zellij/index.html?surface=<id>`).
+ *
+ * Several Zellij surfaces can be live at once, each with its own chrome renderer, and every one of
+ * them talks to the same main-side handler. The id has to be on the wire for main to know which
+ * terminal a measurement is about.
+ */
+export const ZELLIJ_SURFACE_QUERY = 'surface' as const;
+
 export type ZellijErrorCode =
   | 'disabled'
   | 'binary-missing'
@@ -44,7 +53,14 @@ export interface ZellijApi {
   }): Promise<ZellijSnapshot>;
   copyConfigDirectory(): Promise<{ ok: boolean; error: ZellijErrorCode | null }>;
   openConfigDirectory(): Promise<{ ok: boolean; error: ZellijErrorCode | null }>;
-  setContentBounds(params: { x: number; y: number; width: number; height: number }): Promise<void>;
+  /** `surfaceId` says WHICH terminal measured; an unknown id is dropped, never guessed at. */
+  setContentBounds(params: {
+    surfaceId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Promise<void>;
 }
 
 export interface ZellijWindowApi {

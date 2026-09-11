@@ -22,7 +22,11 @@ export type OtpPurpose = 'login' | 'reset_password';
 
 export type CurrentCustomer = CurrentCustomerSession;
 
-const getBaseUrl = (): string => {
+/**
+ * Core 的地址只由这一个函数决定 —— 主进程的工具也用它的结果(经 xpc 推过去),
+ * 免得"测试还是生产"这个判断在两个进程里各写一遍然后走岔。
+ */
+export const getCoreBaseUrl = (): string => {
   const configured = import.meta.env.VITE_BITTERLESS_CORE_URL;
   const fallback =
     import.meta.env.VITE_ENV === 'prod' ? DEFAULT_PROD_CORE_URL : DEFAULT_DEV_CORE_URL;
@@ -79,7 +83,7 @@ const request = async <T>(
   const sessionId = token ? getCustomerSessionIdForToken(token) : null;
   return await runWithAuthRequestTimeout(
     async (signal) => {
-      const res = await fetch(`${getBaseUrl()}${path}`, {
+      const res = await fetch(`${getCoreBaseUrl()}${path}`, {
         ...requestOptions,
         headers,
         signal,

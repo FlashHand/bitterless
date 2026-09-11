@@ -13,7 +13,7 @@
         :disabled="
           !terminalSettingStore.ready || terminalSettingStore.loading || terminalSettingStore.saving
         "
-        @change="terminalSettingStore.change"
+        @change="(value) => terminalSettingStore.change(value)"
       />
     </div>
   </div>

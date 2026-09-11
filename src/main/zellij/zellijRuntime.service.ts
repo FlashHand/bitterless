@@ -10,9 +10,37 @@ import { ZELLIJ_STATE_EVENT, type ZellijSnapshot } from '@shared/zellij/zellij.t
 import { ZellijConfigService, resolveZellijConfigFile } from './zellijConfig.service';
 import { ZellijProcessService } from './zellijProcess.service';
 import { ZellijTokenService } from './zellijToken.service';
+import { getRuntimeProfile } from '@main/environment/runtimeProfile.runtime';
+import { resolveZellijPort, zellijOriginForPort } from './zellijPort.service';
+import { resolveZellijSessionName, zellijSessionUrl } from './zellijSession.service';
 import type { ZellijOwnedProcess } from './zellijRuntime.type';
 
-export const ZELLIJ_ORIGIN = 'http://127.0.0.1:12877';
+/**
+ * Resolved once per process, not per call: the profile is fixed for the process lifetime, and a
+ * value that could drift mid-run would let the navigation allowlist and the loaded URL disagree.
+ * Memoized rather than computed at module load so an invalid override throws where a caller can
+ * report it, not during import.
+ */
+let resolvedPort: number | null = null;
+
+export const zellijPort = (): number => {
+  if (resolvedPort === null) resolvedPort = resolveZellijPort(getRuntimeProfile().id);
+  return resolvedPort;
+};
+
+export const zellijOrigin = (): string => zellijOriginForPort(zellijPort());
+
+/**
+ * The URL a terminal view loads: the origin PLUS this SURFACE's session name.
+ *
+ * Loading the bare origin is what made the web client ask for a session name on every open — it
+ * picks the session from the path, and an empty path means "none chosen yet". Keying the name on the
+ * surface rather than the profile is what makes a second terminal a second session instead of a
+ * second view onto the first one's panes.
+ */
+export const zellijTerminalUrl = (surfaceId: string): string =>
+  zellijSessionUrl(zellijOrigin(), resolveZellijSessionName(getRuntimeProfile().id, surfaceId));
+
 export const ZELLIJ_PARTITION = 'persist:bitterless-zellij';
 
 const binaryPath = (): string => {
@@ -100,10 +128,23 @@ export const zellijTerminalSession = (): Electron.Session =>
   session.fromPartition(ZELLIJ_PARTITION);
 
 let runtime: ZellijProcessService | null = null;
-let stateListener: ((snapshot: ZellijSnapshot) => void) | null = null;
 
-export const subscribeZellijState = (listener: (snapshot: ZellijSnapshot) => void): void => {
-  stateListener = listener;
+/**
+ * A Set, not a single slot. This used to be `stateListener = listener`, which meant the SECOND
+ * subscriber silently unsubscribed the first — the first surface then never saw another
+ * ready/error transition, so it neither built nor tore down its terminal again. That is a
+ * silent-corruption failure, not a crash, and it becomes reachable the moment a second surface
+ * exists. Returning a disposer is what lets a surface unsubscribe when it is torn down.
+ */
+const stateListeners = new Set<(snapshot: ZellijSnapshot) => void>();
+
+export const subscribeZellijState = (
+  listener: (snapshot: ZellijSnapshot) => void
+): (() => void) => {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
 };
 
 export const getZellijRuntime = (): ZellijProcessService => {
@@ -115,7 +156,7 @@ export const getZellijRuntime = (): ZellijProcessService => {
     encrypt: (value) => mainSafeStorage.encryptString(value, 'zellij'),
     decrypt: (bytes) => mainSafeStorage.decryptString(bytes, 'zellij')
   });
-  const config = new ZellijConfigService(resolveZellijConfigFile(), {
+  const config = new ZellijConfigService(resolveZellijConfigFile({ userData: app.getPath('userData') }), {
     platform: process.platform,
     validate: async (file) => {
       let output: string;
@@ -137,11 +178,12 @@ export const getZellijRuntime = (): ZellijProcessService => {
     checkBinary: () => {
       binaryPath();
     },
+    port: zellijPort,
     run: runCli,
     spawn: spawnServer,
     probe: async () => {
       try {
-        const response = await fetch(`${ZELLIJ_ORIGIN}/info/version`, {
+        const response = await fetch(`${zellijOrigin()}/info/version`, {
           signal: AbortSignal.timeout(900),
           redirect: 'error'
         });
@@ -155,7 +197,7 @@ export const getZellijRuntime = (): ZellijProcessService => {
     },
     login: async (authToken) => {
       try {
-        const response = await zellijTerminalSession().fetch(`${ZELLIJ_ORIGIN}/command/login`, {
+        const response = await zellijTerminalSession().fetch(`${zellijOrigin()}/command/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ auth_token: authToken, remember_me: true }),
@@ -173,7 +215,8 @@ export const getZellijRuntime = (): ZellijProcessService => {
     readToken: () => token.read(),
     writeToken: (value) => token.write(value),
     changed: (snapshot) => {
-      stateListener?.(snapshot);
+      // Copy first: a listener may dispose itself (or a sibling surface) while being notified.
+      for (const listener of [...stateListeners]) listener(snapshot);
       xpcMain.broadcast(ZELLIJ_STATE_EVENT, snapshot);
     },
     delay: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))

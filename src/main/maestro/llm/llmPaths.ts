@@ -1,5 +1,7 @@
 import { app } from 'electron'
 import { join } from 'path'
+import { LONG_PASTE_DIR_NAME } from '@main/agent/longPaste.service'
+import { USER_CHAIN_DIR_NAME } from '@main/agent/userChainStore.service'
 import { maestroDataRoot } from '@maestro-main/data/maestroDataRoot'
 import {
   clearAuthProvider,
@@ -23,6 +25,21 @@ const piPaths = (): ReturnType<typeof resolveMaestroPiPaths> =>
  * `~/.pi/agent/AGENTS.md` was a git-sync rulebook, and it was reaching the model every turn.
  * See docs/issues/pi-agent-dir-uses-global-home.md.
  */
+/**
+ * 超长粘贴的存放目录(Ral 2026-09-11:「需要 `<userData>` 下有目录能存放这种文件」)。
+ *
+ * **不放在 `agentDir`(`<userData>/.pi`)下面** —— 那个目录是 pi 的:它会在里面找 `AGENTS.md`、
+ * `SYSTEM.md`、扫 `skills/`、把 `bin/` 当 `TOOLS_DIR`。往里塞与 pi 无关的内容迟早撞上它的
+ * 某次目录扫描。这里是宿主自己的东西,所以是 `<userData>` 下的平级目录。
+ */
+export const maestroLongPasteDir = (): string => join(app.getPath('userData'), LONG_PASTE_DIR_NAME)
+
+/**
+ * 每会话用户原话历史(`<sessionId>.jsonl`)的目录。与 `pastes/` 同级,都是宿主自己的东西,
+ * **不放进 pi 的 `agentDir`** —— 理由同上。
+ */
+export const maestroUserChainDir = (): string => join(app.getPath('userData'), USER_CHAIN_DIR_NAME)
+
 export const maestroAgentDir = (): string => {
   const paths = piPaths()
   migratePiDirOnce(paths)

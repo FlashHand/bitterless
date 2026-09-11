@@ -13,6 +13,7 @@ import { buildContextRecord, entriesOfSurface, renderContextText } from '@main/a
 import { buildContextGraph } from '@main/agent/contextGraph.service'
 import { assertContextTextSize } from './runtime/contextExportLimit.service'
 import { MAESTRO_SYSTEM_PROMPT } from './prompt/maestroSysPrompt'
+import { BASE_SYSTEM_PROMPT } from './prompt/sysPrompt'
 import type {
   ContextExportRequest,
   ContextExportSummary,
@@ -52,13 +53,15 @@ import {
 } from '@main/agent/runtime/agentBroadcast'
 import {
   AGENT_IMAGE_MIME_BY_EXT,
-  MAX_AGENT_IMAGE_BYTES,
   MAX_AGENT_IMAGES,
+  MAX_AGENT_IMAGE_BYTES,
   MAX_AGENT_MEDIA_REFS,
   MAX_ATTACHMENT_BYTES,
   agentMediaMimeForPath,
   buildAgentTurnPrompt,
   buildConversationCompactPrompt,
+  describeActiveTabLine,
+  localNow,
   normalizeCompactSummary,
   normalizeHostToolPolicies,
   normalizeHostToolPolicyMode,
@@ -75,7 +78,9 @@ import { maestroDataRoot } from '@maestro-main/data/maestroDataRoot'
 import { buildUnknownConfirmPayload } from '@maestro-main/drive/confirmPayload'
 import { taskRegistry } from '@maestro-main/tasks/taskRegistry.service'
 import { modelIoLog } from './runtime/modelIoLog'
-import { maestroAgentDir, maestroAuthPath, maestroModelsPath } from '@maestro-main/llm/llmPaths'
+import { maestroAgentDir, maestroAuthPath, maestroLongPasteDir, maestroModelsPath, maestroUserChainDir } from '@maestro-main/llm/llmPaths'
+import { appendUserChainRecord, chainFilePath, ensureSessionChainFile } from './userChainStore.service'
+import { offloadLongPaste } from './longPaste.service'
 import { describeLlmTarget, providerLabel, type LlmStoredTarget } from '@maestro-main/llm/llmModels'
 import { PiRuntimeAdapter } from './runtime/piRuntimeAdapter'
 import { uploadMediaRefsForProvider } from '@maestro-main/networking/api/mediaUpload.api'
@@ -103,6 +108,7 @@ import type {
   HostToolPolicyMap,
   HostToolPolicyMode,
   HostToolPolicyResult,
+  ActiveTabContent,
   HostToolScope,
   LlmEffort,
   ReplayResult,
@@ -185,6 +191,8 @@ const agentPorts = (): { runtime: PiRuntimeAdapter; describeTarget: typeof descr
 export interface MaestroAgentServiceState {
   browserWindow: BrowserWindow | null
   currentUrl: string
+  /** D3 —— 当前 tab 激活的内容(文件 / miniapp / 网页)。同步。见 `ActiveTabContent`。 */
+  describeActiveTabContent(): ActiveTabContent | null
 
   ensureServices(): MaestroAgentRuntimeServices
   existingSkillRegistry(): SkillRegistryService | null
@@ -237,13 +245,6 @@ const DRILL_BUILTIN_SKILL: AgentSkillBrief = {
   seed: {},
   missing: []
 }
-
-/**
- * 钻探是**一个回合里循环几十次工具调用**,运行时默认的 12 轮会把它砍断。
- * **必须高于 exploreSession 自己的 120 分钟预算**,否则它会先于钻探的预算掐断 ——
- * 而钻探的边界本该是「自己的时间预算 + 无进展检测」,不是工具轮次。
- */
-const MAESTRO_CHAT_MAX_TOOL_ROUNDS = 200
 
 @injectable()
 export class MaestroAgentService extends CommonService<MaestroAgentServiceState> {
@@ -891,7 +892,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         message,
         context,
         includeConversationMemory: !this.hydratedMaestroAgentSessions.has(sessionKey),
-        nowIso: new Date().toISOString(),
+        nowLocal: localNow(),
+        activeTab: this._state.describeActiveTabContent(),
+        userChainPath: chainFilePath(maestroUserChainDir(), sessionKey),
         currentUrl: this._state.currentUrl,
         briefs: this.agentSkillBriefs(message, recordings, registry)
       })
@@ -903,9 +906,16 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         sessionId: sessionKey,
         provider: this.activeLlmProvider,
         model: this.activeLlmModel,
-        // 活实例的组装结果,和会话 preamble 用的是同一个 systemPrompt() 覆写 —— 不会漂。
-        // 还没有 agent 时退回静态系统提示词:此刻它就是下一轮会注入的那份。
-        systemPrompt: agent ? agent.composedSystemPrompt() : MAESTRO_SYSTEM_PROMPT,
+        /**
+         * 活实例的组装结果 —— `composedSystemPrompt()` 返回的就是交给运行时的**完整**那份
+         * (表 1 + 表 2),所以导出永远不会和实际跑的漂开。
+         *
+         * 还没有 agent 时退回两个**静态**层拼起来:表 1 + 表 2。
+         * **不能只退回 `MAESTRO_SYSTEM_PROMPT`** —— 2026-09-11 表 2 搬进 system 槽位之后,
+         * 那个常量只剩产品层,单独导出会少掉整个表 1(1568 字符),读的人会以为基座不存在。
+         * 唯一差别:没有活实例就没有后端事实块(`targetBlock()` 要读活的 provider/model)。
+         */
+        systemPrompt: agent ? agent.composedSystemPrompt() : `${BASE_SYSTEM_PROMPT}\n\n${MAESTRO_SYSTEM_PROMPT}`,
         entries: entriesOfSurface(surface),
         pending: { attachments: attachmentPaths, draft: pending },
         timestamp: new Date().toISOString()
@@ -975,7 +985,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         message,
         context,
         includeConversationMemory: !this.hydratedMaestroAgentSessions.has(sessionKey),
-        nowIso: new Date().toISOString(),
+        nowLocal: localNow(),
+        activeTab: this._state.describeActiveTabContent(),
+        userChainPath: chainFilePath(maestroUserChainDir(), sessionKey),
         currentUrl: this._state.currentUrl,
         briefs: this.agentSkillBriefs(message, recordings, registry)
       })
@@ -983,7 +995,8 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         sessionId: sessionKey,
         provider: this.activeLlmProvider,
         model: this.activeLlmModel,
-        systemPrompt: agent ? agent.composedSystemPrompt() : MAESTRO_SYSTEM_PROMPT,
+        // 兜底同上:表 1 + 表 2,不能只给产品层。
+        systemPrompt: agent ? agent.composedSystemPrompt() : `${BASE_SYSTEM_PROMPT}\n\n${MAESTRO_SYSTEM_PROMPT}`,
         entries: entriesOfSurface(surface),
         pending: {
           // workspace 从入参里的 `WorkspaceRef` 取:渲染层早就把它一起送上来了,不为一行显示字段
@@ -1005,8 +1018,49 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
     }
   }
 
+  /**
+   * 超长粘贴 → `<userData>/pastes/` 的文件,提示词里只留摘头摘尾 + 绝对路径。
+   *
+   * 挂在这里是因为这是用户文本进入 agent 的**唯一**入口(root 与 steer 两条路都过它),
+   * 也是最后一个"消息还是个纯字符串"的地方。取舍与阈值的理由都在 `longPaste.service.ts`。
+   *
+   * **渲染端那份不动** —— UI 与历史里仍是用户真正敲进去的原文;被换掉的只有交给模型的那一份。
+   */
+  private offloadLongPasteIfNeeded(message: string, sessionId?: string): string {
+    const result = offloadLongPaste({ dir: maestroLongPasteDir(), message, sessionId })
+    if (result.error) {
+      console.warn('[agent] 超长粘贴落盘失败,原文照发:', result.error)
+    } else if (result.path) {
+      console.log(`[agent] 超长粘贴 ${result.originalChars.toLocaleString()} 字符 -> ${result.path}`)
+    }
+    return result.text
+  }
+
+  /**
+   * 把这一条用户原话记进 `<userData>/chain/<sessionId>.jsonl`。
+   *
+   * **记的是 `message`,也就是 main 真正发出去的那一份**(长粘贴已换成引用)——
+   * 不是渲染端存的原文。上一版的链由渲染端建,两份不一致,后果是被换掉的长粘贴在第一次压缩时
+   * 又被原样注入回来。这里从源头消掉那类矛盾。
+   *
+   * 三样元数据只有 main 知道(它就是拼 D1/D2/D3 的地方),所以必须在这里取:
+   * 发送时间、当时的 workspace、当时激活的页面。Ral 2026-09-11 指定要带。
+   */
+  private recordUserChainMessage(message: string, sessionId?: string, context?: AgentConversationContext): void {
+    const path = ensureSessionChainFile(maestroUserChainDir(), this.agentSessionKey(sessionId))
+    const tab = this._state.describeActiveTabContent()
+    const written = appendUserChainRecord(path, {
+      at: localNow(),
+      ws: context?.workspace?.path || '',
+      tab: tab ? describeActiveTabLine(tab) : '',
+      text: message
+    })
+    if (!written) console.warn('[agent] 用户原话未能写入历史文件:', path)
+  }
+
   async sendAgentMessage(params: AgentMessageRequest): Promise<AgentReply> {
-    const message = params.message.trim()
+    const message = this.offloadLongPasteIfNeeded(params.message.trim(), params.sessionId)
+    if (message) this.recordUserChainMessage(message, params.sessionId, params.context)
     if (!message) {
       return {
         ok: false,
@@ -1140,7 +1194,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       }
     }
     await this.loadHostToolPolicies()
-    return await this.handleAgentTurn(message, this.getDelegateAgent(params.sessionId))
+    return await this.handleAgentTurn(message, this.getDelegateAgent(params.sessionId), undefined, {
+      sessionKey: params.sessionId
+    })
   }
 
   async resetDelegateConversation(params?: { sessionId?: string }): Promise<{ ok: boolean }> {
@@ -1473,6 +1529,7 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
         }
       }
       return await this.handleAgentTurn(message, this.getMaestroAgent(sessionId), context, {
+        sessionKey: sessionId,
         includeConversationMemory,
         mediaInput,
         onAgentSessionUsed: () => this.hydratedMaestroAgentSessions.add(sessionKey),
@@ -1523,6 +1580,8 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
       onAgentSessionUsed?: () => void
       isCancelled?: () => boolean
       steeringOnly?: boolean
+      /** 这一轮属于哪个聊天会话 —— 表 3 那行用户原话历史路径要按它取。缺省 `'default'`。 */
+      sessionKey?: string
     }
   ): Promise<AgentReply> {
     const cancelledReply = (): AgentReply => ({
@@ -1584,7 +1643,9 @@ export class MaestroAgentService extends CommonService<MaestroAgentServiceState>
           message,
           context,
           includeConversationMemory: Boolean(options?.includeConversationMemory),
-          nowIso: new Date().toISOString(),
+          nowLocal: localNow(),
+          activeTab: this._state.describeActiveTabContent(),
+          userChainPath: chainFilePath(maestroUserChainDir(), this.agentSessionKey(options?.sessionKey)),
           currentUrl: this._state.currentUrl,
           briefs: skillBriefs
         }) + turnMedia.note,

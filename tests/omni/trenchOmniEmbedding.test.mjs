@@ -20,7 +20,8 @@ test('Trench is the fifth bounded Omni mini app and survives persisted round tri
     'translator',
     'motto',
     'trench',
-    'submodules'
+    'submodules',
+    'zellij'
   ]);
   assert.equal(parseOmniMiniAppId('trench'), 'trench');
   assert.equal(OMNI_MINI_APP_DISPLAY_URLS.trench, 'bl://miniapp/trench');
@@ -43,6 +44,7 @@ test('Trench is the fifth bounded Omni mini app and survives persisted round tri
 test('Trench owns the dedicated local renderer and the only sandboxed mini-app runtime', () => {
   assert.deepEqual(Object.keys(OMNI_MINI_APP_RUNTIME), OMNI_MINI_APP_IDS);
   assert.deepEqual(OMNI_MINI_APP_RUNTIME.trench, {
+    kind: 'renderer',
     preloadFile: 'trench.js',
     rendererName: 'coin',
     sandbox: true
@@ -51,7 +53,8 @@ test('Trench owns the dedicated local renderer and the only sandboxed mini-app r
     Object.entries(OMNI_MINI_APP_RUNTIME)
       .filter(([, runtime]) => runtime.sandbox)
       .map(([id]) => id),
-    ['trench']
+    ['trench', 'zellij'],
+    'sandboxed runtimes: trench (own renderer) and zellij (a page we do not author)'
   );
 
   const helper = read('src/main/windows/omniWindow.helper.ts');
@@ -98,7 +101,7 @@ test('Omni Control exposes exactly the localized mini apps including Trench', ()
   const en = read('src/renderer/common/i18n/en.ts');
   const zh = read('src/renderer/common/i18n/zh.ts');
   const entries = [
-    ...control.matchAll(/\bid:\s*'(todo|eyesOnAgents|translator|motto|trench|submodules)'/g)
+    ...control.matchAll(/\bid:\s*'(todo|eyesOnAgents|translator|motto|trench|submodules|zellij)'/g)
   ].map((match) => match[1]);
   assert.deepEqual(entries, OMNI_MINI_APP_IDS);
   assert.match(control, /trenchIcon from '@renderer\/common\/assets\/icons\/coin\.png'/);

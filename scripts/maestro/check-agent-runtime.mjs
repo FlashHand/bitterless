@@ -98,6 +98,10 @@ const loadBaseAgent = () => {
           }
         }
       }
+      // 静态 system 提示词:守卫只关心 BaseAgent 把它传下去这件事,不关心内容。
+      if (specifier === './prompt/sysPrompt') {
+        return { BASE_SYSTEM_PROMPT: 'STUB' }
+      }
       if (specifier === './runtime/modelIoLog') {
         return {
           modelIoLog: {
@@ -186,7 +190,24 @@ assert(
 assert(baseAgent.includes('if (!this.sessionPromise) this.sessionPromise = this.startSession()'), 'ensureSession should be idempotent')
 assert(baseAgent.includes('session = await withTimeout(') && baseAgent.includes('this.ensureSession()'), 'prompt should reuse the managed session')
 assert(baseAgent.includes('if (options?.freshSession) this.reset()'), 'prompt should explicitly opt into fresh sessions only when requested')
-assert(baseAgent.includes('this.sessionPromise = null') && baseAgent.includes('this.primed = false'), 'reset should drop session and system-prompt state')
+// **表 2 进 system 槽位** —— 2026-09-11 换掉了原来那条钉 `primed` 的断言。
+// 旧机制:产品层拼在**第一条 user 消息**前面(`withSystemPreamble`,`primed` 守着只拼一次),
+// 于是**一次压缩就把产品人格冲掉了**,而且此后不会补回来(压缩不走 reset)。
+// 新机制:`fullSystemPrompt()` = 表 1 + 表 2,建会话时交给运行时,每轮由 pi 重发。
+// 下面三条是**正向**守卫 —— 防止那套 user 前缀机制被重新引入。
+assert(
+  baseAgent.includes('private fullSystemPrompt(): string') && baseAgent.includes('${BASE_SYSTEM_PROMPT}'),
+  'BaseAgent 必须有 fullSystemPrompt(),且在里面内插 BASE_SYSTEM_PROMPT(表 1)'
+)
+assert(
+  baseAgent.includes('systemPrompt: this.fullSystemPrompt()'),
+  'createSession 必须把完整那份(表 1 + 表 2)交给运行时 —— 只传表 1 等于产品层又回到 user 消息里'
+)
+assert(
+  !baseAgent.includes('withSystemPreamble') && !baseAgent.includes('this.primed'),
+  'user 消息前缀那套机制不许回来 —— 它会在压缩后静默丢掉产品人格'
+)
+assert(baseAgent.includes('this.sessionPromise = null'), 'reset should drop the session')
 assert(baseAgent.includes('async oneShot(prompt: string'), 'structured generation should remain separate one-shot behavior')
 assert(baseAgent.includes('this.createSession(false)'), 'oneShot should use a throwaway no-tool session')
 assert(baseAgent.includes('this.opts.onStream?.(event.delta)'), 'BaseAgent should stream text deltas to the UI')
@@ -251,7 +272,21 @@ assert(channelStore.includes('latestActiveSessionForOperationTab'), 'reopened ta
 assert(channelStore.includes('maestroSessionByTabId'), 'Control should keep one active Maestro session per operation tab')
 assert(llmService.includes('this._state.resetLlmTurnState()'), 'provider/model changes should reset agent turn state')
 assert(llmService.includes('this._state.resetLlmAgentSessions()'), 'logout should reset live agent sessions')
-assert(llmModels.includes('Claude provider option is intentionally hidden') && llmModels.includes("provider: 'anthropic'"), 'Claude support should stay in code but the provider option should be hidden')
+// **Claude 已退役**(Ral 2026-09-11:「bl cowork 都不用 claude 的了」)。此前这条钉的是
+// 「留着 preset、只隐藏 provider 选项」—— 那个决定被推翻了,preset 也删了。
+// 现在钉反过来的事实,防止有人把它当"漏删"又加回来:
+// 先剥掉行注释再判 —— cowork 那边 `LLM_PROVIDERS` 里还留着一段注释掉的 anthropic 块作为史料,
+// 不剥的话它会被当成"活着的 preset"而误报。
+assert(
+  !/provider: 'anthropic',/.test(llmModels.replace(/^\s*\/\/.*$/gm, '')),
+  'Claude preset 已退役,不该回来'
+)
+// 别名归一化**要留着** —— 旧会话存过 anthropic 这个 target,删掉会让它们解析失败而不是优雅退回默认。
+assert(llmModels.includes("=== 'claude'"), "claude → anthropic 的别名归一化要留着(旧会话存过那个 target)")
+// 上下文窗口不许再手写死:它必须由 pi 目录解析(实测 2026-09-11 手写值 6 个全错,
+// `gpt-5.6-*` 写 372K 而真值 272K ⇒ 触发线落在真实窗口的 136%,压缩永不触发)。
+assert(llmModels.includes('applyResolvedContextWindows'), '上下文窗口必须由 pi 解析,不能只靠预设里手写的 contextLengthK')
+assert(llmModels.includes('DEFAULT_CONTEXT_WINDOW_TOKENS = 256 * 1024'), '解析不到时退 256K(Ral 2026-09-11)')
 assert(
   llmService.includes('selectableLlmPresets()') &&
     llmService.includes('selectableLlmLoginProviders()') &&

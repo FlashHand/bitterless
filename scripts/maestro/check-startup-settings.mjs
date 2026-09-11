@@ -62,7 +62,8 @@ const assert = (condition, message) => {
 }
 
 const { CoachSettingsService, DEFAULT_START_URL, isDefaultStartUrl, normalizeUrl } = loadTsModule('@maestro-main/settings/coachSettings.service')
-const { LLM_PRESETS, normalizeLlmTarget } = loadTsModule('@maestro-main/llm/llmModels')
+const { DEFAULT_PRESET_MODEL, LLM_PRESETS, normalizeLlmTarget } = loadTsModule('@maestro-main/llm/llmModels')
+const { defaultLlmEffort } = loadTsModule('@maestro-shared/coach.api')
 const settingsSource = readFileSync(join(root, 'main/maestro/settings/coachSettings.service.ts'), 'utf8')
 const controllerSource = readFileSync(join(root, 'main/maestro/windows/main/maestroWindow.controller.ts'), 'utf8')
 const browserViewSource = readFileSync(join(root, 'main/maestro/windows/main/maestroBrowserView.service.ts'), 'utf8')
@@ -90,7 +91,7 @@ try {
 
   const service = new CoachSettingsService(dir)
   assert(service.read().startUrl === DEFAULT_START_URL, 'fresh settings should read the default startUrl')
-  assert(service.read().llmModel === 'gpt-5.6-luna', 'fresh settings should keep the GPT-5.6 Luna default')
+  assert(service.read().llmModel === 'gpt-6-astra', 'fresh settings should keep the GPT-6 Astra default')
   assert(service.hasCustomStartUrl() === false, 'fresh settings should not be custom')
   assert(isDefaultStartUrl('') === true, 'blank startUrl should be treated as default')
   assert(isDefaultStartUrl(DEFAULT_START_URL) === true, 'default sentinel should be treated as no extra startup tab')
@@ -100,18 +101,52 @@ try {
   assert(saved.startUrl === 'http://clinic.example.test', 'custom startup host should normalize to http URL')
   assert(service.hasCustomStartUrl() === true, 'custom startup URL should be detected')
 
-  const gpt55Preset = LLM_PRESETS.find((preset) => preset.provider === 'openai-codex' && preset.model === 'gpt-5.5')
-  assert(gpt55Preset?.effort === 'low', 'Maestro should expose the preserved GPT-5.5 preset')
-  const normalizedGpt55 = normalizeLlmTarget({
-    provider: 'openai-codex',
-    model: 'gpt-5.5',
-    effort: 'xhigh'
-  })
-  assert(normalizedGpt55.model === 'gpt-5.5', 'Maestro target normalization should preserve stored GPT-5.5')
-  assert(normalizedGpt55.effort === 'xhigh', 'Maestro should preserve a supported GPT-5.5 effort')
-  const storedGpt55 = service.save({ llmModel: 'gpt-5.5', llmEffort: 'high' })
-  assert(storedGpt55.llmModel === 'gpt-5.5', 'Maestro settings should preserve stored GPT-5.5')
-  assert(storedGpt55.llmEffort === 'high', 'Maestro settings should preserve a supported GPT-5.5 effort')
+  // GPT-5.5 与 Claude 都已退役(Ral 2026-09-11:「应该也不用 gpt-5.5 了」「bl cowork 都不用 claude 的了」)。
+  // 这里此前钉的是"保住 GPT-5.5 预设",那条随决定一起作废 —— 换成钉**退役之后的**两件事,
+  // 因为它们才是会静默坏掉的:
+  //   ① 预设列表里不再有它;
+  //   ② 用户**已经存下**的 gpt-5.5 / claude target 仍要能优雅降级到一个活着的预设。
+  //      漏掉 ② 的话老用户的设置会指向一个不存在的模型,而这不会报错 —— 只会在发消息时才炸。
+  assert(
+    !LLM_PRESETS.some((preset) => preset.model === 'gpt-5.5'),
+    'GPT-5.5 已退役,不该再出现在预设列表里'
+  )
+  for (const retired of [
+    { provider: 'openai-codex', model: 'gpt-5.5', effort: 'xhigh' },
+    { provider: 'claude', model: 'claude-opus-4-8', effort: 'high' }
+  ]) {
+    const normalized = normalizeLlmTarget(retired)
+    assert(
+      LLM_PRESETS.some((preset) => preset.provider === normalized.provider && preset.model === normalized.model),
+      `已存的退役 target ${retired.model} 必须降级到一个活着的预设,实得 ${normalized.provider}/${normalized.model}`
+    )
+    assert(normalized.effort === retired.effort, `降级应保留仍被支持的 effort ${retired.effort},实得 ${normalized.effort}`)
+  }
+
+  // 三处"默认模型"必须指同一个。它们分属设置初值、预设兜底、Agent 兜底,各自都能独立漂移,
+  // 而漂移的表现是"新装的应用用 A,归一化兜底用 B" —— 没有任何一处会报错。
+  assert(
+    DEFAULT_PRESET_MODEL['openai-codex'] === service.read().llmModel,
+    `设置初值与预设兜底必须一致:settings=${service.read().llmModel} preset=${DEFAULT_PRESET_MODEL['openai-codex']}`
+  )
+  assert(
+    LLM_PRESETS.some((preset) => preset.model === DEFAULT_PRESET_MODEL['openai-codex']),
+    '默认模型必须是一个真实存在的预设'
+  )
+
+  // Ral 2026-09-11:「默认模型统一到 gpt-6-astra medium effort」。
+  // **默认档不是 `efforts[0]`** —— astra 的列表按升序给 picker 用(low..max),默认落在中间。
+  // 2026-09-11 之前 bl 三处都写 `efforts[0]`,等于把 medium 静静改成 low,且**不报错**。
+  const astra = LLM_PRESETS.find((preset) => preset.model === 'gpt-6-astra')
+  assert(astra?.effort === 'medium', `astra 预设默认档必须是 medium,实得 ${astra?.effort}`)
+  assert(defaultLlmEffort(astra) === 'medium', `defaultLlmEffort(astra) 必须是 medium,实得 ${defaultLlmEffort(astra)}`)
+  assert(astra.efforts[0]?.id !== 'medium', '这条断言的前提是 medium 不是 efforts[0];前提没了就该重写它,而不是让它恒真')
+  assert(service.read().llmEffort === 'medium', `新装设置的 effort 必须是 medium,实得 ${service.read().llmEffort}`)
+  // 归一化路径也必须给出 medium:传一个该模型不支持的档,应回落到**声明的默认**而不是最低档。
+  assert(
+    normalizeLlmTarget({ provider: 'openai-codex', model: 'gpt-6-astra', effort: 'bogus' }).effort === 'medium',
+    '非法 effort 应回落到预设声明的默认档(medium),不是 efforts[0]'
+  )
 
   const reset = service.save({ startUrl: '' })
   assert(reset.startUrl === DEFAULT_START_URL, 'blank saved startUrl should reset to default')

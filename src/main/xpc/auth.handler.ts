@@ -1,6 +1,11 @@
 import { BrowserWindow } from 'electron';
 import { createXpcMainEmitter, XpcMainHandler, xpcMain } from 'electron-xpc/main';
-import type { AuthInvalidationPayload, AuthSessionApi } from '@shared/auth/auth.type';
+import type {
+  AuthInvalidationPayload,
+  AuthSessionApi,
+  CustomerSessionPayload,
+} from '@shared/auth/auth.type';
+import { customerSessionService } from '@main/auth/customerSession.service';
 import { connectorWindowHelper } from '@main/windows/connectorWindow.helper';
 import { llamaWindowHelper } from '@main/windows/llamaWindow.helper';
 import { mainWindowHelper } from '@main/windows/mainWindow.helper';
@@ -113,6 +118,7 @@ class AuthHandler extends XpcMainHandler implements AuthSessionApi {
 
   async deactivateSession(): Promise<void> {
     this.sessionShouldBeActive = false;
+    customerSessionService.clear();
     this.sessionActivationGeneration += 1;
     coinWindowHandler.lockForAuthInvalidation();
     if (this.deactivationPromise) return await this.deactivationPromise;
@@ -135,11 +141,25 @@ class AuthHandler extends XpcMainHandler implements AuthSessionApi {
       status: params.status || 401,
     };
 
+    // 登录已失效 —— 主进程手里的 token 也立刻作废,不等渲染层广播回来再清。
+    customerSessionService.clear();
     console.warn('[AuthHandler] Session invalidation requested:', {
       source: eventPayload.source,
       status: eventPayload.status,
     });
     xpcMain.broadcast('auth/invalidated', eventPayload);
+  }
+
+  /**
+   * 渲染层交来的 Core 登录态。主进程的 agent 工具(`web_search`)靠它调 Core;
+   * 每次登录成功与会话恢复都会推一次,所以这里直接覆盖,不做合并。
+   */
+  async setCustomerSession(params: CustomerSessionPayload): Promise<void> {
+    customerSessionService.set(params);
+  }
+
+  async clearCustomerSession(): Promise<void> {
+    customerSessionService.clear();
   }
 
   private async _ensureMainWindow(): Promise<BrowserWindow | null> {

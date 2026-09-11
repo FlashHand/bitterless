@@ -15,3 +15,11 @@ export const registerMaestroCompositeTab = (spec: MaestroCompositeTabSpec): void
 
 export const getMaestroCompositeTab = (id: string): MaestroCompositeTabSpec | null =>
   specs.get(id) ?? null
+
+/**
+ * Every registered composite mini app, in registration order.
+ *
+ * The new-tab menu is built from this rather than a hand-written list: "which mini apps can a tab
+ * hold" is one fact, and a hand-written copy of it goes stale the first time a mini app is added.
+ */
+export const listMaestroCompositeTabs = (): MaestroCompositeTabSpec[] => [...specs.values()]

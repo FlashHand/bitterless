@@ -42,7 +42,7 @@
         :page="store.configPage"
         :total="store.configTotal"
         :page-size="store.configPageSize"
-        @change="store.setConfigPage"
+        @change="(page) => store.setConfigPage(page)"
       />
     </section>
 

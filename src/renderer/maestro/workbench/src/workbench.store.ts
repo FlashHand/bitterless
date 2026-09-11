@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import { createXpcRendererEmitter, xpcRenderer } from 'electron-xpc/renderer'
 import { encode } from 'gpt-tokenizer/encoding/o200k_base'
-import { AGENT_TURN_CHANNEL } from '@maestro-shared/coach.api'
+import { AGENT_TURN_CHANNEL, defaultLlmEffort } from '@maestro-shared/coach.api'
 import type {
   AgentTurnRecoverySnapshot,
   AgentTurnUpdate,
@@ -78,7 +78,8 @@ export interface NetworkExchangeDetail {
   responseTs?: number
 }
 
-const firstEffort = (model: LlmTarget): LlmEffort => model.efforts[0]?.id || model.effort
+// 同 ControlApp:预设声明的默认档优先,不取 `efforts[0]`。
+const firstEffort = (model: LlmTarget): LlmEffort => defaultLlmEffort(model)
 
 const loadPrefs = (): WorkbenchPrefs => {
   try {

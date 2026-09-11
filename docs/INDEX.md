@@ -12,6 +12,11 @@ design document.
   explicit initialization, native terminal view, Normal-mode shortcuts, and configuration access.
 - [Zellij distribution](features/terminal-zellij-distribution.md) - pinned Zellij
   binaries join `tools:init`, platform manifests, offline staging, and macOS signing.
+- [多个 Zellij tab,每个一条会话](features/zellij-multi-tab.md) — implemented; owner testing pending;
+  + 按钮的 hover mini-app 菜单、per-spec `singleton`/`restorable` opt-in、Maestro 铸造并落盘的
+  `instanceId`,以及「新开即新会话、重启即恢复」两条由同一个 id 决定的行为。
+- [Zellij 多实例:仍然共享的那几样东西](issues/zellij-multi-instance.md) — open(记账);
+  应用级状态灯、孤儿会话无人回收、`stop()` 不清 `pending`。
 
 - [INDEX CA list and Generate](plan/tasks/trench-index-generate-031.md) - Add saves metadata;
   Generate explicitly rebuilds the selected chain.

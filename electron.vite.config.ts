@@ -408,7 +408,14 @@ export default defineConfig({
           claudeDirectoryWatcher: resolve('src/main/eyesOnAgents/claudeDirectoryWatcher.main.ts'),
           mcpHelper: resolve('src/main/mcp/mcpHelper.main.ts')
         },
-        external: [/rig_dev\/.*\/node_modules/, 'node-llama-cpp']
+        // `canvas` 是 `linkedom` 的**可选 peer**(它的 package.json 里 peerDependenciesMeta.canvas.optional = true):
+        // linkedom 只在你真去用 canvas 相关 API 时才需要它,而正文抽取(articleExtract)只用 DOM 解析。
+        //
+        // 但 `linkedom` 在 bundledRuntimeDependencies 里 = 被**打进** main bundle,于是 rollup 会跟着
+        // 它的 import 图走进那个可选依赖并硬失败:`Could not resolve "canvas" imported by "linkedom"`。
+        // 这个错误只有在**真的有人 import linkedom** 之后才会出现 —— 2026-09-11 加 web_fetch 时触发。
+        // 标成 external:打包时不解析,运行时也不会被 require(那条分支走不到)。
+        external: [/rig_dev\/.*\/node_modules/, 'node-llama-cpp', 'canvas']
       },
       bytecode: false
     },

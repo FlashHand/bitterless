@@ -25,6 +25,9 @@ const CREATE_CAPTURE_FILTER = `
   );
 `
 
+// `kind` / `instance_id` carry a composite mini-app tab, which has no URL to be saved by:
+// `kind` names the registered spec to rebuild it through, `instance_id` is the identity that makes
+// the rebuilt tab return to its own state (see docs/features/zellij-multi-tab.md).
 const CREATE_TABS = `
   CREATE TABLE IF NOT EXISTS tabs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +35,8 @@ const CREATE_TABS = `
     title TEXT NOT NULL DEFAULT '',
     favicon TEXT NOT NULL DEFAULT '',
     position INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT '',
+    instance_id TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL
   );
 `
@@ -321,6 +326,16 @@ export const maestroSqliteMigrations: readonly SqliteMigration[] = [
         'confirm_json',
         "TEXT NOT NULL DEFAULT ''",
       )
+    },
+  },
+  {
+    // Composite mini-app tabs become restorable. Paired with CREATE_TABS above: that one covers a
+    // fresh install, this one covers an upgrade — changing only one leaves half the installs broken
+    // in a way the other half cannot reproduce (docs/features/sqlite-migration-release-gate.md).
+    versionCode: '260911140000',
+    runner: (db) => {
+      addMaestroColumnIfMissing(db, 'tabs', 'kind', "TEXT NOT NULL DEFAULT ''")
+      addMaestroColumnIfMissing(db, 'tabs', 'instance_id', "TEXT NOT NULL DEFAULT ''")
     },
   },
 ]

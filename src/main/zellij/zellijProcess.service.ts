@@ -155,7 +155,7 @@ export class ZellijProcessService {
           '--ip',
           '127.0.0.1',
           '--port',
-          '12877'
+          String(this.dependencies.port())
         ]);
         this.owned = child;
         child.onExit(() => {

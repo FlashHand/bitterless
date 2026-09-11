@@ -1,4 +1,5 @@
 import type { LlmEffort, LlmEffortOption, LlmLoginMethod, LlmLoginProviderOption, LlmTarget } from '@maestro-shared/coach.api'
+import { defaultLlmEffort } from '@maestro-shared/coach.api'
 
 export interface LlmStoredTarget {
   provider: string
@@ -15,22 +16,35 @@ export interface LlmProviderDefinition {
   hint?: string
 }
 
-// LLM backends. Codex/Claude use coding-agent subscription OAuth in maestroAuthPath().
-export const DEFAULT_COMPRESSION_REMAINING_PERCENT = 10
+// LLM backends. Codex uses coding-agent subscription OAuth in maestroAuthPath().
+/**
+ * 触发压缩时要留的余量,占窗口的百分比 —— **同时**是我们自己那条触发线和 pi 自带
+ * auto-compaction 的 `reserveTokens` 来源(`piCompactionSettings.service.ts` 负责后者)。
+ *
+ * Ral 2026-09-11:「reserved token 数是 20%」。此前是 10 —— 在 272,000 窗口上等于烧到 244,800
+ * 才动手,一个大 tool 结果就能在两次检查之间把窗口冲爆。20% ⇒ 触发线 217,600,正是他先给的
+ * 那组固定值里的「超过 220k 就触发压缩」。
+ */
+export const DEFAULT_COMPRESSION_REMAINING_PERCENT = 20
 
+/**
+ * **`max` 这一档由预设放行**(`agentRuntime.types.ts` 的 `AgentRuntimeThinkingLevel` 注释:
+ * 「`max` 位于 `xhigh` 之上,只有目录条目声明它的模型才接受 —— 预设的 effort 列表就是那道闸」)。
+ *
+ * 2026-09-11 实测 pi 目录(`getSupportedThinkingLevels`):`gpt-6-astra` 与 `gpt-5.6-*` 三个
+ * **都支持 max**,`gpt-5.4-mini` 只到 `xhigh`。此前 bl 一律只给到 `xhigh`,等于把这些模型
+ * 最高一档算力关在外面。
+ */
 const CODEX_EFFORTS: LlmEffortOption[] = [
   { id: 'low', label: 'low' },
   { id: 'medium', label: 'medium' },
   { id: 'high', label: 'high' },
-  { id: 'xhigh', label: 'Extra' }
+  { id: 'xhigh', label: 'Extra' },
+  { id: 'max', label: 'Max' }
 ]
 const CODEX_SOL_EFFORTS: LlmEffortOption[] = CODEX_EFFORTS.filter((item) => item.id !== 'low')
-const CLAUDE_EFFORTS: LlmEffortOption[] = [
-  { id: 'low', label: 'low' },
-  { id: 'medium', label: 'medium' },
-  { id: 'high', label: 'high' },
-  { id: 'xhigh', label: 'Extra' }
-]
+/** `gpt-5.4-mini` 的目录条目不声明 `max`,给了也用不上。 */
+const CODEX_MINI_EFFORTS: LlmEffortOption[] = CODEX_EFFORTS.filter((item) => item.id !== 'max')
 
 export const LLM_PROVIDERS: LlmProviderDefinition[] = [
   {
@@ -38,16 +52,37 @@ export const LLM_PROVIDERS: LlmProviderDefinition[] = [
     label: 'Codex',
     authLabel: 'Coding agent subscription'
   },
-  // Claude provider option is intentionally hidden in Maestro for now. Keep the runtime,
-  // preset, and login plumbing below so it can be re-enabled by uncommenting this block.
-  // {
-  //   provider: 'anthropic',
-  //   label: 'Claude',
-  //   authLabel: 'Coding agent subscription'
-  // }
+  // Claude 退役(Ral 2026-09-11:「bl cowork 都不用 claude 的了」)。此前它是"隐藏但保留 preset
+  // 以便随时开回来";现在连 preset 一起删了,所以重新启用需要重写那几条,不是取消注释就行。
+  // `normalizeLlmProvider` 里 claude → anthropic 的别名归一化**留着** —— 旧会话存过那个 target,
+  // 删掉会让它们解析失败而不是优雅退回默认。
 ]
 
+/**
+ * 可选模型(Ral 2026-09-11 定:「不用 claude 的了,也不用 gpt-5.5 了;5.4mini 用、5.6 都用、6 astra 也用」)。
+ *
+ * **`contextLengthK` / `contextLengthLabel` 只是兜底** —— 运行时由
+ * `applyResolvedContextWindows()` 用 pi 目录里的真值覆盖。写 266 是因为实测这 5 个模型
+ * 在 pi 里都是 `contextWindow = 272000`(≈266K);此前手写的 372K / 256K / 1M **全部是错的**,
+ * 而压缩的触发线、reserve 预算、summary 上限都乘在这个数上 —— 372K 那三个模型的触发线
+ * 曾落在真实窗口的 136%,也就是**永远不触发直到溢出**。
+ */
 export const LLM_PRESETS: LlmTarget[] = [
+  {
+    provider: 'openai-codex',
+    providerLabel: 'Codex',
+    model: 'gpt-6-astra',
+    label: 'GPT-6 Astra',
+    shortLabel: '6 Astra',
+    // Ral 2026-09-11:「默认模型统一到 gpt-6-astra medium effort」(cowork 2026-09-07 已是此值)。
+    // **不是 `efforts[0]`** —— 列表按升序给 picker 用,默认档可以落在中间,读它必须走 `defaultLlmEffort()`。
+    effort: 'medium',
+    efforts: CODEX_EFFORTS.slice(),
+    contextLengthK: 266,
+    contextLengthLabel: '266K',
+    compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
+    authLabel: 'Coding agent subscription'
+  },
   {
     provider: 'openai-codex',
     providerLabel: 'Codex',
@@ -56,8 +91,8 @@ export const LLM_PRESETS: LlmTarget[] = [
     shortLabel: '5.6 Luna',
     effort: 'low',
     efforts: CODEX_EFFORTS.slice(),
-    contextLengthK: 372,
-    contextLengthLabel: '372K',
+    contextLengthK: 266,
+    contextLengthLabel: '266K',
     compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
     authLabel: 'Coding agent subscription'
   },
@@ -69,8 +104,8 @@ export const LLM_PRESETS: LlmTarget[] = [
     shortLabel: '5.6 Sol',
     effort: 'medium',
     efforts: CODEX_SOL_EFFORTS.slice(),
-    contextLengthK: 372,
-    contextLengthLabel: '372K',
+    contextLengthK: 266,
+    contextLengthLabel: '266K',
     compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
     authLabel: 'Coding agent subscription'
   },
@@ -82,55 +117,30 @@ export const LLM_PRESETS: LlmTarget[] = [
     shortLabel: '5.6 Terra',
     effort: 'low',
     efforts: CODEX_EFFORTS.slice(),
-    contextLengthK: 372,
-    contextLengthLabel: '372K',
+    contextLengthK: 266,
+    contextLengthLabel: '266K',
     compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
     authLabel: 'Coding agent subscription'
   },
   {
     provider: 'openai-codex',
     providerLabel: 'Codex',
-    model: 'gpt-5.5',
-    label: 'GPT-5.5',
-    shortLabel: '5.5',
+    model: 'gpt-5.4-mini',
+    label: 'GPT-5.4 Mini',
+    shortLabel: '5.4 Mini',
     effort: 'low',
-    efforts: CODEX_EFFORTS.slice(),
-    contextLengthK: 256,
-    contextLengthLabel: '256K',
-    compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
-    authLabel: 'Coding agent subscription'
-  },
-  {
-    provider: 'anthropic',
-    providerLabel: 'Claude',
-    model: 'claude-opus-4-8',
-    label: 'Claude Opus 4.8',
-    shortLabel: 'Opus 4.8',
-    effort: 'low',
-    efforts: CLAUDE_EFFORTS.slice(),
-    contextLengthK: 1024,
-    contextLengthLabel: '1M',
-    compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
-    authLabel: 'Coding agent subscription'
-  },
-  {
-    provider: 'anthropic',
-    providerLabel: 'Claude',
-    model: 'claude-sonnet-4-6',
-    label: 'Claude Sonnet 4.6',
-    shortLabel: 'Sonnet 4.6',
-    effort: 'low',
-    efforts: CLAUDE_EFFORTS.slice(),
-    contextLengthK: 1024,
-    contextLengthLabel: '1M',
+    efforts: CODEX_MINI_EFFORTS.slice(),
+    contextLengthK: 266,
+    contextLengthLabel: '266K',
     compressionRemainingPercent: DEFAULT_COMPRESSION_REMAINING_PERCENT,
     authLabel: 'Coding agent subscription'
   }
 ]
 
 export const DEFAULT_PRESET_MODEL: Record<string, string> = {
-  'openai-codex': 'gpt-5.6-luna',
-  anthropic: 'claude-opus-4-8'
+  // 与 `BaseAgent.DEFAULT_MODEL_BY_PROVIDER` 保持一致 —— 两处此前分别指向 luna 与 astra,
+  // 同一个"默认"指向两个模型(Ral 2026-09-11 定:统一到 astra)。
+  'openai-codex': 'gpt-6-astra'
 }
 
 export const LLM_LOGIN_PROVIDERS: LlmLoginProviderOption[] = [
@@ -172,6 +182,37 @@ export const firstPresetForProvider = (provider: string): LlmTarget | undefined 
 
 export const modelPresetKey = (provider: string, model: string): string => `${provider}/${model}`
 
+/**
+ * pi 给不出窗口时的兜底(Ral 2026-09-11:「默认就是 256k,因为现在一般至少 256k 了」)。
+ * **刻意不退回预设里那个手写值** —— 手写值正是这次要消除的失准来源。
+ */
+export const DEFAULT_CONTEXT_WINDOW_TOKENS = 256 * 1024
+
+/** token 数 → 给人看的标签:`262144 → '256K'`、`1048576 → '1M'`。 */
+export const contextWindowLabel = (tokens: number): string => {
+  const k = Math.round(tokens / 1024)
+  return k >= 1024 && k % 1024 === 0 ? `${k / 1024}M` : `${k}K`
+}
+
+/**
+ * 用 pi 解析出的**真实**窗口覆盖预设里手写的 `contextLengthK` / `contextLengthLabel`。
+ *
+ * 标签也一起派生,而不是保留手写的那个 —— 否则会出现「标签写 1M、数字算 256K」这种
+ * 自相矛盾的显示。查不到的退 `DEFAULT_CONTEXT_WINDOW_TOKENS`。
+ */
+export const applyResolvedContextWindows = (
+  presets: LlmTarget[],
+  resolved: Record<string, number>
+): LlmTarget[] =>
+  presets.map((preset) => {
+    const tokens = resolved[modelPresetKey(preset.provider, preset.model)] || DEFAULT_CONTEXT_WINDOW_TOKENS
+    return {
+      ...preset,
+      contextLengthK: Math.round(tokens / 1024),
+      contextLengthLabel: contextWindowLabel(tokens)
+    }
+  })
+
 export const normalizeCompressionRemainingPercent = (value: unknown): number => {
   const n = Math.round(Number(value))
   if (!Number.isFinite(n)) return DEFAULT_COMPRESSION_REMAINING_PERCENT
@@ -211,7 +252,7 @@ export const normalizeLlmTarget = (value: { provider?: string; model?: string; e
   const requestedModel = (value.model || DEFAULT_PRESET_MODEL[provider] || fallback.model).trim()
   const preset = presets.find((item) => item.model === requestedModel) || fallback
   const requestedEffort = value.effort === 'max' && preset.efforts.some((item) => item.id === 'xhigh') ? 'xhigh' : value.effort
-  const defaultEffort = preset.efforts[0]?.id || preset.effort
+  const defaultEffort = defaultLlmEffort(preset)
   const effort = preset.efforts.some((item) => item.id === requestedEffort) ? (requestedEffort as LlmEffort) : defaultEffort
   return {
     provider: preset.provider,

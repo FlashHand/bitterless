@@ -19,6 +19,10 @@ const FIRST_PARTY_RENDERER_ENTRIES = [
   { path: '/onlypreview/guide/index.html', process: 'renderer:onlypreviewGuide' },
   { path: '/fileSearch/index.html', process: 'renderer:fileSearch' },
   { path: '/coin/index.html', process: 'renderer:coin' },
+  // Without this entry the Zellij renderer is not spied, so nothing it logs — including a failed
+  // enable/initialize — ever reaches the application log file. That, plus the store's discarded
+  // catches and the window's missing DevTools, is why the terminal failed with no trace at all.
+  { path: '/zellij/index.html', process: 'renderer:zellij' },
   { path: '/omni/omniCell/index.html', process: 'renderer:omniCell' },
   { path: '/omni/omniControl/index.html', process: 'renderer:omniControl' },
   { path: '/omni/omniWindow/index.html', process: 'renderer:omniWindow' },

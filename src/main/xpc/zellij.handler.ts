@@ -40,12 +40,16 @@ class ZellijHandler extends XpcMainHandler implements ZellijApi {
     }
   }
   async setContentBounds(params: {
+    surfaceId: string;
     x: number;
     y: number;
     width: number;
     height: number;
   }): Promise<void> {
-    zellijWindowService.setContentBounds(params);
+    // An `XpcMainHandler` method sees only `params` — there is no sender web contents to infer the
+    // surface from — so a call without an id cannot be routed and is dropped rather than guessed.
+    if (!params?.surfaceId) return;
+    zellijWindowService.setContentBounds(params.surfaceId, params);
   }
 }
 

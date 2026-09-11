@@ -12,6 +12,12 @@ export interface ZellijRuntimeDependencies {
   readEnabled(): boolean;
   persistEnabled(enabled: boolean): void;
   checkBinary(): void;
+  /**
+   * The port this build's server binds. Injected rather than read from a constant so the same class
+   * serves every runtime profile — Production, Preview and the debug builds run side by side and
+   * must not land on one port. See zellijPort.service.ts.
+   */
+  port(): number;
   run(args: string[]): Promise<string>;
   spawn(args: string[]): ZellijOwnedProcess;
   probe(): Promise<'absent' | 'matching' | 'mismatch' | 'occupied'>;

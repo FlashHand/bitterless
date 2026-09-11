@@ -303,11 +303,10 @@ test('Global Search alone renders as one inset transparent floating surface', ()
   assert.match(workspace, /overflow:\s*hidden;/);
   assert.match(workspace, /border-radius:\s*14px;/);
   assert.match(workspace, /background:\s*var\(--onlypreview-canvas\);/);
-  assert.match(
-    workspace,
-    /box-shadow:\s*\n\s*0 12px 24px -12px rgb\(37 40 58 \/ 36%\),\s*\n\s*0 3px 8px rgb\(37 40 58 \/ 16%\);/
-  );
-  assert.equal((workspace.match(/rgb\(/g) ?? []).length, 2);
+  // 阴影只断言"有两层" —— 具体值与裁切上限由下面那条**编译产物**断言负责
+  // (Ral 2026-09-11 换成蓝色投影;原来这里钉的是旧的 ink 值,而它断言的是原始 Less,
+  //  编译后 Less 会把 `rgb(22 93 255 / 42%)` 改写成 `rgba(22, 93, 255, 0.42)` 并折成一行)。
+  assert.match(workspace, /box-shadow:\s*\n\s*0 [^\n]+,\s*\n\s*0 [^\n]+;/);
   assert.doesNotMatch(workspace, /(?:backdrop-)?filter\s*:/);
 
   assert.match(app, /FLOATING_GUTTER_PX = 24/);

@@ -478,6 +478,10 @@ import {
 } from '../../common/onlyPreviewTreeIcon.service';
 import { formatOnlyPreviewBytes, interpolateOnlyPreview } from '../../common/onlyPreviewFormat';
 import { resolveOnlyPreviewBreadcrumb } from './onlyPreviewTree.service';
+import {
+  ONLY_PREVIEW_EDITABLE_TARGET_SELECTOR,
+  resolveOnlyPreviewCopyShortcut
+} from './onlyPreviewCopyShortcut.service';
 import { onlyPreviewEnv } from '../../common/contextBridge/onlyPreviewEnv.bridge';
 import { onlyPreviewI18n } from '../../common/onlyPreviewI18n';
 import PreviewToolbar from './components/PreviewToolbar/PreviewToolbar.vue';
@@ -770,33 +774,32 @@ const handleEditKeydown = (event: KeyboardEvent): void => {
   }
 };
 
+/**
+ * plain `Cmd+C` = 复制**文件本身**（Finder 里 `Cmd+V` 能粘贴进去）。
+ *
+ * 判据在 `onlyPreviewCopyShortcut.service`,理由与改动史写在那里。这里只负责把 DOM 那两件事
+ * （目标是不是可编辑控件、有没有文本选区）算出来喂给它 —— 它们是 main 看不到、也没法测的部分。
+ */
 const handleProjectItemCopyShortcut = (event: KeyboardEvent): boolean => {
-  if (
-    event.defaultPrevented ||
-    event.repeat ||
-    event.isComposing ||
-    event.key.toLowerCase() !== 'c'
-  ) {
-    return false;
-  }
-  const primaryModifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-  if (!primaryModifier) return false;
   const target = event.target;
-  if (!(target instanceof HTMLElement)) return false;
-  if (
-    target.matches('input, textarea, select, [contenteditable="true"], [role="textbox"]') ||
-    !target.matches('button[name="onlypreview__treeRow"]')
-  ) {
-    return false;
-  }
-  const relativePath = target.dataset.relativePath;
-  if (relativePath === undefined) return false;
-  // Copy Path (Shift) and Copy Name (Alt) are Main-owned window shortcuts now, so they work with
-  // focus anywhere and must not also run here. Plain Cmd+C stays renderer-owned: inside a document
-  // it means "copy the selection", and Main must not take that key.
-  if (event.shiftKey || event.altKey) return false;
+  const decision = resolveOnlyPreviewCopyShortcut(event, {
+    isMac,
+    // `editing` 是 `{ relativePath, draft, originalName } | null`,不是 boolean。
+    editing: Boolean(onlyPreviewProjectAuthoring.editing),
+    targetIsEditable:
+      target instanceof HTMLElement &&
+      target.matches(ONLY_PREVIEW_EDITABLE_TARGET_SELECTOR),
+    // 只看 shell 自己这个文档的选区。空选区(`isCollapsed`)不算 —— 光标在那儿不等于选了东西。
+    hasTextSelection: Boolean(
+      window.getSelection()?.toString() && !window.getSelection()?.isCollapsed
+    ),
+    treeSelectedRelativePath:
+      onlyPreviewShellStore.treeSelectedRelativePath ??
+      (onlyPreviewShellStore.selectedRelativePath || null)
+  });
+  if (decision.kind === 'ignore') return false;
   event.preventDefault();
-  void onlyPreviewShellStore.copyProjectItem(relativePath, 'item');
+  void onlyPreviewShellStore.copyProjectItem(decision.relativePath, 'item');
   return true;
 };
 

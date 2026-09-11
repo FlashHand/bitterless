@@ -1,6 +1,14 @@
 import { XpcMainHandler } from 'electron-xpc/main'
 import { maestroWindowHelper } from '@maestro-main/windows/main/maestroWindow.controller'
-import { maestroAuthPath, maestroModelsPath } from '@maestro-main/llm/llmPaths'
+import { maestroAuthPath, maestroModelsPath, maestroUserChainDir } from '@maestro-main/llm/llmPaths'
+import { DEFAULT_CONTEXT_WINDOW_TOKENS } from '@maestro-main/llm/llmModels'
+import {
+  USER_CHAIN_WINDOW_RATIO,
+  chainFilePath,
+  projectUserChain,
+  readChainRecords,
+  renderUserChainBlock
+} from '@main/agent/userChainStore.service'
 import { usageLedger } from '@main/agent/runtime/usageLedger'
 import { compactionBoundary, toCompactionUsage, toPiUsage } from '@main/agent/compaction/compactionEntries'
 import { computeCutPoint, runCompaction, type CompactionApplyPlan, type CompactionApplyResult, type CompactionDeps } from '@main/agent/compaction/compactionRun'
@@ -208,7 +216,22 @@ class CompactionHandler extends XpcMainHandler implements MaestroCompactionApi {
         signal: controller.signal,
         usage
       }
-      return await runCompaction(params, deps)
+      // ② 用户原话链 —— **main 自己从 `<userData>/chain/<sessionId>.jsonl` 建**,
+      // 不再由渲染端交(Ral 2026-09-11 定的形态)。
+      //
+      // 为什么必须 main 建:渲染端存的是**用户敲的原文**,而 main 发出去的是长粘贴换过的
+      // **引用**。渲染端建链 ⇒ 被换掉的长粘贴在第一次压缩时原样注入回来,长粘贴转文件形同虚设。
+      // main 写进 jsonl 的就是它真正发出去的那一份,这类矛盾从根上不存在。
+      //
+      // 预算 = 窗口的 10%(Ral:「上下文留存的用户原话给 10% 的 context window 预算」)。
+      // 窗口解析不到时退 `DEFAULT_CONTEXT_WINDOW_TOKENS`,与别处同一口径。
+      const chainPath = chainFilePath(maestroUserChainDir(), mainCtl().agentService.agentSessionKey(params?.sessionId))
+      const chainWindow = resolved.model.contextWindow || DEFAULT_CONTEXT_WINDOW_TOKENS
+      const projection = projectUserChain(readChainRecords(chainPath), Math.floor(chainWindow * USER_CHAIN_WINDOW_RATIO))
+      return await runCompaction(
+        { ...params, userChainText: renderUserChainBlock(projection, chainPath) },
+        deps
+      )
     } finally {
       clearTimeout(timer)
     }

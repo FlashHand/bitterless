@@ -165,6 +165,9 @@ export interface CoachXpcContract {
    * and is never cooled by the warm cap. `id` is the registered spec id, e.g. `'onlypreview'`.
    */
   openCompositeTab(params: { id: string }): Promise<void>
+  // Hover the + button → native menu: a blank tab, or one of the registered composite mini apps.
+  // `x`/`y` are window-content-relative DIP, measured by the button itself.
+  showNewTabMenu(params: { x: number; y: number }): Promise<void>
   /**
    * 在 OnlyPreview 的 tab 里打开一个绝对目录。
    *
@@ -265,7 +268,22 @@ export interface BrowserRequestReplayResult {
   auth?: { header: string; source: string; key?: string; applied: boolean }[]
 }
 
-export type TabKind = 'home' | 'browser' | 'onlypreview' | 'trench'
+export type TabKind = 'home' | 'browser' | 'onlypreview' | 'trench' | 'zellij'
+
+/**
+ * **D3 —— 当前 tab 激活的内容**(Ral 2026-09-11:「D3 是当前 tab 激活的内容,有文件、miniapp、
+ * 网页 url 3 种」)。分层见 `overmind:areas/agent-runtime/chat/prompt-structure.html` #2 表 3。
+ *
+ * 三态与 `TabKind` 的映射:`onlypreview`→file、`browser`→web、其余(`home`/`trench`/`zellij`)→miniapp。
+ *
+ * **为什么不复用 `currentUrl`**:它是 `displayUrl(tab)` 的结果,而那个函数只特判 `home` 与
+ * `onlypreview`,composite tab(trench/zellij)落到 `tab.url` —— 那个字段出生就是空串且永不被写,
+ * 于是 `currentUrl` 会变成**空串**。它同时还是技能段 `domain` 的输入,所以不能改它去承载 D3。
+ */
+export type ActiveTabContent =
+  | { readonly state: 'file'; readonly fileUrl: string; readonly app: string }
+  | { readonly state: 'miniapp'; readonly app: string }
+  | { readonly state: 'web'; readonly url: string; readonly title: string }
 export type WorkbenchPane =
   | 'recording'
   | 'skills'
@@ -373,6 +391,25 @@ export interface TabInfo {
   debuggerAttached: boolean
   /** Page load in flight; the tab chip shows a spinner until stop/failure/teardown/watchdog. */
   loading: boolean
+  /**
+   * The agent is DRIVING this tab right now (deep_fetch rendering it, ui_act clicking in it, …).
+   *
+   * Why it is on the wire and not merely a main-side fact: a tab that moves on its own with no
+   * visible cause reads as the app misbehaving. The chip animates its favicon slot while this is
+   * true, so "something is happening here, and it is the agent" is answered before it is asked
+   * (Ral 2026-09-11: 「tab 的 favicon 区域有动画表明正在被控制」).
+   */
+  controlled: boolean
+  /**
+   * A composite mini-app tab's persistent identity (absent on web/home tabs).
+   *
+   * The home renderer owns tab persistence, and a composite tab has no URL to be saved by — so the
+   * id Maestro minted has to be on the wire for the saved row to carry it, and for the restored tab
+   * to be recognised as the same one.
+   */
+  instanceId?: string
+  /** This composite tab's mini app asked to come back on the next launch (`spec.restorable`). */
+  restorable?: boolean
 }
 
 // A window-content-relative rectangle (DIP), as read from a placeholder element's
@@ -408,7 +445,12 @@ export interface LlmTarget {
   label: string
   /** Compact display label for dense controls, e.g. 5.5 or Opus 4.8. */
   shortLabel: string
+  /** The preset's DEFAULT effort — what a fresh switch to this model selects. Not necessarily
+   * `efforts[0]`: the option list stays in ascending order for the picker, while the default can
+   * sit anywhere in it (gpt-6-astra lists low..max but defaults to medium). Read it through
+   * `defaultLlmEffort()`, never as `efforts[0]`. */
   effort: LlmEffort
+  /** Selectable efforts for this model, in picker order (ascending). */
   efforts: LlmEffortOption[]
   /** Context length as integer K units, e.g. 256 means 256K tokens. */
   contextLengthK: number
@@ -418,6 +460,19 @@ export interface LlmTarget {
   compressionRemainingPercent: number
   authLabel: string
 }
+
+/**
+ * The effort a fresh switch to `preset` should select. `preset.effort` is the declared default and
+ * wins whenever it is actually offered; `efforts[0]` is only the fallback for a preset whose
+ * declared default is not in its own list. Main and both renderers MUST agree on this, or the
+ * picker and the persisted target disagree about what "default" means.
+ *
+ * 2026-09-11 之前 bl **没有**这个函数,三处(`normalizeLlmTarget`、ControlApp、Workbench)各自
+ * 写着 `efforts[0]`,等于把预设声明的默认档整个忽略掉 —— Ral 要的 astra@medium 会被静静改成
+ * astra@low。cowork 早有这一条(2026-09-07),这次把 bl 对齐。
+ */
+export const defaultLlmEffort = (preset: LlmTarget): LlmEffort =>
+  preset.efforts.some((item) => item.id === preset.effort) ? preset.effort : preset.efforts[0]?.id || preset.effort
 
 export interface LlmProviderState {
   provider: LlmProviderId

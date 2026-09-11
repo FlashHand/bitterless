@@ -58,6 +58,7 @@ import {
 } from '@main/miniapps/onlypreview/onlyPreviewProtocol.service';
 import { registerOnlyPreviewCoworkTab } from '@main/windows/onlyPreviewCoworkTab';
 import { registerTrenchCoworkTab } from '@main/windows/trenchCoworkTab';
+import { registerZellijCoworkTab } from '@main/windows/zellijCoworkTab';
 import { registerOnlyPreviewMaestroOpener } from '@main/windows/onlyPreviewMaestroOpener';
 import {
   OnlyPreviewOpenQueue,
@@ -642,6 +643,7 @@ if (isLegacyCodingAgentHookHelperMode) {
     // boundary — and before `startGui()` so a Cowork window opened during startup already has it.
     registerOnlyPreviewCoworkTab();
     registerTrenchCoworkTab();
+    registerZellijCoworkTab();
     // ...and make it the application Cowork's workspace tools show files in, instead of Finder.
     registerOnlyPreviewMaestroOpener();
     installApplicationFindMenu();

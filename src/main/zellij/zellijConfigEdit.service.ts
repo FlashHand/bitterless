@@ -41,7 +41,9 @@ const NAMED_KEYS = new Set([
   'Pause',
   'Menu'
 ]);
-const ACTION_SOURCE: Record<ZellijShortcutAction, string> = {
+// Exported so the seeded default config emits the SAME bind bodies the editor later looks for —
+// a seed that diverged would read back as drift the moment the settings panel opened.
+export const ACTION_SOURCE: Record<ZellijShortcutAction, string> = {
   splitDown: 'NewPane "Down";',
   splitRight: 'NewPane "Right";',
   closePane: 'CloseFocus;'
@@ -49,7 +51,7 @@ const ACTION_SOURCE: Record<ZellijShortcutAction, string> = {
 
 export const defaultZellijShortcuts = (platform: string): ZellijShortcuts =>
   platform === 'darwin'
-    ? { splitDown: 'Super d', splitRight: 'Super Shift d', closePane: 'Ctrl w' }
+    ? { splitDown: 'Super d', splitRight: 'Super Shift d', closePane: 'Super w' }
     : { splitDown: 'Ctrl Alt d', splitRight: 'Ctrl Alt Shift d', closePane: 'Ctrl Alt w' };
 
 export const normalizeZellijShortcut = (value: string): string => {

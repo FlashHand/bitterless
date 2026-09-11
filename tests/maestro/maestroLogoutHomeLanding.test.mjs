@@ -93,7 +93,13 @@ test('forced boot restores tab entries but cannot reactivate the previous web ta
       init.indexOf('return\n    }')
   );
   assert.ok(init.indexOf('return\n    }') < init.indexOf('await this.restoreLastActive()'));
-  assert.match(tabStore, /const target = this\.tabs\.find\(\(t\) => t\.kind === 'browser'/);
+  // `restoreLastActive` now has two branches — a restorable composite tab (a Zellij terminal comes
+  // back to its own session) or a persistable web tab. The forced-Home path still returns BEFORE
+  // reaching either, which is what this test is about.
+  assert.match(
+    tabStore,
+    /\(isRestorableComposite\(t\) && tabKey\(t\) === key\) \|\|[\s\S]*?\(t\.kind === 'browser' && t\.url === key && isPersistableUrl\(t\.url\)\)/
+  );
 });
 
 test('force-Home intent survives shutdown and is consumed only after a successful target boot', () => {

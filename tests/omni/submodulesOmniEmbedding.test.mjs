@@ -19,7 +19,8 @@ test('Submodules is the sixth bounded Omni mini app and survives persisted round
     'translator',
     'motto',
     'trench',
-    'submodules'
+    'submodules',
+    'zellij'
   ]);
   assert.equal(parseOmniMiniAppId('submodules'), 'submodules');
   assert.equal(OMNI_MINI_APP_DISPLAY_URLS.submodules, 'bl://miniapp/submodules');
@@ -42,6 +43,7 @@ test('Submodules is the sixth bounded Omni mini app and survives persisted round
 test('Submodules reuses its own renderer and preload without becoming a sandboxed runtime', () => {
   assert.deepEqual(Object.keys(OMNI_MINI_APP_RUNTIME), OMNI_MINI_APP_IDS);
   assert.deepEqual(OMNI_MINI_APP_RUNTIME.submodules, {
+    kind: 'renderer',
     preloadFile: 'submodules.js',
     rendererName: 'submodules',
     sandbox: false
@@ -50,8 +52,8 @@ test('Submodules reuses its own renderer and preload without becoming a sandboxe
     Object.entries(OMNI_MINI_APP_RUNTIME)
       .filter(([, runtime]) => runtime.sandbox)
       .map(([id]) => id),
-    ['trench'],
-    'Trench must remain the only sandboxed mini-app runtime'
+    ['trench', 'zellij'],
+    'sandboxed runtimes: trench (own renderer) and zellij (a page we do not author)'
   );
 });
 
@@ -142,7 +144,7 @@ test('Omni Control offers Submodules as a localized sixth mini app', () => {
   const zh = read('src/renderer/common/i18n/zh.ts');
 
   const entries = [
-    ...control.matchAll(/\bid:\s*'(todo|eyesOnAgents|translator|motto|trench|submodules)'/g)
+    ...control.matchAll(/\bid:\s*'(todo|eyesOnAgents|translator|motto|trench|submodules|zellij)'/g)
   ].map((match) => match[1]);
   assert.deepEqual(entries, OMNI_MINI_APP_IDS);
   assert.match(control, /submodulesIcon from '@renderer\/common\/assets\/icons\/submodules\.svg'/);

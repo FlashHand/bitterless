@@ -1,22 +1,37 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { DEFAULT_COACH_START_URL, type CoachSettings } from '@maestro-shared/coach.api'
+import { DEFAULT_COACH_START_URL, type CoachSettings, type LlmTarget } from '@maestro-shared/coach.api'
+import { DEFAULT_PRESET_MODEL, LLM_PRESETS } from '@maestro-main/llm/llmModels'
 
 export const DEFAULT_START_URL = DEFAULT_COACH_START_URL
 
 const DEFAULT_SETTINGS: CoachSettings = {
   startUrl: DEFAULT_START_URL,
   llmProvider: 'openai-codex',
-  llmModel: 'gpt-5.6-luna',
-  llmEffort: 'low',
+  // 与 `llmModels.DEFAULT_PRESET_MODEL` / `BaseAgent.DEFAULT_MODEL_BY_PROVIDER` 必须一致 ——
+  // 三处此前有两个值(这里 luna,那两处 astra),表现是"新装的应用用 luna,归一化兜底用 astra",
+  // 两边都不报错。`check-startup-settings.mjs` 钉住这个一致性。
+  llmModel: 'gpt-6-astra',
+  // 与 astra 预设声明的默认档一致(Ral 2026-09-11:「gpt-6-astra medium effort」)。
+  llmEffort: 'medium',
   terminalEnabled: false
 }
 
-const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = {
-  'openai-codex': 'gpt-5.6-luna'
-}
+/**
+ * 默认模型与可选模型集**全部从预设派生**,这里不再自己列一份。
+ *
+ * 2026-09-11 之前这个文件手写了 `'openai-codex': 'gpt-5.6-luna'` 和一份四个模型的白名单,
+ * 与 `llmModels.ts` 的预设各走各的。后果是两个**都不报错**的静默失配:
+ *  · 默认模型有三处定义(这里 / `DEFAULT_PRESET_MODEL` / `BaseAgent.DEFAULT_MODEL_BY_PROVIDER`),
+ *    退役 gpt-5.5、新增 gpt-6-astra 时只改了其中两处;
+ *  · 白名单没跟上新增模型 ⇒ 存进来的 `gpt-6-astra` 会被 `normalizeLlmModel` **当成非法值丢掉**,
+ *    静静回落到 luna —— 用户看到的是"选了模型但没生效"。
+ *
+ * 派生之后,新增/退役模型只需要动 `llmModels.ts` 一处。
+ */
+const DEFAULT_MODEL_BY_PROVIDER: Record<string, string> = DEFAULT_PRESET_MODEL
 
-const OPENAI_CODEX_MODELS = ['gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra'] as const
+const presetFor = (model: string): LlmTarget | undefined => LLM_PRESETS.find((preset) => preset.model === model)
 
 export class CoachSettingsService {
   private readonly file: string
@@ -73,11 +88,10 @@ export function isDefaultStartUrl(url?: string): boolean {
 
 function normalizeLlmModel(model: string, fallbackModel: string): string {
   const trimmed = model.trim()
-  if (OPENAI_CODEX_MODELS.some((item) => item === trimmed)) return trimmed
-  if (OPENAI_CODEX_MODELS.some((item) => item === fallbackModel)) return fallbackModel
-  // Local Claude 子系统已随 claudeSubscription 一并删除,任何存量的 claude-* 设置回落到 fallback。
-  if (model.trim().toLowerCase().startsWith('claude-')) return fallbackModel
-  return trimmed || fallbackModel
+  // 存量的退役 target(gpt-5.5、claude-*)在这里一并降级 —— 判据是"还是不是一个活着的预设",
+  // 不再逐个点名,所以下次退役模型不用回来改这里。
+  if (presetFor(trimmed)) return trimmed
+  return presetFor(fallbackModel) ? fallbackModel : LLM_PRESETS[0]?.model || fallbackModel
 }
 
 function normalizeLlmProvider(provider: string): string {
@@ -88,10 +102,18 @@ function normalizeLlmProvider(provider: string): string {
   return DEFAULT_SETTINGS.llmProvider
 }
 
+/**
+ * effort 的合法集**按模型从预设取**,不再手写。
+ *
+ * 手写那版有两个死角:`gpt-5.6-sol` 不支持 `low` 要单独打补丁(那正是预设里
+ * `CODEX_SOL_EFFORTS` 已经表达过的事),而 `gpt-5.4-mini` 不支持 `max` 却没人补 ——
+ * 存一个 `max` 进去会原样留着,直到发消息时才被拒。
+ */
 function normalizeLlmEffort(effort: string | undefined, model: string): CoachSettings['llmEffort'] {
-  const normalized = effort === 'default' || effort === 'medium' || effort === 'high' || effort === 'xhigh' || effort === 'max' ? effort : 'low'
-  if (model === 'gpt-5.6-sol' && normalized === 'low') return 'medium'
-  return normalized
+  const preset = presetFor(model)
+  const supported = preset?.efforts || []
+  if (supported.some((item) => item.id === effort)) return effort as CoachSettings['llmEffort']
+  return (supported[0]?.id || preset?.effort || 'low') as CoachSettings['llmEffort']
 }
 
 export function normalizeUrl(url: string): string {

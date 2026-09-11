@@ -24,3 +24,6 @@ export const MAESTRO_ONLY_PREVIEW_APP_NAME = 'OnlyPreview'
 
 export const MAESTRO_TRENCH_TAB_ID = 'trench'
 export const MAESTRO_TRENCH_DISPLAY_URL = 'bitterless://trench'
+
+export const MAESTRO_ZELLIJ_TAB_ID = 'zellij'
+export const MAESTRO_ZELLIJ_DISPLAY_URL = 'bitterless://zellij'

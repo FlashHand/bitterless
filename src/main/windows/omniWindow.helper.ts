@@ -43,7 +43,12 @@ import {
   OMNI_OPEN_READY_TIMEOUT_MS,
   OmniOpenTimeoutError,
 } from './omniOpenCoordinator.service';
-import { OMNI_MINI_APP_RUNTIME } from './omniMiniAppRuntime.service';
+import { OMNI_MINI_APP_RUNTIME, type OmniOriginSource } from './omniMiniAppRuntime.service';
+import { ZELLIJ_PARTITION, zellijOrigin } from '@main/zellij/zellijRuntime.service';
+import {
+  guardWindowCloseShortcut,
+  setTerminalKeyboardOwner
+} from '@maestro-main/common/shortcutsHelper/shortcuts.helper';
 import { createOmniOpenDiagnostics } from '@shared/omni/omniOpenDiagnostics.mjs';
 import { createOmniDeferredStartupRegistry } from '@shared/omni/omniDeferredStartup.scheduler.mjs';
 import { createOmniExactOnceResource } from '@shared/omni/omniExactOnceResource.mjs';
@@ -132,10 +137,39 @@ interface OmniMiniAppRendererTarget {
   url: string;
 }
 
+/**
+ * Where an origin-backed mini app's live origin and session partition come from. Lives here rather
+ * than in the registry so the registry stays value-import-free (see `omniMiniAppRuntime.service.ts`).
+ */
+const OMNI_ORIGIN_RESOLVERS: Record<OmniOriginSource, () => { origin: string; partition: string }> = {
+  zellij: () => ({ origin: zellijOrigin(), partition: ZELLIJ_PARTITION }),
+};
+
+/**
+ * Origin equality via URL parsing, never a string prefix: `startsWith('http://127.0.0.1:12877')`
+ * also accepts `http://127.0.0.1:12877.evil.test`, and `origin` normalises case and default ports
+ * for us. A URL that does not parse is not same-origin.
+ */
+const sameOmniOrigin = (candidate: string, origin: string): boolean => {
+  try {
+    return new URL(candidate).origin === origin;
+  } catch {
+    return false;
+  }
+};
+
 interface ResolvedOmniMiniAppRuntime {
-  preloadPath: string;
+  /** Null for an origin-backed mini app: a local server page must never get a privileged preload. */
+  preloadPath: string | null;
   rendererTarget: OmniMiniAppRendererTarget;
   sandbox: boolean;
+  /**
+   * Set only for origin-backed mini apps. Its presence switches the cell from "exact URL equality"
+   * fencing to same-origin fencing, because a server page navigates within itself (Zellij routes
+   * `/`, `/{session}`, `/assets/*`) and pinning one URL would break it on first use.
+   */
+  origin: string | null;
+  partition: string | null;
 }
 
 const getCellDisplayUrl = (cell: Pick<
@@ -1337,7 +1371,7 @@ export class OmniWindowHelper {
     const browserSession = session.fromPartition(partition);
     // Both profiles keep Electron's native network and JavaScript identity. The Google profile
     // remains separate solely to preserve its existing cookie jar.
-    return new WebContentsView({
+    const view = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, '../preload/omniCellContent.js'),
         sandbox: false,
@@ -1348,15 +1382,21 @@ export class OmniWindowHelper {
         additionalArguments: createOmniCellActiveFrameArguments(cellId, 'browser-content'),
       },
     });
+    guardWindowCloseShortcut(view.webContents);
+    return view;
   }
 
   private createMiniAppCellContentView(
     runtime: ResolvedOmniMiniAppRuntime,
     cellId: string,
   ): WebContentsView {
-    return new WebContentsView({
+    const view = new WebContentsView({
       webPreferences: {
-        preload: runtime.preloadPath,
+        // An origin-backed cell gets NO preload and its OWN session partition: it renders a page we
+        // do not author, so it must not reach a first-party bridge and its cookies must not land in
+        // the app's default jar.
+        ...(runtime.preloadPath ? { preload: runtime.preloadPath } : {}),
+        ...(runtime.partition ? { session: session.fromPartition(runtime.partition) } : {}),
         sandbox: runtime.sandbox,
         contextIsolation: true,
         nodeIntegration: false,
@@ -1370,10 +1410,24 @@ export class OmniWindowHelper {
         ],
       },
     });
+    if (runtime.origin) {
+      // An origin-backed cell is Zellij: Cmd+W closes a PANE inside it. Registered ahead of the
+      // window-close guard below, and the shortcut helper checks terminals first.
+      setTerminalKeyboardOwner(view.webContents);
+    }
+    guardWindowCloseShortcut(view.webContents);
+    return view;
   }
 
   private getMiniAppRendererTarget(miniAppId: OmniMiniAppId): OmniMiniAppRendererTarget {
-    const { rendererName } = OMNI_MINI_APP_RUNTIME[miniAppId];
+    const runtime = OMNI_MINI_APP_RUNTIME[miniAppId];
+    // Unreachable through resolveMiniAppRuntime, which returns before this for origin-backed apps.
+    // Explicit anyway: silently inventing a renderer path for a server-backed app would surface as
+    // a confusing "expected renderer does not exist" instead of the real mistake.
+    if (runtime.kind !== 'renderer') {
+      throw new Error(`mini app ${miniAppId} is origin-backed and has no renderer bundle`);
+    }
+    const { rendererName } = runtime;
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       const rendererBaseUrl = process.env['ELECTRON_RENDERER_URL'].replace(/\/+$/, '');
       return {
@@ -1390,6 +1444,20 @@ export class OmniWindowHelper {
 
   private resolveMiniAppRuntime(miniAppId: OmniMiniAppId): ResolvedOmniMiniAppRuntime {
     const runtime = OMNI_MINI_APP_RUNTIME[miniAppId];
+    if (runtime.kind === 'origin') {
+      // Nothing on disk to validate — the page is served by a local process. Resolve the origin now
+      // so a bad port override fails here, where the cell reports a load failure, rather than as a
+      // silent navigation into nowhere.
+      const { origin, partition } = OMNI_ORIGIN_RESOLVERS[runtime.source]();
+      return {
+        preloadPath: null,
+        rendererTarget: { filePath: null, url: origin },
+        sandbox: runtime.sandbox,
+        origin,
+        partition,
+      };
+    }
+
     const preloadPath = join(app.getAppPath(), 'out', 'preload', runtime.preloadFile);
     if (!existsSync(preloadPath)) {
       throw new Error(`expected preload does not exist: ${preloadPath}`);
@@ -1400,7 +1468,13 @@ export class OmniWindowHelper {
       throw new Error(`expected renderer does not exist: ${rendererTarget.filePath}`);
     }
 
-    return { preloadPath, rendererTarget, sandbox: runtime.sandbox };
+    return {
+      preloadPath,
+      rendererTarget,
+      sandbox: runtime.sandbox,
+      origin: null,
+      partition: null,
+    };
   }
 
   private broadcastMiniAppLoadState(params: OmniMiniAppLoadState): void {
@@ -1637,12 +1711,20 @@ export class OmniWindowHelper {
     } else {
       // Mini-app cells have privileged first-party preloads. Never allow one to become a browser.
       const expectedRendererUrl = miniAppRuntime!.rendererTarget.url;
+      const allowedOrigin = miniAppRuntime!.origin;
       content.webContents.setWindowOpenHandler((details) => {
         if (/^https?:\/\//i.test(details.url)) shell.openExternal(details.url);
         return { action: 'deny' };
       });
       const fenceMiniAppNavigation = (event: Electron.Event, navigationUrl: string): void => {
-        if (navigationUrl === expectedRendererUrl) return;
+        // Bundled renderers are pinned to one exact URL. An origin-backed page legitimately
+        // navigates within itself, so it is fenced to its ORIGIN instead — still closed, just at the
+        // right granularity. Anything off-origin is external and leaves the app.
+        if (allowedOrigin === null) {
+          if (navigationUrl === expectedRendererUrl) return;
+        } else if (sameOmniOrigin(navigationUrl, allowedOrigin)) {
+          return;
+        }
         event.preventDefault();
         if (/^https?:\/\//i.test(navigationUrl)) shell.openExternal(navigationUrl);
       };
@@ -2208,6 +2290,9 @@ export class OmniWindowHelper {
       ),
     );
 
+    // Omni has no tabs, so Cmd+W has nothing to mean here — and unguarded it fell through to the
+    // application menu close role and shut the window (Ral 2026-09-11).
+    guardWindowCloseShortcut(view.webContents);
     return view;
   }
 }

@@ -22,6 +22,7 @@ import { SnipingSessionActivationService } from '@/stores/auth/snipingSessionAct
 import type { TodoistSyncActivateParams } from '@shared/todoistSync/todoistSync.type';
 import {
   changePasswordApi,
+  getCoreBaseUrl,
   loginApi,
   logoutApi,
   meApi,
@@ -178,6 +179,14 @@ class AuthStore {
       const coreToken = getCustomerToken();
       const sessionId = getCustomerSessionId();
       if (!coreToken || !sessionId) return;
+      // token 只存在渲染层的 localStorage,而 `web_search` 这类 agent 工具跑在主进程。
+      // 登录、验证码登录、密码设置、启动时恢复会话都汇到这里,所以推送只放这一处。
+      scheduleBestEffort(
+        () => authEmitter.setCustomerSession({ token: coreToken, baseUrl: getCoreBaseUrl() }),
+        (err) => {
+          console.warn('[AuthStore] Failed to hand the Core session to the main process:', err);
+        },
+      );
       activation = previousSessionId && previousSessionId !== sessionId
         ? this.snipingSessionActivation.replace(
           { sessionId: previousSessionId },
@@ -353,6 +362,12 @@ class AuthStore {
       );
     }
     this.todoistSyncActivation.invalidate();
+    scheduleBestEffort(
+      () => authEmitter.clearCustomerSession(),
+      (err) => {
+        console.warn('[AuthStore] Failed to clear the Core session in the main process:', err);
+      },
+    );
     clearCustomerToken();
     this.current = null;
   }

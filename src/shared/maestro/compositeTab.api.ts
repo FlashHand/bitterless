@@ -11,6 +11,15 @@ import type { ViewRect } from './coach.api'
  * Maestro's offer, expressed in Maestro's own terms.
  */
 export interface MaestroCompositeTabHostApi {
+  /**
+   * This tab's stable identity — minted by Maestro, persisted with the tab, handed back verbatim
+   * when the tab is restored.
+   *
+   * Deliberately NOT the tab id: that is `tab-${++tabSeq}`, a per-process sequence number that
+   * restarts at 0 every launch, so a restored tab would address a stranger's state. A mini app that
+   * keeps something outside the process (Zellij keeps a session) keys it on THIS.
+   */
+  readonly instanceId: string
   /** The window carrying the tab. For menu arbitration and parented dialogs, never for geometry. */
   window(): BaseWindow | null
   /** The rect Maestro reserves for tab content, or null before the renderer has measured one. */
@@ -44,14 +53,37 @@ export interface MaestroCompositeTabSpec {
   title: string
   favicon: string
   displayUrl: string
+  /**
+   * At most one tab of this kind; opening again brings the existing one forward.
+   *
+   * Opt-IN, because it is a property of the mini app rather than of composite tabs in general:
+   * OnlyPreview and Trench each bind one workspace and one runtime, so a second copy is meaningless,
+   * while Zellij's shared piece is an HTTP server — and a server is multi-client by construction, so
+   * N tabs are simply N clients (Ral 2026-09-11:「支持开多个不是单例类型的」).
+   */
+  singleton?: boolean
+  /**
+   * This tab comes back on the next launch, keyed on its `instanceId`.
+   *
+   * Also opt-in, and for a blunt reason: persistence is decided per mini app, not per tab kind.
+   * Letting every composite kind persist would quietly turn OnlyPreview and Trench into
+   * start-on-boot apps, which nobody asked for.
+   */
+  restorable?: boolean
   /** Build the mini app onto this tab. Rejecting leaves no tab behind. */
   open(host: MaestroCompositeTabHostApi): Promise<void>
-  /** The tab is gone; tear the mini app down. */
-  close(): void
+  /**
+   * The tab is gone; tear the mini app down.
+   *
+   * Every lifecycle callback is addressed BY HOST rather than relying on the registration to
+   * remember one: a spec is registered once and can now carry several live tabs, so a module-level
+   * `let host` would be overwritten by the second tab and orphan the first one's teardown.
+   */
+  close(host: MaestroCompositeTabHostApi): void
   /** The tab became, or stopped being, the foreground content. */
-  setActive(active: boolean): void
+  setActive(host: MaestroCompositeTabHostApi, active: boolean): void
   /** The tab's content rect changed. */
-  refresh(): void
+  refresh(host: MaestroCompositeTabHostApi): void
   /**
    * Show an absolute path inside the mini app, if it can (optional — most composites cannot).
    *

@@ -15,7 +15,7 @@
             :model-value="zellijStore.snapshot?.enabled ?? false"
             :loading="zellijStore.toggling"
             :disabled="!zellijStore.snapshot"
-            @change="zellijStore.setEnabled"
+            @change="(value) => zellijStore.setEnabled(value)"
           />
         </label>
         <a-button

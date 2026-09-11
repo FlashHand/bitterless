@@ -60,6 +60,7 @@ const fixture = (overrides = {}) => {
       enabled = value;
     },
     checkBinary: () => {},
+    port: () => 12902,
     run: async (args) => {
       assert.deepEqual(args, ['--config', '/fixture/config.kdl', 'web', '--create-token']);
       calls.run += 1;
@@ -75,7 +76,7 @@ const fixture = (overrides = {}) => {
         '--ip',
         '127.0.0.1',
         '--port',
-        '12877'
+        '12902'
       ]);
       return child;
     },

@@ -106,6 +106,7 @@ export const en = {
       homeTab: 'Home',
       newTab: 'New tab',
       closeTab: 'Close tab',
+      tabControlled: 'The agent is controlling this tab',
       back: 'Back',
       forward: 'Forward',
       reload: 'Reload',
@@ -994,7 +995,8 @@ export const en = {
       'binary-missing':
         'The bundled Zellij binary is missing. Run yarn tools:init and stage the tools, or reinstall the application.',
       'unsupported-platform': 'Zellij is available on macOS and Windows.',
-      'port-occupied': 'Port 12877 is occupied by another service. Free that port and try again.',
+      'port-occupied':
+        'The terminal port for this build is occupied by another service. Free it and try again, or set BITTERLESS_ZELLIJ_PORT.',
       'version-mismatch':
         'The local server is not Zellij 0.45.1. Stop the conflicting server and try again.',
       'start-failed': 'Zellij stopped or could not start. Choose Initialize and open to retry.',

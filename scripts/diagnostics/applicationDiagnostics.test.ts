@@ -420,6 +420,17 @@ test('renderer log capture accepts only known first-party renderer entries', () 
     ),
     'renderer:onlypreviewPreview'
   );
+  // Packaged and dev, both: a terminal failure must be readable from the log file without DevTools.
+  assert.equal(
+    resolveFirstPartyRendererProcess(
+      'file:///Applications/Bitterless.app/Contents/Resources/app.asar/out/renderer/zellij/index.html'
+    ),
+    'renderer:zellij'
+  );
+  assert.equal(
+    resolveFirstPartyRendererProcess('http://127.0.0.1:5173/zellij/index.html', 'http://127.0.0.1:5173'),
+    'renderer:zellij'
+  );
   assert.equal(
     resolveFirstPartyRendererProcess(
       'http://127.0.0.1:5173/onlypreview/preview/index.html',

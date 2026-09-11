@@ -90,6 +90,34 @@ export class PiRuntimeAdapter implements AgentRuntimeAdapter {
     return Boolean(model && modelRegistry.hasConfiguredAuth(model))
   }
 
+  /**
+   * 解析这些目标在 pi 目录里的**真实上下文窗口**。查表,不建会话 ——
+   * 与 `checkTarget()` 走同一条 `ModelRegistry.find()`。
+   *
+   * **为什么需要它**:窗口以前是 `llmModels.ts` 里手写的常量(`contextLengthK`),与 pi 实际
+   * 用的值没有任何同步机制 —— 抄错或模型换代就静默失准,而**压缩的触发线、reserve 预算、
+   * summary 上限全都乘在它上面**。一个 1M 的模型被当 256K 会提前压;反过来 200K 的被当 1M,
+   * 压缩**永远不触发直到溢出**。
+   *
+   * 查不到的目标**不进返回值**,由调用方退 256K
+   * (Ral 2026-09-11:「pi 给不出 contextWindow 就默认就是 256k,因为现在一般至少 256k 了」)。
+   */
+  async describeContextWindows(params: {
+    authPath: string
+    modelsPath?: string
+    targets: { providerId: string; modelId: string }[]
+  }): Promise<Record<string, number>> {
+    const pi: PiModule = await import('@earendil-works/pi-coding-agent')
+    const modelRegistry = new pi.ModelRegistry(await createModelRuntime(pi, params.authPath, params.modelsPath))
+    const windows: Record<string, number> = {}
+    for (const target of params.targets) {
+      const found = modelRegistry.find(target.providerId, target.modelId)
+      const window = found?.contextWindow
+      if (typeof window === 'number' && window > 0) windows[`${target.providerId}/${target.modelId}`] = window
+    }
+    return windows
+  }
+
   async createSession(options: AgentRuntimeSessionOptions): Promise<AgentRuntimeSession> {
     const pi: PiModule = await import('@earendil-works/pi-coding-agent')
     const { Type } = (await import('typebox')) as { Type: TypeBoxFactory }
@@ -153,6 +181,28 @@ export class PiRuntimeAdapter implements AgentRuntimeAdapter {
     const builtinNames = (options.builtinTools || []).filter(Boolean)
     const useBuiltins = builtinNames.length > 0 && customTools.length > 0
     const allowedToolNames = useBuiltins ? [...new Set([...builtinNames, ...options.tools.map((spec) => spec.name)])] : undefined
+
+    /**
+     * **system 槽位的接管。** pi 只有一个口子:`resourceLoader.getSystemPrompt()` ——
+     * `createAgentSession()` 的参数表里**没有** systemPrompt 字段(`sdk.d.ts:10-56`)。
+     * 不传 loader 时 pi 自建 `DefaultResourceLoader`(`sdk.js:75-79`),那份什么定制都没有。
+     *
+     * **这里不用 `DefaultResourceLoader`**:它会连带接手 A7(从 cwd 一路 dirname 到根,
+     * 收每层 AGENTS.md/CLAUDE.md —— bl 没传 cwd,dev 下能吸进 overmind/CLAUDE.md 47 KB)
+     * 与 A8(skills 扫描),还要一次 `await reload()`。手写这个最小 loader 把发现类方法
+     * 全返回空,三笔代价一次付清 —— 形状照已在跑的
+     * `codex/codexRuntime.service.ts:746-763 createSterileResourceLoader`。
+     *
+     * **`trim()` 非空是硬断言,不是防御性代码。** pi 对 customPrompt 只做 truthy 判断
+     * (`system-prompt.js:15`),而两种失效都**不报错**:传 `''`/`undefined` ⇒ A1–A5 原样回来
+     * (长度 2858,看起来完全正常);传 `'   '` ⇒ 走 customPrompt 分支但基座只剩 41 字符,
+     * A2/A4 一起没了。宁可启动失败,不可静默退回 pi 原厂。
+     */
+    const systemPrompt = options.systemPrompt?.trim()
+    if (options.systemPrompt !== undefined && !systemPrompt) {
+      throw new Error('systemPrompt was provided but is blank — refusing to fall back to pi stock prompt')
+    }
+
     const { session } = await pi.createAgentSession({
       model,
       modelRuntime,
@@ -164,6 +214,28 @@ export class PiRuntimeAdapter implements AgentRuntimeAdapter {
       // Keep pi state (auth/sessions/managed bin — where its grep looks for ripgrep) inside the app.
       ...(options.agentDir ? { agentDir: options.agentDir } : {}),
       customTools,
+      // `getAppendSystemPrompt` 返回 `[]`:A6 是另一层,这一层只接管 A1–A5。
+      // 发现类方法全返回空 —— 那正是"不用 DefaultResourceLoader"要买的东西。
+      ...(systemPrompt
+        ? {
+            resourceLoader: {
+              getExtensions: () => ({ extensions: [], errors: [], runtime: pi.createExtensionRuntime() }),
+              getSkills: () => ({ skills: [], diagnostics: [] }),
+              getPrompts: () => ({ prompts: [], diagnostics: [] }),
+              getThemes: () => ({ themes: [], diagnostics: [] }),
+              getAgentsFiles: () => ({ agentsFiles: [] }),
+              getSystemPrompt: () => systemPrompt,
+              // 这两个 *Sources 只为 pi 的 `/resources` 自省面服务(报告提示词来自哪个文件)。
+              // 我们的提示词来自代码而不是磁盘,所以如实返回「没有来源文件」。
+              // 它们在 `ResourceLoader` 接口上是**必填**的 —— 漏掉就是 TS2345。
+              getSystemPromptSource: () => undefined,
+              getAppendSystemPrompt: () => [],
+              getAppendSystemPromptSources: () => [],
+              extendResources: () => undefined,
+              reload: async () => undefined
+            }
+          }
+        : {}),
       sessionManager: pi.SessionManager.inMemory()
     })
     options.onDebug?.({

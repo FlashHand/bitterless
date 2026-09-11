@@ -78,11 +78,16 @@ export interface AgentRuntimeSessionOptions {
    * every host tool name, because pi's allowlist filters builtin AND custom tools. */
   builtinTools?: string[]
   /**
-   * 一个助手回合内工具循环的轮次上限。省略 → 运行时自己的默认值。
-   * 探站是【一个回合里循环几十次 explore_visit】,默认 12 会把它砍断;它真正的边界是自己的
-   * 120 分钟时间预算 + 无进展检测,所以走这条 per-session 覆盖把上限抬高,而不是全局放松。
+   * **整段接管运行时的 system 提示词。** 给了就用它,不给就随运行时自己的默认。
+   *
+   * 之所以是「整段」而不是「追加」:pi 的口子只有替换那一种 —— `system-prompt.js:15` 的
+   * `if (customPrompt)` 一旦成立就提前 return,原厂 A1–A5 整块不生成;追加式的
+   * `appendSystemPrompt` 拼在 A5 之后,删不掉前面任何一段(`system-prompt.js:99-101`)。
+   *
+   * 运行时怎么把它送进去是运行时自己的事(pi 这边要构造一个最小 resourceLoader)——
+   * 这一层只描述意图。
    */
-  maxToolRounds?: number
+  systemPrompt?: string
 }
 
 

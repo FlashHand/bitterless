@@ -43,7 +43,13 @@ test('tab close and New-tab actions use the shared IconBtn with Tabler glyphs', 
     /<IconBtn\s+class="maestro-menu-bar__new-tab"[\s\S]*?<\/IconBtn>/,
     'New-tab action must use IconBtn'
   );
-  assert.match(newTabAction, /@click="tabStore\.newTab\(\)"/);
+  // Click still opens a blank tab; it routes through `onNewTabClick` only so it can cancel the
+  // hover timer first — without that, the mini-app menu pops 600ms later over the strip it just
+  // rebuilt, and a native menu has no hover-close.
+  assert.match(newTabAction, /@click="onNewTabClick\(\)"/);
+  assert.match(newTabAction, /@mouseenter="armNewTabMenu\(\)"/);
+  assert.match(newTabAction, /@mouseleave="cancelNewTabMenu\(\)"/);
+  assert.match(menuSource, /function onNewTabClick\(\): void \{\s*cancelNewTabMenu\(\)\s*void tabStore\.newTab\(\)/);
   assert.match(newTabAction, /<IconPlus :size="16" stroke="2" aria-hidden="true" \/>/);
 
   assert.doesNotMatch(menuSource, /×/);

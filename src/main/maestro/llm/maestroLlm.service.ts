@@ -9,12 +9,15 @@ import type { CoachSettings } from '@maestro-shared/coach.api'
 import type { ConfigApi } from '@maestro-shared/config.api'
 import { LLM_COMPRESSION_REMAINING_KEY, LLM_CONFIG_DOMAIN, LLM_TARGET_KEY } from '@maestro-shared/config.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
-import type { LlmConfig, LlmEffort, LlmProviderState } from '@maestro-shared/coach.api'
+import type { LlmConfig, LlmEffort, LlmProviderState, LlmTarget } from '@maestro-shared/coach.api'
 import {
+  DEFAULT_COMPRESSION_REMAINING_PERCENT,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
   DEFAULT_PRESET_MODEL,
   LLM_PRESETS,
   LLM_PROVIDERS,
   applyCompressionPrefs,
+  applyResolvedContextWindows,
   firstPresetForProvider,
   modelPresetKey,
   normalizeCompressionRemainingPercent,
@@ -32,7 +35,9 @@ import {
   type LlmCompressionPrefs,
   type LlmStoredTarget
 } from './llmModels'
-import { maestroAuthPath, maestroModelsPath } from './llmPaths'
+import { PiRuntimeAdapter } from '@main/agent/runtime/piRuntimeAdapter'
+import { maestroAgentDir, maestroAuthPath, maestroModelsPath } from './llmPaths'
+import { syncPiCompactionSettings } from './piCompactionSettings.service'
 import { codexCredentialService } from '../../codex/codexCredential.runtime'
 
 const configStore = createXpcMainEmitter<ConfigApi>('ConfigDao')
@@ -209,7 +214,10 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
     const providers = await this.buildLlmProviderStates(target.provider)
     const selectedProvider = providers.find((item) => item.provider === target.provider)
     const ready = Boolean(selectedProvider?.ready)
-    const presets = applyCompressionPrefs(selectableLlmPresets(), await this.readStoredLlmCompressionPrefs())
+    const { presets, windows } = await this.withResolvedContextWindows(
+      applyCompressionPrefs(selectableLlmPresets(), await this.readStoredLlmCompressionPrefs())
+    )
+    this.syncPiCompaction(target, presets, windows)
     return {
       provider: target.provider,
       model: target.model,
@@ -219,6 +227,60 @@ export class MaestroLlmService extends CommonService<MaestroLlmServiceState> {
       providers,
       presets,
       loginProviders: selectableLlmLoginProviders()
+    }
+  }
+
+  /**
+   * 把预设里**手写**的 `contextLengthK` 换成 pi 目录里的真实窗口。
+   *
+   * 手写值与 pi 实际用的窗口没有任何同步机制 —— 而压缩的触发线、reserve 预算、summary 上限
+   * 全都乘在它上面。1M 的模型被当 256K 会提前压;200K 的被当 1M,压缩**永远不触发直到溢出**。
+   *
+   * 解析失败(目录读不到、未登录、provider 不认识)**不阻断配置** —— 整批退回 256K 兜底,
+   * 并留一条日志。配置面板打不开比窗口不准严重得多。
+   */
+  private async withResolvedContextWindows(
+    presets: LlmTarget[]
+  ): Promise<{ presets: LlmTarget[]; windows: Record<string, number> }> {
+    try {
+      const windows = await new PiRuntimeAdapter().describeContextWindows({
+        authPath: maestroAuthPath(),
+        modelsPath: maestroModelsPath(),
+        targets: presets.map((preset) => ({ providerId: preset.provider, modelId: preset.model }))
+      })
+      return { presets: applyResolvedContextWindows(presets, windows), windows }
+    } catch (err) {
+      console.warn('[llm] 解析上下文窗口失败,整批退 256K:', err instanceof Error ? err.message : err)
+      return { presets: applyResolvedContextWindows(presets, {}), windows: {} }
+    }
+  }
+
+  /**
+   * 把选中模型的压缩参数同步进 `<agentDir>/settings.json`,让 **pi 自带的** auto-compaction
+   * 与我们自己那条触发线用同一个比例。
+   *
+   * 为什么挂在取配置这条路上而不是单独一个监听:`getLlmConfig()` 是**换模型、改余量百分比、
+   * 启动**三件事的共同下游(改动都经 `getAndBroadcastLlmConfig()` 回到这里),挂一处就全覆盖。
+   * 写盘只在值真变时发生,所以这条路被频繁调用也不产生噪音。
+   *
+   * **用精确 token 数,不用 `contextLengthK`** —— 那个字段是给人看的、四舍五入到 K 的
+   * (272,000 → 266K → 反推回来是 272,384),拿它算触发线等于凭空给自己引入 384 token 的偏差。
+   *
+   * 解析不到窗口就退 `DEFAULT_CONTEXT_WINDOW_TOKENS`,与 `applyResolvedContextWindows` 同一口径。
+   */
+  private syncPiCompaction(target: LlmStoredTarget, presets: LlmTarget[], windows: Record<string, number>): void {
+    const selected = presets.find((item) => item.provider === target.provider && item.model === target.model)
+    const result = syncPiCompactionSettings({
+      agentDir: maestroAgentDir(),
+      contextWindowTokens: windows[modelPresetKey(target.provider, target.model)] || DEFAULT_CONTEXT_WINDOW_TOKENS,
+      remainingPercent: selected?.compressionRemainingPercent ?? DEFAULT_COMPRESSION_REMAINING_PERCENT
+    })
+    if (result.error) {
+      console.warn('[llm] pi 压缩参数写入失败,pi 侧退回其固定缺省 16384:', result.error)
+    } else if (result.written) {
+      console.log(
+        `[llm] pi compaction -> reserve ${result.reserveTokens} / keepRecent ${result.keepRecentTokens} (${result.path})`
+      )
     }
   }
 

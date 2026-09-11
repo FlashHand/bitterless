@@ -136,7 +136,12 @@ const isProjectItemCopyShortcut = (input: Input): boolean => {
   if (
     input.type !== 'keyDown' ||
     input.isAutoRepeat ||
-    input.key.toLowerCase() !== 'c' ||
+    // **按 `code` 判,`key` 只是兜底。** macOS 把 Option 当组字修饰键:按住它敲 C,`input.key` 是
+    // `'ç'`(US 布局)而不是 `'c'` —— 于是 `Cmd+Opt+C`(复制文件名)从来没有匹配过一次
+    // (Ral 2026-09-10 报的就是这个;`Cmd+Shift+C` 没事,因为 Shift+C 就是 `'C'`)。
+    // `code` 与布局、修饰键都无关,是这里唯一稳定的信号;`key` 留着是为了非标准布局上 `code` 不是
+    // `KeyC` 的情形。同一个 `resolveNativeCommand` 里的 `Digit1` 那一条早就是这么写的。
+    (input.code !== 'KeyC' && input.key.toLowerCase() !== 'c') ||
     !isCommandModifier(input) ||
     // Exactly one of Shift/Alt, matching the renderer's XOR: Shift+Alt+Cmd+C is not a copy.
     input.shift === input.alt

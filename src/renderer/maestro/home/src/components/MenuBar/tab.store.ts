@@ -18,7 +18,11 @@ const tabsDao = createXpcRendererEmitter<TabsApi>('TabsDao') as TabsApi
 // ids each launch, so the key is a stable identity: fixed tab kind for built-ins, else the URL
 // (non-pinned tabs are restored by URL). Missing / no match → default to bundled Home.
 const LAST_ACTIVE_KEY = 'coach.lastActiveTab'
-const tabKey = (t: TabInfo): string => (t.kind === 'home' ? t.kind : t.url)
+// A composite mini-app tab has an EMPTY url, so keying it by url would collapse every one of them
+// onto the same key — and onto `'home'` at that, since the empty string is not persistable. Its own
+// `instanceId` is the only thing about it that survives a restart.
+const tabKey = (t: TabInfo): string =>
+  t.kind === 'home' ? t.kind : t.instanceId ? `${t.kind}:${t.instanceId}` : t.url
 const consumeForcePinnedHomeBootQuery = (): boolean => {
   const url = new URL(window.location.href)
   const forcePinnedHome =
@@ -47,6 +51,16 @@ const isPersistableUrl = (url: string): boolean => {
     return false
   }
 }
+
+/**
+ * A composite mini-app tab whose mini app asked to come back next launch.
+ *
+ * Opt-in per mini app, decided in main (`spec.restorable`) and carried on the wire — NOT "any tab
+ * whose kind isn't browser". Persisting every composite kind would quietly turn OnlyPreview and
+ * Trench into start-on-boot apps, which is a change nobody asked for.
+ */
+const isRestorableComposite = (t: TabInfo): boolean =>
+  Boolean(t.restorable && t.instanceId && !t.pinned)
 
 /**
  * Open operation-view tabs. The main process owns the live views + their bindings and is the
@@ -94,7 +108,10 @@ class TabStoreState {
         if (active) {
           // A demo/localhost tab is never persisted, so don't make it the restore target either —
           // Record Home so the next launch falls back to the fixed local tab.
-          const key = active.pinned || isPersistableUrl(active.url) ? tabKey(active) : 'home'
+          const key =
+            active.pinned || isRestorableComposite(active) || isPersistableUrl(active.url)
+              ? tabKey(active)
+              : 'home'
           localStorage.setItem(LAST_ACTIVE_KEY, key)
         }
         this.persistSoon()
@@ -108,7 +125,9 @@ class TabStoreState {
     // (main warms each lazily on first activation). The pinned Home tab stays active.
     // Drop any non-persistable entries on read too — a dead demo/localhost tab saved by an older
     // build must not be restored; the next persistSoon then rewrites the cache without it.
-    const saved = (await tabsDao.listAll().catch(() => [] as SavedTab[])).filter((t) => isPersistableUrl(t.url))
+    const saved = (await tabsDao.listAll().catch(() => [] as SavedTab[])).filter((t) =>
+      t.kind ? Boolean(t.instanceId) : isPersistableUrl(t.url)
+    )
     if (saved.length) await coach.restoreTabs({ tabs: saved })
     this.restored = true
     // Initial snapshot (covers a broadcast that landed before we subscribed + the just-restored set).
@@ -142,7 +161,11 @@ class TabStoreState {
     }
     // Only ever re-activate a real persisted tab — never a demo/localhost one (固化兜底: anything
     // unclean leaves the fixed Home tab active).
-    const target = this.tabs.find((t) => t.kind === 'browser' && t.url === key && isPersistableUrl(t.url))
+    const target = this.tabs.find(
+      (t) =>
+        (isRestorableComposite(t) && tabKey(t) === key) ||
+        (t.kind === 'browser' && t.url === key && isPersistableUrl(t.url))
+    )
     if (target && !target.active) await coach.activateTab({ id: target.id })
   }
 
@@ -155,8 +178,14 @@ class TabStoreState {
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null
       const saved = this.tabs
-        .filter((t) => t.kind === 'browser' && isPersistableUrl(t.url))
-        .map((t, i) => ({ url: t.url, title: t.title, favicon: t.favicon, position: i }))
+        .filter((t) => isRestorableComposite(t) || (t.kind === 'browser' && isPersistableUrl(t.url)))
+        .map((t, i) => ({
+          url: t.kind === 'browser' ? t.url : '',
+          title: t.title,
+          favicon: t.favicon,
+          position: i,
+          ...(t.kind !== 'browser' ? { kind: t.kind, instanceId: t.instanceId } : {})
+        }))
       void tabsDao.replaceAll({ tabs: saved }).catch(() => {
         /* DB not ready / closing — best effort; the next change re-persists */
       })
@@ -242,6 +271,12 @@ class TabStoreState {
   // Right-click a tab → ask main to pop a native context menu (renders above the view).
   async showMenu(id: string): Promise<void> {
     await coach.showTabMenu({ id })
+  }
+
+  // Hover the + button → native menu anchored under it (main builds and pops it: an in-renderer
+  // dropdown would be painted behind the operation view, which is a native view above this DOM).
+  async showNewTabMenu(anchor: { left: number; bottom: number }): Promise<void> {
+    await coach.showNewTabMenu({ x: anchor.left, y: anchor.bottom })
   }
 
   async toggleActiveDebugger(): Promise<void> {

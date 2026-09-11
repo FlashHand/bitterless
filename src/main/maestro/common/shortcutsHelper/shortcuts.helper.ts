@@ -15,13 +15,41 @@ let activated = false
 // than captured: a view enrolled first would otherwise get no binding at all.
 let pendingActions: ShortcutActions | null = null
 
-const runShortcut = (key: string, actions: ShortcutActions): boolean => {
+/**
+ * Views that want Cmd+W themselves — the Zellij terminal, where it closes a PANE.
+ *
+ * Registering here is not the same as `enrollMaestroShortcutContents`: an enrolled view gets the
+ * tab chords, this one takes Cmd+W away from them.
+ */
+const terminalKeyboardOwners = new WeakSet<WebContents>()
+export const setTerminalKeyboardOwner = (contents: WebContents): void => {
+  terminalKeyboardOwners.add(contents)
+}
+
+/**
+ * Views where Cmd+W must do NOTHING — Omni cells (Ral 2026-09-11).
+ *
+ * An Omni cell is not in Maestro's partition and is not enrolled, so Cmd+W used to fall past this
+ * handler entirely and land on the application menu's inherited `fileMenu` `close` role, which
+ * closes the WINDOW. Omni has no tabs, so there is nothing for the key to mean there; swallowing it
+ * is the whole fix. This registry exists because "do nothing" still has to be an explicit decision
+ * made here — silence is what produced the bug.
+ */
+const windowCloseGuards = new WeakSet<WebContents>()
+export const guardWindowCloseShortcut = (contents: WebContents): void => {
+  windowCloseGuards.add(contents)
+}
+
+const runShortcut = (key: string, actions: ShortcutActions, contents: WebContents): boolean => {
   if (key !== 't' && key !== 'w') return false
   const now = Date.now()
   const last = lastShortcutAt.get(key) || 0
   if (now - last < shortcutDedupeMs) return true
   lastShortcutAt.set(key, now)
   if (key === 't') actions.newTab()
+  // Swallowed, but still `true` so the caller preventDefaults — that is what keeps it off the menu's
+  // window-close role.
+  else if (windowCloseGuards.has(contents)) return true
   else actions.closeActiveTab()
   return true
 }
@@ -47,13 +75,19 @@ export const enrollMaestroShortcutContents = (contents: WebContents): void => {
 
 const installShortcutsForWebContents = (contents: WebContents, actions: ShortcutActions): void => {
   const isMaestroSession = contents.session === session.fromPartition(MAESTRO_PARTITION)
-  if ((!isMaestroSession && !enrolledContents.has(contents)) || shortcutContents.has(contents)) return
+  const claimsShortcuts =
+    isMaestroSession || enrolledContents.has(contents) || windowCloseGuards.has(contents)
+  if (!claimsShortcuts || shortcutContents.has(contents)) return
   shortcutContents.add(contents)
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
     const mod = process.platform === 'darwin' ? input.meta : input.control
     if (!mod || input.alt || input.shift) return
-    if (runShortcut(String(input.key || '').toLowerCase(), actions)) event.preventDefault()
+    // A terminal owns Cmd+W outright: let the key through untouched so its own handler closes a
+    // pane. Cmd+T is still ours — the terminal has no use for it.
+    const key = String(input.key || '').toLowerCase()
+    if (key === 'w' && terminalKeyboardOwners.has(contents)) return
+    if (runShortcut(key, actions, contents)) event.preventDefault()
   })
 }
 

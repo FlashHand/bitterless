@@ -152,6 +152,14 @@ describe('resolveLocalPathTarget', () => {
  */
 describe('maestro navigate 走预览端口', () => {
   const source = read('src/main/maestro/windows/main/maestroBrowserView.service.ts');
+  /**
+   * 别名边界要在**剥掉注释之后**断言。
+   *
+   * 那个文件里有一句注释解释「maestro 曾经直接 import `@shared/onlypreview/*`,现在刻意不去问」——
+   * 一条朴素的 `doesNotMatch` 会把这句**解释**当成违规,于是守卫对着一段正确的代码报红
+   * (2026-09-11 真的发生了一次)。注释里提到一个别名是好事,不是违规;要禁的是 import。
+   */
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
   const navigate = source.slice(
     source.indexOf('async navigate('),
     source.indexOf('async reload(')
@@ -168,8 +176,11 @@ describe('maestro navigate 走预览端口', () => {
   });
 
   test('maestro 里不出现任何 onlypreview 别名 —— 这是别名边界,不只是风格', () => {
-    assert.doesNotMatch(source, /@shared\/onlypreview\//);
-    assert.doesNotMatch(source, /@main\/miniapps\/onlypreview\//);
+    assert.doesNotMatch(code, /@shared\/onlypreview\//);
+    assert.doesNotMatch(code, /@main\/miniapps\/onlypreview\//);
+    // 注释里提到那两个别名是**允许**的 —— 那是解释,不是 import。钉一下,免得下次有人把 code
+    // 换回 source 来"简化"。
+    assert.match(source, /@shared\/onlypreview\//);
     assert.doesNotMatch(navigate, /\[A-Za-z\]:/, 'navigate 里出现盘符正则 = 判据被复制了一份');
   });
 });

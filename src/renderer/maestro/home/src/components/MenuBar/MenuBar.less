@@ -210,3 +210,75 @@
   .maestro-menu-bar__snapshot--busy,
   .maestro-menu-bar__capture-status-icon { animation: none; }
 }
+
+// ── agent 正在驱动这个 tab ──────────────────────────────────────────────────
+//
+// 形态是**一颗核心 + 一颗绕行的卫星**,不是脉冲也不是转圈。三个理由:
+//   · 和 loading 的转圈必须一眼分得开 —— agent 驱动时页面本来就常在加载,两者会同时出现;
+//   · 脉冲(纯缩放)在 16px 上读起来像"加载中"的另一种写法,信息量为零;
+//   · 绕行有**方向**和**周期**,它说的是"有东西在围着这一页转",那正是此刻发生的事。
+//
+// 尺寸锁死 16px:favicon 槽恒定 16px,chip 不许因为它重排(与 loading 换图同一约束)。
+// 无边框(全仓 Borderless UI 规则),深度靠光晕不靠描边。
+.maestro-menu-bar__controlled {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+// 核心:这一页本身。呼吸比绕行慢半拍,于是两者永远不同相 —— 同相会让整个图标看起来在"跳"。
+.maestro-menu-bar__controlled-core {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: oklch(0.55 0.19 264);
+  box-shadow: 0 0 0 2px oklch(0.55 0.19 264 / 0.16);
+  animation: maestro-controlled-breathe 2.4s ease-in-out infinite;
+}
+
+.maestro-menu-bar__controlled-orbit {
+  position: absolute;
+  inset: 0;
+  animation: maestro-controlled-orbit 1.6s linear infinite;
+}
+
+// 卫星:绕到核心"后面"时淡下去 —— 这一点深度暗示是整个动画唯一的修饰,
+// 也是它不像一个 CSS 练习的原因。
+.maestro-menu-bar__controlled-orbit::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: oklch(0.72 0.17 264);
+  animation: maestro-controlled-depth 1.6s ease-in-out infinite;
+}
+
+@keyframes maestro-controlled-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes maestro-controlled-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.82); }
+}
+
+@keyframes maestro-controlled-depth {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.78); }
+}
+
+// 减动偏好:停下来,但**仍然要能看出这个 tab 被控制着** —— 直接 display:none 会把状态也一起关掉。
+@media (prefers-reduced-motion: reduce) {
+  .maestro-menu-bar__controlled-core { animation: none; }
+  .maestro-menu-bar__controlled-orbit { animation: none; }
+  .maestro-menu-bar__controlled-orbit::before { animation: none; opacity: 0.7; }
+}

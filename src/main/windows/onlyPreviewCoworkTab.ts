@@ -28,6 +28,9 @@ export const registerOnlyPreviewCoworkTab = (): void => {
     title: 'OnlyPreview',
     favicon: '',
     displayUrl: MAESTRO_ONLY_PREVIEW_DISPLAY_URL,
+    // One bound workspace and one search runtime, so a second copy would be a second view of the
+    // same thing — the closure below holds exactly one mount, which is that fact in code.
+    singleton: true,
     open: async (host) => {
       const next = new OnlyPreviewCoworkMount(host);
       mount = next;
@@ -47,7 +50,7 @@ export const registerOnlyPreviewCoworkTab = (): void => {
       current?.reportHostGone();
       current?.dispose();
     },
-    setActive: (active) => mount?.reportActivation(active),
+    setActive: (_host, active) => mount?.reportActivation(active),
     refresh: () => mount?.refresh(),
     // Only meaningful once `open` has run — Maestro calls this after the tab exists, so the
     // composite is already the live host and `ensureStandalone()` inside will resolve to it rather

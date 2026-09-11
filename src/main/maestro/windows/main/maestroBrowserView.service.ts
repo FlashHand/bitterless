@@ -2,7 +2,7 @@ import { Menu, WebContentsView, clipboard } from 'electron'
 import type { BrowserWindow, ContextMenuParams, MenuItemConstructorOptions, View, WebContents } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { createXpcMainEmitter, xpcMain } from 'electron-xpc/main'
-import { randomUUID } from 'crypto'
+import { randomBytes, randomUUID } from 'crypto'
 import { injectable } from 'inversify'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -21,18 +21,34 @@ import type {
   CoachSettings,
   InjectedButtonDomain,
   InjectedButtonRemoveResult,
+  ActiveTabContent,
   TabKind,
   TabInfo,
   WorkbenchTabState,
   ViewRect
 } from '@maestro-shared/coach.api'
 import { MAESTRO_LOCAL_HOME_DISPLAY_URL } from '@maestro-shared/coach.api'
-import type { MaestroCompositeTabSpec } from '@maestro-shared/compositeTab.api'
+import { MAESTRO_ONLY_PREVIEW_DISPLAY_URL } from '@maestro-shared/compositeTab.identity'
+import type {
+  MaestroCompositeTabHostApi,
+  MaestroCompositeTabSpec
+} from '@maestro-shared/compositeTab.api'
 import type { InjectBtnApi, InjectBtnEntry, InjectBtnInput } from '@maestro-shared/injectBtn.api'
 import type { SavedTab } from '@maestro-shared/tabs.api'
 import type { TraceEvent } from '@maestro-shared/trace.types'
 import { createBoundsApplier, maestroFirstFrameOperationRect } from './viewBounds'
-import { getMaestroCompositeTab } from './compositeTab.registry'
+import { getMaestroCompositeTab, listMaestroCompositeTabs } from './compositeTab.registry'
+
+/**
+ * A composite tab's persistent identity.
+ *
+ * 12 hex chars, not a full UUID: the identity ends up inside a Zellij session name, which is capped
+ * at 48 characters behind a profile prefix that already costs 22 (`bitterless-test-debug-`).
+ * Truncation there would fold two tabs onto ONE session — the exact silent pane-sharing this design
+ * exists to prevent — and 12 hex is both short enough to never reach the cap and wide enough
+ * (2^48) that a collision is not a thing that happens.
+ */
+const mintTabInstanceId = (): string => randomBytes(6).toString('hex')
 
 export const shouldOpenOperationDevTools = (): boolean => {
   if (import.meta.env.VITE_MODE !== 'debug') return false
@@ -126,6 +142,15 @@ export interface ViewSlot {
 export interface OperationTab {
   id: string
   kind: TabKind
+  /**
+   * A composite mini-app tab's PERSISTENT identity, minted here and handed to the mini app.
+   *
+   * `id` cannot serve: `tabSeq` restarts at 0 each launch, so a restored `tab-2` would address
+   * whatever `tab-2` happened to own last time. Anything a mini app keeps outside the process — a
+   * Zellij session, say — is keyed on this instead, which is what makes a restored tab come back to
+   * its own state rather than a stranger's.
+   */
+  instanceId?: string
   view: WebContentsView | null
   /**
    * A composite mini-app's own container `View`, for a tab whose content is not one web page.
@@ -153,6 +178,8 @@ export interface OperationTab {
   url: string
   title: string
   favicon: string
+  /** agent 正在驱动这个 tab(deep_fetch 渲染中 / ui_act 点击中)。渲染层据此给 favicon 槽上动画。 */
+  controlled?: boolean
   debuggerEnabled: boolean
   pinned: boolean
   lastActive: number
@@ -179,6 +206,14 @@ export interface MaestroBrowserViewServiceState {
   readMaestroSettings(): CoachSettings
   hasCustomStartUrl(): boolean
   openWorkbenchTab(): Promise<WorkbenchTabState>
+  /**
+   * Send the Workbench to the background.
+   *
+   * Needed here because the Workbench is a foreground VIEW rather than an `OperationTab`: activating
+   * a tab does not hide it, so anything in this file that brings a tab forward on its own (the +
+   * button's mini-app rows) has to say so explicitly, the way `newTab()` already does.
+   */
+  backgroundWorkbenchTab(): Promise<WorkbenchTabState>
   newTab(): Promise<void>
   stopCapture(): Promise<CaptureState>
   broadcastActivity(phase: AgentActivityStep['phase'], label: string, ok?: boolean): void
@@ -200,6 +235,14 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   private creatingTab = false
   private injectedButtonNonces = new Map<string, string>()
   private readonly compositeTabs = new Map<string, MaestroCompositeTabSpec>()
+  /**
+   * Each composite tab's own host object, by tab id.
+   *
+   * A spec is registered once and can now carry several live tabs, so the host cannot live in the
+   * registration's closure — the second tab would overwrite the first one's geometry and teardown
+   * callbacks. Every `spec.close/setActive/refresh` call is addressed with the host from here.
+   */
+  private readonly compositeHosts = new Map<string, MaestroCompositeTabHostApi>()
   private lifecycleEpoch = 0
 
   createPinnedHomeTab(): WebContentsView {
@@ -467,17 +510,37 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
   }
 
-  async openCompositeTab(params: { id: string }): Promise<OperationTab | null> {
+  /**
+   * Open a registered composite mini app as a tab.
+   *
+   * Reuse is decided by the SPEC, not by this method: `singleton` mini apps bring their one tab
+   * forward, everything else gets a brand-new tab with a brand-new `instanceId` — which is what
+   * makes "Initialize and open" start a fresh Zellij session rather than reattach to the last one
+   * (Ral 2026-09-11). Passing `instanceId` explicitly is the restore path: same id, same session.
+   */
+  async openCompositeTab(params: {
+    id: string
+    instanceId?: string
+    /** Restore opens tabs COLD — the pinned Home tab keeps focus until `restoreLastActive` runs. */
+    activate?: boolean
+  }): Promise<OperationTab | null> {
     const spec = getMaestroCompositeTab(params.id)
     if (!spec) return null
-    const existing = this.tabs.find((tab) => tab.kind === spec.id)
+    // Reopening a known instance is always a reuse, singleton or not — that is how a restored tab
+    // that is asked for twice does not become two tabs sharing one session.
+    const existing = params.instanceId
+      ? this.tabs.find((tab) => tab.instanceId === params.instanceId)
+      : spec.singleton
+        ? this.tabs.find((tab) => tab.kind === spec.id)
+        : undefined
     if (existing) {
-      await this.activateTab({ id: existing.id })
+      if (params.activate !== false) await this.activateTab({ id: existing.id })
       return existing
     }
     const tab: OperationTab = {
       id: `tab-${++this.tabSeq}`,
       kind: spec.id as TabKind,
+      instanceId: params.instanceId || mintTabInstanceId(),
       view: null,
       surface: null,
       capture: null,
@@ -493,48 +556,58 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
     this.tabs.push(tab)
     this.compositeTabs.set(tab.id, spec)
+    // Hoisted into a variable rather than passed inline, because every later lifecycle call
+    // (`close` / `setActive` / `refresh`) must name THIS tab's host — see `compositeHosts`.
+    const host: MaestroCompositeTabHostApi = {
+      instanceId: tab.instanceId as string,
+      window: () => this._state.browserWindow,
+      contentRect: () => this._state.opBounds ?? this.firstFrameOperationRect(),
+      attach: (container) => {
+        tab.surface = container
+        // Index 0 is the tab-view position, so the whole composite sits below Maestro's chrome and
+        // control sidebar by construction — no re-assertion rule needed.
+        this._state.browserWindow?.contentView.addChildView(container, 0)
+      },
+      detach: (container) => {
+        if (tab.surface === container) tab.surface = null
+        try {
+          this._state.browserWindow?.contentView.removeChildView(container)
+        } catch {
+          // The parent window may already have released the child view.
+        }
+      },
+      activate: () => void this.activateTab({ id: tab.id }),
+      close: () => void this.closeTab({ id: tab.id }),
+      setTitle: (title) => {
+        tab.title = title || spec.title
+        this.broadcastTabs()
+      },
+      setDisplayUrl: (url) => {
+        const next = String(url || '')
+        if (tab.compositeDisplayUrl === next) return
+        tab.compositeDisplayUrl = next
+        // 地址栏是 `sendNav` 推的,tab 条是 `broadcastTabs` 推的 —— 两处都显示这个串,所以都要推。
+        // 只在这个 tab **是当前活动 tab** 时推地址栏:后台 tab 改了地址会把前台那一行覆盖掉。
+        if (this.activeTabId === tab.id) this.sendTabNav(tab)
+        this.broadcastTabs()
+      },
+      isOpen: () => this.tabs.includes(tab)
+    }
+    this.compositeHosts.set(tab.id, host)
     try {
-      await spec.open({
-        window: () => this._state.browserWindow,
-        contentRect: () => this._state.opBounds ?? this.firstFrameOperationRect(),
-        attach: (container) => {
-          tab.surface = container
-          // Index 0 is the tab-view position, so the whole composite sits below Maestro's chrome and
-          // control sidebar by construction — no re-assertion rule needed.
-          this._state.browserWindow?.contentView.addChildView(container, 0)
-        },
-        detach: (container) => {
-          if (tab.surface === container) tab.surface = null
-          try {
-            this._state.browserWindow?.contentView.removeChildView(container)
-          } catch {
-            // The parent window may already have released the child view.
-          }
-        },
-        activate: () => void this.activateTab({ id: tab.id }),
-        close: () => void this.closeTab({ id: tab.id }),
-        setTitle: (title) => {
-          tab.title = title || spec.title
-          this.broadcastTabs()
-        },
-        setDisplayUrl: (url) => {
-          const next = String(url || '')
-          if (tab.compositeDisplayUrl === next) return
-          tab.compositeDisplayUrl = next
-          // 地址栏是 `sendNav` 推的,tab 条是 `broadcastTabs` 推的 —— 两处都显示这个串,所以都要推。
-          // 只在这个 tab **是当前活动 tab** 时推地址栏:后台 tab 改了地址会把前台那一行覆盖掉。
-          if (this.activeTabId === tab.id) this.sendTabNav(tab)
-          this.broadcastTabs()
-        },
-        isOpen: () => this.tabs.includes(tab)
-      })
+      await spec.open(host)
     } catch (err) {
       this._state.emitTrace({ kind: 'error', msg: `composite tab ${spec.id}: ` + (err as Error).message, ts: Date.now() })
       this.compositeTabs.delete(tab.id)
+      this.compositeHosts.delete(tab.id)
       const index = this.tabs.indexOf(tab)
       if (index >= 0) this.tabs.splice(index, 1)
       this.broadcastTabs()
       throw err
+    }
+    if (params.activate === false) {
+      this.broadcastTabs()
+      return tab
     }
     await this.activateTab({ id: tab.id })
     return tab
@@ -561,7 +634,10 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
    * mini app, and nothing else in this file knows how to reach it.
    */
   refreshCompositeTabs(): void {
-    for (const spec of this.compositeTabs.values()) spec.refresh()
+    for (const [tabId, spec] of this.compositeTabs) {
+      const host = this.compositeHosts.get(tabId)
+      if (host) spec.refresh(host)
+    }
   }
 
   private buildPinnedHomeView(): WebContentsView {
@@ -585,10 +661,17 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
   private hideTabContent(tab: OperationTab): void {
     const composite = this.compositeTabs.get(tab.id)
     if (composite) {
-      composite.setActive(false)
+      this.setCompositeActive(tab.id, false)
       return
     }
     if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.setVisible(false)
+  }
+
+  /** Tell one composite tab's mount whether it is the foreground content. No host = not ours. */
+  private setCompositeActive(tabId: string, active: boolean): void {
+    const spec = this.compositeTabs.get(tabId)
+    const host = this.compositeHosts.get(tabId)
+    if (spec && host) spec.setActive(host, active)
   }
 
   private ownerOf(view: WebContentsView): OperationTab | undefined {
@@ -772,9 +855,29 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     }
   }
 
+  /**
+   * Recreate the persisted strip. Runs exactly once, before any startup tab.
+   *
+   * A composite row is rebuilt through its registered spec with its STORED `instanceId`, which is
+   * what puts a Zellij tab back on its own session. Sequential and individually guarded: a mini app
+   * can legitimately refuse to open (Zellij rejects while the Terminal switch is off), and one
+   * refusal must not take the rest of the strip with it.
+   */
   async restoreTabs(params: { tabs: SavedTab[] }): Promise<void> {
     if (this.tabs.some((tab) => !tab.pinned)) return
     for (const tab of params.tabs) {
+      if (tab.kind && getMaestroCompositeTab(tab.kind)) {
+        try {
+          await this.openCompositeTab({ id: tab.kind, instanceId: tab.instanceId, activate: false })
+        } catch (err) {
+          this._state.emitTrace({
+            kind: 'error',
+            msg: `restore composite tab ${tab.kind}: ` + (err as Error).message,
+            ts: Date.now()
+          })
+        }
+        continue
+      }
       if (tab.url) this.addTab({ url: tab.url, title: tab.title, favicon: tab.favicon })
     }
     this.broadcastTabs()
@@ -860,6 +963,52 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     this.broadcastNavState()
   }
 
+  /**
+   * `TabKind` → D3 三态。**用 `Record` 而不是 `switch`** —— `tsconfig.node.json` 是
+   * `"strict": false` + `"noImplicitReturns": false`,漏一个 switch 分支**不报错**,会静默
+   * 落进"非 browser"那一侧。而对象字面量缺键是赋值错误,与 strict 无关,**能真的拦住下一个新 kind**。
+   * (`displayUrl()` 今天漏掉 trench/zellij 就是这个机制造成的。)
+   */
+  private static readonly CONTENT_STATE: Record<TabKind, 'file' | 'miniapp' | 'web'> = {
+    browser: 'web',
+    onlypreview: 'file',
+    home: 'miniapp',
+    trench: 'miniapp',
+    zellij: 'miniapp'
+  }
+
+  /**
+   * **D3 的取数 —— 全同步,零新 XPC。**
+   *
+   * 三态所需的字段都已经在活动 `OperationTab` 上:`compositeDisplayUrl`(文件)、
+   * composite spec 的 `title`(miniapp)、`url` + `title`(网页)。
+   *
+   * **刻意不去问 OnlyPreview 子系统。** maestro 曾经直接 import `@shared/onlypreview/*` 与
+   * `@main/miniapps/onlypreview/*`,那把宿主整棵 onlypreview 子树(连 fileSearch / menu)拖进了
+   * maestro 的测试打包 —— 那次失败与修法记在 `shared/maestro/previewOpener.api.ts:43-51`。
+   *
+   * 文件态取不到真值时**降级成 miniapp 态**,而不是报一个假路径:`compositeDisplayUrl` 靠
+   * `notifyOnlyPreviewDisplayUrl` 推送,那条路**刻意吞异常**(地址栏被当装饰性的),所以它可以
+   * 静默停在上一个文件。宁可少说,不可说错。
+   */
+  describeActiveContent(): ActiveTabContent | null {
+    const tab = this.getActiveTab()
+    if (!tab) return null
+    const app = this.compositeTabs.get(tab.id)?.title ?? tab.title
+    switch (MaestroBrowserViewService.CONTENT_STATE[tab.kind]) {
+      case 'web':
+        return { state: 'web', url: tab.url, title: tab.title }
+      case 'file': {
+        const fileUrl = tab.compositeDisplayUrl ?? ''
+        return fileUrl && fileUrl !== MAESTRO_ONLY_PREVIEW_DISPLAY_URL
+          ? { state: 'file', fileUrl, app }
+          : { state: 'miniapp', app }
+      }
+      default:
+        return { state: 'miniapp', app }
+    }
+  }
+
   private displayUrl(tab: OperationTab): string {
     if (tab.kind === 'home') return MAESTRO_LOCAL_HOME_DISPLAY_URL
     if (tab.kind === 'onlypreview') {
@@ -887,6 +1036,50 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       canGoBack: !historyLocked && live ? live.navigationHistory.canGoBack() : false,
       canGoForward: !historyLocked && live ? live.navigationHistory.canGoForward() : false
     })
+  }
+
+  /**
+   * The + button's hover menu: a blank tab, or one of the registered composite mini apps.
+   *
+   * Built and popped in MAIN, like the tab context menu beside it — the operation view is a native
+   * view composited OVER the renderer's DOM, so an in-renderer dropdown taller than a line would be
+   * painted behind the page. The mini-app rows come from the registry rather than a written list,
+   * because "which mini apps can a tab hold" is one fact and a second copy of it goes stale.
+   */
+  async showNewTabMenu(params: { x: number; y: number }): Promise<void> {
+    const win = this._state.browserWindow
+    if (!win) return
+    const composites = listMaestroCompositeTabs()
+    const menu = Menu.buildFromTemplate([
+      // Same first row as the tab context menu — one action should look the same in both menus.
+      { label: 'New tab', click: () => void this._state.newTab() },
+      ...(composites.length
+        ? ([
+            { type: 'separator' },
+            ...composites.map((spec) => ({
+              label: spec.title,
+              click: () => void this.openCompositeTabFromMenu(spec.id)
+            }))
+          ] as MenuItemConstructorOptions[])
+        : [])
+    ])
+    menu.popup({ window: win, x: Math.round(params.x), y: Math.round(params.y) })
+  }
+
+  /**
+   * Pick a mini-app row: send the Workbench back first, then open the tab.
+   *
+   * The order matters and the failure is invisible otherwise — the Workbench is a foreground view,
+   * not an `OperationTab`, so a freshly activated tab would open underneath it and read as "nothing
+   * happened". `newTab()` on the row above already does exactly this.
+   */
+  private async openCompositeTabFromMenu(id: string): Promise<void> {
+    try {
+      await this._state.backgroundWorkbenchTab()
+      await this.openCompositeTab({ id })
+    } catch (err) {
+      this._state.emitTrace({ kind: 'error', msg: `new-tab menu ${id}: ` + (err as Error).message, ts: Date.now() })
+    }
   }
 
   async showTabMenu(params: { id: string }): Promise<void> {
@@ -1028,6 +1221,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       favicon: '',
       debuggerEnabled: tab.debuggerEnabled,
       debuggerAttached: Boolean(tab.capture?.isAttached()),
+      controlled: Boolean(tab.controlled),
       loading: tab.loading
     })
     this._state.broadcastActivity('tab', `opened tab · ${hostnameOf(url) || url}`)
@@ -1099,6 +1293,72 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     )
   }
 
+  /**
+   * 标记 / 取消标记「agent 正在驱动这个 tab」。
+   *
+   * **只改状态并广播,不碰页面** —— 它是一个展示事实,不是一道闸:被标记的 tab 照样可以被人
+   * 点击、切换、关闭。把它做成闸会让"agent 忙着"变成"用户被锁住",而那是两件事。
+   *
+   * 计数而非布尔:同一个 tab 上可能同时有两件事在驱动它(deep_fetch 渲染 + 一次快照),
+   * 先结束的那一件不该把动画关掉。
+   */
+  setTabControlled(id: string, on: boolean): void {
+    const tab = this.tabs.find((t) => t.id === id)
+    if (!tab) return
+    const next = Math.max(0, (this.controlDepth.get(id) ?? 0) + (on ? 1 : -1))
+    if (next === 0) this.controlDepth.delete(id)
+    else this.controlDepth.set(id, next)
+    const controlled = next > 0
+    if (Boolean(tab.controlled) === controlled) return
+    tab.controlled = controlled
+    this.broadcastTabs()
+  }
+
+  /** 每个 tab 上还有几件事在驱动它。见 setTabControlled 的计数说明。 */
+  private readonly controlDepth = new Map<string, number>()
+
+  /**
+   * `deep_fetch` 的载体:开一个**空白**受控 tab,把它的 webContents 交出去。
+   *
+   * **空白是硬要求,不是省事** —— 导航由 `deep_fetch` 自己做:它的三道闸(重定向白名单、
+   * `window.open` 拒绝、下载拒绝)都必须装在 `loadURL` 之前,由这里顺手导航会让第一跳
+   * 绕过全部闸门(见 `deepFetch.ts` 的 `DeepFetchSurface`)。
+   *
+   * 用真实 tab 而不是隐藏窗口,换来的正是这条路存在的理由:**与浏览器共用 session** ——
+   * 内置浏览器登录过的站点,agent 直接读得到。
+   *
+   * `done()` 可能被调用两次(正常收尾一次、超时那条路再一次),所以它是幂等的。
+   */
+  async openControlledBlankTab(url: string): Promise<{ wc: WebContents; done: () => Promise<void> }> {
+    // `url` 只是给 chip 一个占位 —— `claimSpareTab` 交回来的 spare 是活的 view,而
+    // `activateTab` 的 needsLoad 只在**冷** tab 分支里赋值,所以这里不会有任何导航发生。
+    // 导航仍然只由 deep_fetch 在装完三道闸之后自己发。
+    const tab = await this.claimSpareTab({ url })
+    const wc = tab.view?.webContents
+    if (!wc || wc.isDestroyed()) throw new Error('could not open a browser tab to render the page')
+    await awaitAttach(tab.attachReady)
+    /**
+     * **不 activate**。它在 tab 条上看得见(chip 带受控动画),但不抢走当前 tab:
+     * 一次取页几秒钟,把人从正在看的页面上拽走再拽回来比看不见更糟,而受控动画存在的意义
+     * 正是"不用切过去也知道它在被驱动"。
+     *
+     * 代价是必须**手动给它一个视口**:新建的 view 建完就隐藏且从未摆过位置,零尺寸视口会让
+     * 响应式页面按 0×0 布局(列表干脆不渲染)。摆位不等于显示。
+     */
+    if (tab.view) this.applyBounds(tab.view, this._state.opBounds || { x: 0, y: 0, width: 1280, height: 800 })
+    this.setTabControlled(tab.id, true)
+
+    let settled = false
+    const done = async (): Promise<void> => {
+      if (settled) return
+      settled = true
+      this.setTabControlled(tab.id, false)
+      // 取完页就关掉:一次取页不该在 tab 条上留下一个用户没开过的页面。
+      await this.closeTab({ id: tab.id }).catch(() => undefined)
+    }
+    return { wc, done }
+  }
+
   async activateTab(params: { id: string }): Promise<void> {
     const tab = this.tabs.find((item) => item.id === params.id)
     if (!tab) return
@@ -1115,7 +1375,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       this.setOperationView(null)
       this._state.capture = null
       this._state.replayEngine = null
-      composite.setActive(true)
+      this.setCompositeActive(tab.id, true)
       this.sendTabNav(tab)
       this.sendTitle(tab.title)
       this.broadcastTabs()
@@ -1124,7 +1384,7 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
     // Leaving a composite tab: it is not the `previous` branch below, because that one only knows
     // how to hide a `WebContentsView`.
     const leaving = this.tabs.find((item) => item.id === this.activeTabId)
-    if (leaving && leaving.id !== tab.id) this.compositeTabs.get(leaving.id)?.setActive(false)
+    if (leaving && leaving.id !== tab.id) this.setCompositeActive(leaving.id, false)
     if (this.activeTabId === tab.id && tab.view && !tab.view.webContents.isDestroyed()) {
       if (this.isPinnedHomeTab(tab)) this.openPinnedHomeDevTools(tab, tab.view)
       tab.lastActive = Date.now()
@@ -1217,7 +1477,9 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       const index = this.tabs.indexOf(tab)
       if (index >= 0) this.tabs.splice(index, 1)
       this.compositeTabs.delete(tab.id)
-      composite.close()
+      const host = this.compositeHosts.get(tab.id)
+      this.compositeHosts.delete(tab.id)
+      if (host) composite.close(host)
       const wasActive = this.activeTabId === tab.id
       if (wasActive) {
         const next = this.tabs[index] || this.tabs[this.tabs.length - 1]
@@ -1263,11 +1525,16 @@ export class MaestroBrowserViewService extends CommonService<MaestroBrowserViewS
       title: tab.title,
       url,
       ...(tab.kind !== 'browser' ? { displayUrl: url } : {}),
+      // Persistence is renderer-driven, and a composite tab carries no URL to persist by — so its
+      // identity and its opt-in have to reach the renderer on the wire.
+      ...(tab.instanceId ? { instanceId: tab.instanceId } : {}),
+      ...(this.compositeTabs.get(tab.id)?.restorable ? { restorable: true } : {}),
       active: tab.id === this.activeTabId,
       pinned: tab.pinned,
       favicon: tab.favicon,
       debuggerEnabled: tab.debuggerEnabled,
       debuggerAttached: tab.kind === 'browser' && Boolean(tab.capture?.isAttached()),
+      controlled: Boolean(tab.controlled),
       loading: tab.loading
     }
   }

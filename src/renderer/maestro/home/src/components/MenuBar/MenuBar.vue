@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -14,8 +14,7 @@ import {
   IconSettings,
   IconSparkles,
   IconSparklesFilled,
-  IconX
-} from '@tabler/icons-vue'
+  IconX } from '@tabler/icons-vue'
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper'
 import type { TabInfo } from '@maestro-shared/coach.api'
 import { MAESTRO_WORKBENCH_DISPLAY_URL } from '@maestro-shared/coach.api'
@@ -56,6 +55,43 @@ import bitterlessIcon from '@maestro-renderer/common/assets/icons/bitterless-ico
 // Handed to menuBarStore on mount — it is the address bar's controller, and the main process
 // asks it to focus after the operator opens a blank tab.
 const addressInput = ref<HTMLInputElement | null>(null)
+
+/**
+ * Hover dwell before the + button's mini-app menu pops.
+ *
+ * 600ms, and deliberately not shorter: a native `Menu.popup()` is modal the instant it appears, has
+ * no hover-close, and CANNOT be clicked through. With a short dwell the common outcome is that the
+ * menu opens first and the click lands on it instead of the button — from the operator's side,
+ * "pressing + did not open a tab". Cancelling does not help: the timer can be cancelled, an already
+ * open native menu cannot be clicked past. 600ms lets a click win even after a moment's hesitation,
+ * while "stop and see what the options are" still opens the menu. Same value as micromeet-cowork.
+ */
+const NEW_TAB_MENU_DELAY_MS = 600
+const newTabWrap = ref<HTMLElement | null>(null)
+let newTabMenuTimer: number | null = null
+function cancelNewTabMenu(): void {
+  if (newTabMenuTimer === null) return
+  window.clearTimeout(newTabMenuTimer)
+  newTabMenuTimer = null
+}
+// The click MUST cancel first: the pointer usually stays on the button afterwards, and without this
+// the menu pops 600ms later over the strip that was just rebuilt — with no hover-close to dismiss it.
+function onNewTabClick(): void {
+  cancelNewTabMenu()
+  void tabStore.newTab()
+}
+function armNewTabMenu(): void {
+  cancelNewTabMenu()
+  newTabMenuTimer = window.setTimeout(() => {
+    newTabMenuTimer = null
+    const el = newTabWrap.value
+    if (!el) return
+    // Main's Menu.popup needs an anchor in window-content DIP, and only the button knows its own.
+    const rect = el.getBoundingClientRect()
+    void tabStore.showNewTabMenu({ left: rect.left, bottom: rect.bottom })
+  }, NEW_TAB_MENU_DELAY_MS)
+}
+onUnmounted(cancelNewTabMenu)
 
 onMounted(() => {
   menuBarStore.bindAddressInput(addressInput.value)
@@ -162,8 +198,19 @@ function fixedTabClass(tab: TabInfo): string {
           >
             <!-- The favicon slot is ALWAYS 16px — only the title text compresses. Loading swaps
                  the icon in place, so the chip never reflows. -->
+            <!-- 「被控制」优先于 loading:agent 驱动时页面本来就常在加载,
+                 两个都显示会变成"转圈套转圈",而人要看的是**谁**在动它。 -->
+            <span
+              v-if="tab.controlled"
+              class="maestro-menu-bar__controlled"
+              :title="i18nHelper.menuBar.maestro.tabControlled"
+              aria-hidden="true"
+            >
+              <span class="maestro-menu-bar__controlled-core"></span>
+              <span class="maestro-menu-bar__controlled-orbit"></span>
+            </span>
             <IconLoader2
-              v-if="tab.loading"
+              v-else-if="tab.loading"
               :size="16"
               class="maestro-menu-bar__loading-icon"
               aria-hidden="true"
@@ -235,13 +282,16 @@ function fixedTabClass(tab: TabInfo): string {
         </template>
       </div>
       <!-- New-tab button — circular, vertically centered to the tab row, always visible.
-           Opens a blank operation view (empty, editable address bar) ready for a URL. -->
-      <div class="maestro-menu-bar__new-tab-wrap">
+           Click opens a blank operation view (empty, editable address bar) ready for a URL;
+           hovering opens the mini-app menu, so several Zellij tabs can be opened. -->
+      <div ref="newTabWrap" class="maestro-menu-bar__new-tab-wrap">
         <IconBtn
           class="maestro-menu-bar__new-tab"
           :title="i18nHelper.menuBar.maestro.newTab"
           :aria-label="i18nHelper.menuBar.maestro.newTab"
-          @click="tabStore.newTab()"
+          @click="onNewTabClick()"
+          @mouseenter="armNewTabMenu()"
+          @mouseleave="cancelNewTabMenu()"
         >
           <IconPlus :size="16" stroke="2" aria-hidden="true" />
         </IconBtn>

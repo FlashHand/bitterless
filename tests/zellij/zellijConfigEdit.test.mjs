@@ -20,7 +20,7 @@ const { defaultZellijShortcuts, readZellijShortcuts, editZellijShortcuts } = cre
 )(output);
 test.after(() => rmSync(directory, { recursive: true, force: true }));
 
-const existing = `// personal configuration\nsession_serialization false\nkeybinds clear-defaults=false {\n  normal {\n    // preserve this note\n    bind "Super d" "Alt j" { NewPane "Down"; }\n    bind "Super Shift d" { NewPane "Right"; }\n    bind "Ctrl w" { CloseFocus; }\n    bind "Alt x" { NewPane "Down"; SwitchToMode "Normal"; }\n  }\n}\nplugins {\n  compact-bar location="zellij:compact-bar"\n}\n`;
+const existing = `// personal configuration\nsession_serialization false\nkeybinds clear-defaults=false {\n  normal {\n    // preserve this note\n    bind "Super d" "Alt j" { NewPane "Down"; }\n    bind "Super Shift d" { NewPane "Right"; }\n    bind "Super w" { CloseFocus; }\n    bind "Alt x" { NewPane "Down"; SwitchToMode "Normal"; }\n  }\n}\nplugins {\n  compact-bar location="zellij:compact-bar"\n}\n`;
 
 test('reads the existing single-action shortcuts and leaves multi-action bindings alone', () => {
   assert.deepEqual(readZellijShortcuts(existing, 'darwin'), defaultZellijShortcuts('darwin'));

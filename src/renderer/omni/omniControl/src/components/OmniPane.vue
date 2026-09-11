@@ -11,6 +11,7 @@ import translatorIcon from '@renderer/common/assets/icons/translator.svg';
 import mottoIcon from '@renderer/common/assets/icons/motto.svg';
 import trenchIcon from '@renderer/common/assets/icons/coin.png';
 import submodulesIcon from '@renderer/common/assets/icons/submodules.svg';
+import zellijIcon from '@renderer/common/assets/icons/zellij.svg';
 import { i18nHelper } from '@renderer/common/i18n/i18n.helper';
 import {
   getNodeContentMode,
@@ -67,6 +68,11 @@ const miniApps = computed<Array<{
     id: 'submodules',
     icon: submodulesIcon,
     name: i18nHelper.miniApp.submodules.name,
+  },
+  {
+    id: 'zellij',
+    icon: zellijIcon,
+    name: i18nHelper.miniApp.zellij.name,
   },
 ]);
 

@@ -20,6 +20,8 @@ import {
 import type { PiToolSpec } from '@main/agent/BaseAgent'
 import { buildFileTools } from '@main/agent/tools/fileTools'
 import { buildArchiveTools } from '@main/agent/tools/archiveTools'
+import { buildWebFetchTools } from '@main/agent/tools/webFetchTools'
+import { buildWebSearchTools } from '@main/agent/tools/webSearchTools'
 import { MaestroAgent } from '@main/agent/MaestroAgent'
 import { DelegateAgent } from '@main/agent/DelegateAgent'
 import {
@@ -129,6 +131,7 @@ import type {
   SkillImportResult,
   SkillSummary,
   SnapshotResult,
+  ActiveTabContent,
   TabInfo,
   ViewRect,
   WorkspaceRef,
@@ -233,6 +236,15 @@ class MaestroWindowController
 
   get tabs(): OperationTab[] {
     return this.browserView.tabs
+  }
+
+  /**
+   * **D3 —— 当前 tab 激活的内容**(表 3)。同步转发,分型逻辑归 `browserView`(逐 kind 的语义只有它知道)。
+   *
+   * 刻意不走 `getTabs()`:那个是 `async` 签名,塞进同步的提示词拼装要白加一层 `await`。
+   */
+  describeActiveTabContent(): ActiveTabContent | null {
+    return this.browserView.describeActiveContent()
   }
 
   get activeTabId(): string | null {
@@ -1063,6 +1075,11 @@ class MaestroWindowController
       this.agentService.buildHostToolCatalogTool('cowork'),
       ...buildFileTools(this.workspaceFile, sessionKey),
       ...buildArchiveTools(this.workspaceFile, sessionKey),
+      // 联网三级(见 docs/features/agent-web-tools.md):web_search 找 URL(走 bitterless-private
+      // core,凭登录态)→ web_fetch 免费读正文 → deep_fetch 开一个**受控 tab**让 JavaScript
+      // 真的渲染再读,所以客户端渲染的站点(SPA / 需要登录的页面)只有它读得到。
+      ...buildWebSearchTools(),
+      ...buildWebFetchTools({ open: (url) => this.browserView.openControlledBlankTab(url) }),
       /**
        * 钻探三件（`drill-001` 收尾）。**这是「钻探能不能用」的最后一根线** ——
        * 在此之前 agent 收到「开始钻探」只能用通用工具即兴走两步就停
@@ -1411,6 +1428,12 @@ class MaestroWindowController
 
   async showTabMenu(params: { id: string }): Promise<void> {
     await this.browserView.showTabMenu(params)
+  }
+
+  async showNewTabMenu(params: { x: number; y: number }): Promise<void> {
+    // Deliberately does NOT touch the Workbench: this is armed by HOVER, and hovering a button must
+    // not change what is on screen. Each menu row backgrounds it when it is actually picked.
+    await this.browserView.showNewTabMenu(params)
   }
 
   async newTab(): Promise<void> {

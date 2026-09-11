@@ -106,6 +106,7 @@ export const zh: typeof en = {
       homeTab: '主页',
       newTab: '新建标签页',
       closeTab: '关闭标签页',
+      tabControlled: 'agent 正在控制这个标签页',
       back: '后退',
       forward: '前进',
       reload: '重新加载',
@@ -974,7 +975,8 @@ export const zh: typeof en = {
       disabled: '请先启用终端再初始化。',
       'binary-missing': '缺少内置 Zellij。请运行 yarn tools:init 并暂存工具，或重新安装应用。',
       'unsupported-platform': 'Zellij 支持 macOS 和 Windows。',
-      'port-occupied': '12877 端口被其他服务占用，请释放该端口后重试。',
+      'port-occupied':
+        '本版本使用的终端端口被其他服务占用，请释放该端口后重试，或设置 BITTERLESS_ZELLIJ_PORT。',
       'version-mismatch': '本地服务不是 Zellij 0.45.1，请停止冲突服务后重试。',
       'start-failed': 'Zellij 未能启动或已停止，请点击“初始化并打开”重试。',
       'startup-timeout': 'Zellij 启动超时，请重试。',
